@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -354,4 +355,65 @@ func (api *SessionAPI) GetMemory(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"memories": memories})
+}
+
+// CreateSessionDirect creates a new session directly (helper method)
+func (api *SessionAPI) CreateSessionDirect(ctx context.Context, req *CreateSessionRequest) (*CreateSessionResponse, error) {
+	// Get or create user
+	user, err := api.userRepo.GetOrCreateByPlatformID(ctx, req.Platform, req.UserID, req.UserID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get or create user: %w", err)
+	}
+
+	// Create session
+	session := &model.Session{
+		ID:     uuid.New().String(),
+		UserID: user.ID,
+		Title:  req.Title,
+		Model:  req.Model,
+	}
+
+	if req.ParentID != "" {
+		session.ParentID = &req.ParentID
+	}
+
+	if err := api.sessionRepo.Create(ctx, session); err != nil {
+		return nil, fmt.Errorf("failed to create session: %w", err)
+	}
+
+	return &CreateSessionResponse{
+		SessionID: session.ID,
+		UserID:    user.ID,
+		Title:     session.Title,
+		Model:     session.Model,
+		CreatedAt: session.CreatedAt.Format(time.RFC3339),
+	}, nil
+}
+
+// AddMessageRequest is a request to add a message
+type AddMessageRequest struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+// AddMessageToSession adds a message to a session (helper method)
+func (api *SessionAPI) AddMessageToSession(ctx context.Context, sessionID string, req *AddMessageRequest) error {
+	// Validate role
+	if req.Role != string(model.RoleUser) && req.Role != string(model.RoleAssistant) &&
+		req.Role != string(model.RoleSystem) && req.Role != string(model.RoleTool) {
+		return fmt.Errorf("invalid role: %s", req.Role)
+	}
+
+	message := &model.Message{
+		ID:        uuid.New().String(),
+		SessionID: sessionID,
+		Role:      model.MessageRole(req.Role),
+		Content:   req.Content,
+	}
+
+	if err := api.messageRepo.Create(ctx, message); err != nil {
+		return fmt.Errorf("failed to create message: %w", err)
+	}
+
+	return nil
 }

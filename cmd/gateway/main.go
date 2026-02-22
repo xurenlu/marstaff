@@ -11,31 +11,36 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
+	"gorm.io/driver/mysql"
+	"gorm.io/gorm"
 
+	"github.com/rocky/marstaff/internal/api"
 	"github.com/rocky/marstaff/internal/config"
 	"github.com/rocky/marstaff/internal/gateway"
+	"github.com/rocky/marstaff/internal/model"
 )
 
 var (
- configFile string
+	configFile string
 )
 
 func main() {
- var rootCmd = &cobra.Command{
-  Use:   "gateway",
-  Short: "Marstaff WebSocket Gateway",
-  Run:   run,
- }
+	var rootCmd = &cobra.Command{
+		Use:   "gateway",
+		Short: "Marstaff WebSocket Gateway",
+		Run:   run,
+	}
 
- rootCmd.Flags().StringVarP(&configFile, "config", "c", "configs/config.yaml", "config file path")
+	rootCmd.Flags().StringVarP(&configFile, "config", "c", "configs/config.yaml", "config file path")
 
- if err := rootCmd.Execute(); err != nil {
-  fmt.Fprintln(os.Stderr, err)
-  os.Exit(1)
- }
+	if err := rootCmd.Execute(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 }
 
 func run(cmd *cobra.Command, args []string) {
@@ -48,6 +53,34 @@ func run(cmd *cobra.Command, args []string) {
 	// Setup logger
 	setupLogger(cfg)
 
+	// Connect to database
+	var db *gorm.DB
+	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8mb4&parseTime=True&loc=Local",
+		cfg.Database.Username,
+		cfg.Database.Password,
+		cfg.Database.Host,
+		cfg.Database.Port,
+		cfg.Database.Database,
+	)
+
+	db, err = gorm.Open(mysql.Open(dsn), &gorm.Config{})
+	if err != nil {
+		log.Warn().Err(err).Msg("failed to connect to database, running without persistence")
+		db = nil
+	} else {
+		log.Info().Msg("connected to database")
+		// Auto migrate tables
+		if err := db.AutoMigrate(&model.User{}, &model.Session{}, &model.Message{}, &model.Skill{}, &model.Memory{}); err != nil {
+			log.Warn().Err(err).Msg("failed to auto migrate tables")
+		}
+	}
+
+	// Create session API if database is connected
+	var sessionAPI *api.SessionAPI
+	if db != nil {
+		sessionAPI = api.NewSessionAPI(db)
+	}
+
 	// Create hub
 	hub := gateway.NewHub()
 	go hub.Run()
@@ -57,6 +90,9 @@ func run(cmd *cobra.Command, args []string) {
 
 	// Create server
 	server := gateway.NewServer(hub)
+
+	// Track active sessions
+	activeSessions := make(map[string]string) // clientID -> sessionID
 
 	// Set up message handler to forward to agent
 	server.SetMessageHandler(func(client *gateway.Client, msg *gateway.Message) error {
@@ -84,6 +120,38 @@ func run(cmd *cobra.Command, args []string) {
 				return fmt.Errorf("invalid message content")
 			}
 
+			// Create session if doesn't exist
+			sessionID := client.SessionID
+			if sessionID == "" && sessionAPI != nil {
+				// Generate new session ID
+				sessionID = uuid.New().String()
+				client.SessionID = sessionID
+				activeSessions[client.ID] = sessionID
+
+				// Create session in database
+				ctx := context.Background()
+				_, err := sessionAPI.CreateSessionDirect(ctx, &api.CreateSessionRequest{
+					UserID:   client.UserID,
+					Platform: "web",
+					Title:    content[:min(50, len(content))], // Use first 50 chars as title
+					Model:    "default",
+				})
+				if err != nil {
+					log.Error().Err(err).Msg("failed to create session")
+				} else {
+					log.Info().Str("session_id", sessionID).Msg("created new session")
+				}
+			}
+
+			// Save user message to database
+			if sessionID != "" && sessionAPI != nil {
+				ctx := context.Background()
+				_ = sessionAPI.AddMessageToSession(ctx, sessionID, &api.AddMessageRequest{
+					Role:    "user",
+					Content: content,
+				})
+			}
+
 			// Send typing indicator
 			typingMsg := &gateway.Message{
 				Type:      "typing",
@@ -99,7 +167,7 @@ func run(cmd *cobra.Command, args []string) {
 
 			// Send to agent (async)
 			go func() {
-				response, err := agentClient.SendMessage(context.Background(), client.UserID, client.SessionID, content)
+				response, err := agentClient.SendMessage(context.Background(), client.UserID, sessionID, content)
 				if err != nil {
 					log.Error().Err(err).Msg("failed to get agent response")
 
@@ -107,7 +175,7 @@ func run(cmd *cobra.Command, args []string) {
 					errorMsg := &gateway.Message{
 						Type:      gateway.MessageTypeError,
 						UserID:    client.UserID,
-						SessionID: client.SessionID,
+						SessionID: sessionID,
 						Data: map[string]interface{}{
 							"error": err.Error(),
 						},
@@ -118,11 +186,20 @@ func run(cmd *cobra.Command, args []string) {
 					return
 				}
 
+				// Save assistant message to database
+				if sessionID != "" && sessionAPI != nil {
+					ctx := context.Background()
+					_ = sessionAPI.AddMessageToSession(ctx, sessionID, &api.AddMessageRequest{
+						Role:    "assistant",
+						Content: response,
+					})
+				}
+
 				// Send response back to client
 				respMsg := &gateway.Message{
 					Type:      gateway.MessageTypeChat,
 					UserID:    client.UserID,
-					SessionID: client.SessionID,
+					SessionID: sessionID,
 					Data: map[string]interface{}{
 						"content": response,
 					},
@@ -170,14 +247,36 @@ func run(cmd *cobra.Command, args []string) {
 	router.GET("/ws", server.ServeWebSocket)
 
 	// API routes
-	api := router.Group("/api")
+	apiGroup := router.Group("/api")
 	{
-		api.GET("/health", func(c *gin.Context) {
+		// Health check
+		apiGroup.GET("/health", func(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{
 				"status":  "ok",
 				"clients": server.GetClientCount(),
+				"database": db != nil,
 			})
 		})
+
+		// Session management endpoints (if database is connected)
+		if sessionAPI != nil {
+			sessions := apiGroup.Group("/sessions")
+			{
+				sessions.POST("", sessionAPI.CreateSession)
+				sessions.GET("/:id", sessionAPI.GetSession)
+				sessions.GET("", sessionAPI.ListSessions)
+				sessions.DELETE("/:id", sessionAPI.DeleteSession)
+				sessions.POST("/:id/messages", sessionAPI.AddMessage)
+				sessions.GET("/:id/messages", sessionAPI.GetMessages)
+			}
+
+			// Memory endpoints
+			memory := apiGroup.Group("/memory")
+			{
+				memory.POST("/:user_id", sessionAPI.SetMemory)
+				memory.GET("/:user_id", sessionAPI.GetMemory)
+			}
+		}
 	}
 
 	// Create HTTP server
@@ -209,18 +308,33 @@ func run(cmd *cobra.Command, args []string) {
 		log.Error().Err(err).Msg("server forced to shutdown")
 	}
 
+	// Close database connection
+	if db != nil {
+		sqlDB, _ := db.DB()
+		if sqlDB != nil {
+			sqlDB.Close()
+		}
+	}
+
 	log.Info().Msg("server exited")
 }
 
 func setupLogger(cfg *config.Config) {
- zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
- zerolog.SetGlobalLevel(zerolog.InfoLevel)
+	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
+	zerolog.SetGlobalLevel(zerolog.InfoLevel)
 
- if cfg.Log.Level == "debug" {
-  zerolog.SetGlobalLevel(zerolog.DebugLevel)
- } else if cfg.Log.Level == "warn" {
-  zerolog.SetGlobalLevel(zerolog.WarnLevel)
- }
+	if cfg.Log.Level == "debug" {
+		zerolog.SetGlobalLevel(zerolog.DebugLevel)
+	} else if cfg.Log.Level == "warn" {
+		zerolog.SetGlobalLevel(zerolog.WarnLevel)
+	}
 
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stdout})
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
