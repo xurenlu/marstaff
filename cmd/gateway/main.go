@@ -38,65 +38,119 @@ func main() {
 }
 
 func run(cmd *cobra.Command, args []string) {
- // Load config
- cfg, err := config.Load(configFile)
- if err != nil {
-  log.Fatal().Err(err).Msg("failed to load config")
- }
+	// Load config
+	cfg, err := config.Load(configFile)
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to load config")
+	}
 
- // Setup logger
- setupLogger(cfg)
+	// Setup logger
+	setupLogger(cfg)
 
- // Create hub
- hub := gateway.NewHub()
- go hub.Run()
+	// Create hub
+	hub := gateway.NewHub()
+	go hub.Run()
 
- // Create router
- router := gin.Default()
+	// Create server
+	server := gateway.NewServer(hub)
 
- // WebSocket endpoint
- router.GET("/ws", func(c *gin.Context) {
-  serveWebSocket(hub, c)
- })
+	// Set up message handler (for demo, echo back)
+	server.SetMessageHandler(func(client *gateway.Client, msg *gateway.Message) error {
+		log.Info().
+			Str("type", string(msg.Type)).
+			Str("user_id", msg.UserID).
+			Msg("received message")
 
- // Health check
- router.GET("/health", func(c *gin.Context) {
-   c.JSON(http.StatusOK, gin.H{
-    "status": "ok",
-    "clients": hub.GetClientCount(),
-   })
- })
+		// Echo the message back for testing
+		if msg.Type == gateway.MessageTypeChat {
+			response := &gateway.Message{
+				Type:      gateway.MessageTypeChat,
+				SessionID: msg.SessionID,
+				UserID:    msg.UserID,
+				Data: map[string]interface{}{
+					"content": fmt.Sprintf("Echo: %v", msg.Data),
+				},
+				Timestamp: time.Now().Unix(),
+			}
+			hub.Broadcast(response)
+		}
+		return nil
+	})
 
- // Create server
- addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
- srv := &http.Server{
-  Addr:    addr,
-  Handler: router,
- }
+	// Create router
+	if cfg.Server.Mode == "release" {
+		gin.SetMode(gin.ReleaseMode)
+	}
+	router := gin.Default()
 
- // Start server in background
- go func() {
-  log.Info().Str("addr", addr).Msg("gateway server starting")
-  if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-   log.Fatal().Err(err).Msg("failed to start server")
-  }
- }()
+	// CORS middleware
+	router.Use(func(c *gin.Context) {
+		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, accept, origin, Cache-Control, X-Requested-With")
+		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, DELETE")
 
- // Wait for interrupt signal
- quit := make(chan os.Signal, 1)
- signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
- <-quit
+		if c.Request.Method == "OPTIONS" {
+			c.AbortWithStatus(http.StatusNoContent)
+			return
+		}
 
- log.Info().Msg("shutting down server...")
+		c.Next()
+	})
 
- ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
- defer cancel()
+	// Serve static files
+	router.Static("/static", "./web/static")
+	router.LoadHTMLGlob("web/templates/*")
 
- if err := srv.Shutdown(ctx); err != nil {
-  log.Error().Err(err).Msg("server forced to shutdown")
- }
+	// Index page
+	router.GET("/", func(c *gin.Context) {
+		c.HTML(http.StatusOK, "chat.html", nil)
+	})
 
- log.Info().Msg("server exited")
+	// WebSocket endpoint
+	router.GET("/ws", server.ServeWebSocket)
+
+	// API routes
+	api := router.Group("/api")
+	{
+		api.GET("/health", func(c *gin.Context) {
+			c.JSON(http.StatusOK, gin.H{
+				"status":  "ok",
+				"clients": server.GetClientCount(),
+			})
+		})
+	}
+
+	// Create HTTP server
+	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
+	srv := &http.Server{
+		Addr:    addr,
+		Handler: router,
+	}
+
+	// Start server in background
+	go func() {
+		log.Info().Str("addr", addr).Msg("gateway server starting")
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatal().Err(err).Msg("failed to start server")
+		}
+	}()
+
+	// Wait for interrupt signal
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	log.Info().Msg("shutting down server...")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Error().Err(err).Msg("server forced to shutdown")
+	}
+
+	log.Info().Msg("server exited")
 }
 
 func setupLogger(cfg *config.Config) {
@@ -109,10 +163,5 @@ func setupLogger(cfg *config.Config) {
   zerolog.SetGlobalLevel(zerolog.WarnLevel)
  }
 
- log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stdout})
-}
-
-func serveWebSocket(hub *gateway.Hub, c *gin.Context) {
- // TODO: Implement WebSocket upgrade and client registration
- c.JSON(http.StatusOK, gin.H{"status": "websocket endpoint"})
+	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stdout})
 }
