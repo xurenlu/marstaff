@@ -36,6 +36,7 @@ type ChatRequest struct {
 	Model       string         `json:"model,omitempty"`
 	Temperature float64        `json:"temperature,omitempty"`
 	Stream      bool           `json:"stream,omitempty"`
+	Tools       bool           `json:"tools,omitempty"`
 }
 
 // AgentMessage is a chat message for the agent API

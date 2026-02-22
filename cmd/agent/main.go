@@ -13,9 +13,13 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
+	"gorm.io/driver/mysql"
+	"gorm.io/gorm"
 
 	"github.com/rocky/marstaff/internal/agent"
+	"github.com/rocky/marstaff/internal/api"
 	"github.com/rocky/marstaff/internal/config"
+	"github.com/rocky/marstaff/internal/model"
 	"github.com/rocky/marstaff/internal/provider"
 )
 
@@ -48,6 +52,28 @@ func run(cmd *cobra.Command, args []string) {
 	// Setup logger
 	setupLogger(cfg)
 
+	// Connect to database
+	var db *gorm.DB
+	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8mb4&parseTime=True&loc=Local",
+		cfg.Database.Username,
+		cfg.Database.Password,
+		cfg.Database.Host,
+		cfg.Database.Port,
+		cfg.Database.Database,
+	)
+
+	db, err = gorm.Open(mysql.Open(dsn), &gorm.Config{})
+	if err != nil {
+		log.Warn().Err(err).Msg("failed to connect to database, running without persistence")
+		db = nil
+	} else {
+		log.Info().Msg("connected to database")
+		// Auto migrate tables
+		if err := db.AutoMigrate(&model.User{}, &model.Session{}, &model.Message{}, &model.Skill{}, &model.Memory{}); err != nil {
+			log.Warn().Err(err).Msg("failed to auto migrate tables")
+		}
+	}
+
 	// Create provider
 	prov, err := provider.CreateProvider(cfg.Provider.Default, getProviderConfig(cfg, cfg.Provider.Default))
 	if err != nil {
@@ -70,10 +96,15 @@ func run(cmd *cobra.Command, args []string) {
 	engine, err := agent.NewEngine(&agent.Config{
 		Provider:   prov,
 		SkillsPath: cfg.Skills.Path,
+		DB:         db,
 	})
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to create engine")
 	}
+
+	// Create and register tool executor
+	executor := agent.NewExecutor(engine)
+	executor.RegisterBuiltInTools()
 
 	// Log loaded skills
 	registry := engine.GetSkillRegistry()
@@ -88,6 +119,22 @@ func run(cmd *cobra.Command, args []string) {
 			Msg("skill loaded")
 	}
 
+	// Log available tools
+	tools := registry.GetTools()
+	log.Info().Int("count", len(tools)).Msg("available tools")
+	for _, t := range tools {
+		log.Info().
+			Str("name", t.Name).
+			Str("description", t.Description).
+			Msg("tool available")
+	}
+
+	// Create session API if database is connected
+	var sessionAPI *api.SessionAPI
+	if db != nil {
+		sessionAPI = api.NewSessionAPI(db)
+	}
+
 	// Create HTTP server for API
 	router := gin.Default()
 
@@ -100,6 +147,7 @@ func run(cmd *cobra.Command, args []string) {
 			Model       string   `json:"model"`
 			Temperature float64  `json:"temperature"`
 			Stream      bool     `json:"stream"`
+			Tools       bool     `json:"tools"`
 		}
 
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -125,42 +173,36 @@ func run(cmd *cobra.Command, args []string) {
 			Temperature: req.Temperature,
 		}
 
-		// Process chat
-		if req.Stream {
-			// Streaming response
-			ch, err := engine.ChatStream(c.Request.Context(), chatReq)
-			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-				return
-			}
+		// Add current time to context
+		ctx := context.WithValue(c.Request.Context(), "current_time", time.Now().Format("2006-01-02 15:04:05"))
 
-			// Set SSE headers
-			c.Header("Content-Type", "text/event-stream")
-			c.Header("Cache-Control", "no-cache")
-			c.Header("Connection", "keep-alive")
+		var resp *agent.ChatResponse
+		var err error
 
-			// Stream chunks
-			for chunk := range ch {
-				fmt.Fprintf(c.Writer, "data: %s\n\n", chunk)
-				c.Writer.Flush()
-			}
-			fmt.Fprintf(c.Writer, "data: [DONE]\n\n")
-			c.Writer.Flush()
+		// Process chat with or without tools
+		if req.Tools {
+			resp, err = executor.ExecuteWithTools(ctx, chatReq)
 		} else {
-			// Non-streaming response
-			resp, err := engine.Chat(c.Request.Context(), chatReq)
-			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-				return
-			}
-
-			c.JSON(http.StatusOK, gin.H{
-				"content":       resp.Content,
-				"tool_calls":    resp.ToolCalls,
-				"usage":         resp.Usage,
-				"finish_reason": resp.FinishReason,
-			})
+			resp, err = engine.Chat(ctx, chatReq)
 		}
+
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		// Process streaming
+		if req.Stream {
+			// For now, return non-streaming with tools
+			// TODO: Implement streaming with tool calls
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"content":       resp.Content,
+			"tool_calls":    resp.ToolCalls,
+			"usage":         resp.Usage,
+			"finish_reason": resp.FinishReason,
+		})
 	})
 
 	// Health check
@@ -168,6 +210,7 @@ func run(cmd *cobra.Command, args []string) {
 		c.JSON(http.StatusOK, gin.H{
 			"status":   "ok",
 			"provider": prov.Name(),
+			"database": db != nil,
 		})
 	})
 
@@ -187,6 +230,26 @@ func run(cmd *cobra.Command, args []string) {
 		}
 		c.JSON(http.StatusOK, gin.H{"skills": result})
 	})
+
+	// Session management endpoints (if database is connected)
+	if sessionAPI != nil {
+		sessions := router.Group("/api/sessions")
+		{
+			sessions.POST("", sessionAPI.CreateSession)
+			sessions.GET("/:id", sessionAPI.GetSession)
+			sessions.GET("", sessionAPI.ListSessions)
+			sessions.DELETE("/:id", sessionAPI.DeleteSession)
+			sessions.POST("/:id/messages", sessionAPI.AddMessage)
+			sessions.GET("/:id/messages", sessionAPI.GetMessages)
+		}
+
+		// Memory endpoints
+		memory := router.Group("/api/memory")
+		{
+			memory.POST("/:user_id", sessionAPI.SetMemory)
+			memory.GET("/:user_id", sessionAPI.GetMemory)
+		}
+	}
 
 	// Start server
 	addr := "0.0.0.0:18790"
@@ -214,6 +277,14 @@ func run(cmd *cobra.Command, args []string) {
 
 	if err := srv.Shutdown(ctx); err != nil {
 		log.Error().Err(err).Msg("server forced to shutdown")
+	}
+
+	// Close database connection
+	if db != nil {
+		sqlDB, _ := db.DB()
+		if sqlDB != nil {
+			sqlDB.Close()
+		}
 	}
 
 	log.Info().Msg("agent exited")

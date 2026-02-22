@@ -6,23 +6,29 @@ import (
 	"strings"
 
 	"github.com/rs/zerolog/log"
+	"gorm.io/gorm"
 
+	"github.com/rocky/marstaff/internal/api"
+	"github.com/rocky/marstaff/internal/model"
 	"github.com/rocky/marstaff/internal/provider"
+	"github.com/rocky/marstaff/internal/repository"
 	"github.com/rocky/marstaff/internal/skill"
 )
 
 // Engine is the AI agent engine
 type Engine struct {
-	provider    provider.Provider
+	provider     provider.Provider
 	skillRegistry skill.Registry
-	memory      *Memory
-	tools       map[string]ToolHandler
+	memory       *PersistentMemory
+	tools        map[string]ToolHandler
+	sessionAPI   *api.SessionAPI
 }
 
 // Config is the engine configuration
 type Config struct {
 	Provider   provider.Provider
 	SkillsPath string
+	DB         *gorm.DB
 }
 
 // NewEngine creates a new agent engine
@@ -30,14 +36,21 @@ func NewEngine(cfg *Config) (*Engine, error) {
 	// Create skill registry
 	skillRegistry := skill.NewRegistry()
 
-	// Create memory
-	memory := NewMemory(nil) // TODO: pass DB connection
+	// Create persistent memory
+	var memory *PersistentMemory
+	if cfg.DB != nil {
+		memory = NewPersistentMemory(cfg.DB)
+	}
 
 	engine := &Engine{
-		provider:      cfg.Provider,
+		provider:     cfg.Provider,
 		skillRegistry: skillRegistry,
-		memory:        memory,
-		tools:         make(map[string]ToolHandler),
+		memory:       memory,
+		tools:        make(map[string]ToolHandler),
+	}
+
+	if cfg.DB != nil {
+		engine.sessionAPI = api.NewSessionAPI(cfg.DB)
 	}
 
 	// Load skills
@@ -100,14 +113,15 @@ func (e *Engine) Chat(ctx context.Context, req *ChatRequest) (*ChatResponse, err
 	// Handle tool calls
 	if len(completion.Choices[0].Message.ToolCalls) > 0 {
 		response.ToolCalls = completion.Choices[0].Message.ToolCalls
-		// Execute tools and get results...
 	}
 
 	// Save to memory
-	e.memory.SaveMessages(ctx, req.SessionID, append(req.Messages, provider.Message{
-		Role:    provider.RoleAssistant,
-		Content: response.Content,
-	})...)
+	if e.memory != nil && req.SessionID != "" {
+		e.memory.SaveMessages(ctx, req.SessionID, append(req.Messages, provider.Message{
+			Role:    provider.RoleAssistant,
+			Content: response.Content,
+		})...)
+	}
 
 	return response, nil
 }
@@ -146,6 +160,7 @@ func (e *Engine) ChatStream(ctx context.Context, req *ChatRequest) (<-chan strin
 
 		// TODO: Parse SSE stream and send chunks to channel
 		// For now, just close
+		log.Debug().Msg("streaming not fully implemented")
 	}()
 
 	return ch, nil
@@ -165,12 +180,12 @@ func (e *Engine) buildContext(ctx context.Context, req *ChatRequest) ([]provider
 	}
 
 	// Add conversation history
-	history, err := e.memory.GetHistory(ctx, req.SessionID, 10)
-	if err != nil {
-		log.Warn().Err(err).Msg("failed to get history, continuing without it")
-	} else {
-		for _, msg := range history {
-			messages = append(messages, msg)
+	if e.memory != nil && req.SessionID != "" {
+		history, err := e.memory.GetHistory(ctx, req.SessionID, 10)
+		if err != nil {
+			log.Warn().Err(err).Msg("failed to get history, continuing without it")
+		} else {
+			messages = append(messages, history...)
 		}
 	}
 
@@ -198,6 +213,11 @@ func (e *Engine) buildSystemPrompt(ctx context.Context, req *ChatRequest) string
 
 	prompt.WriteString("\nUse these skills when appropriate to help the user.")
 	prompt.WriteString("\n\nWhen a user asks for something that requires a skill, explain what you're going to do before doing it.")
+
+	// Add current time context
+	if currentTime := ctx.Value("current_time"); currentTime != nil {
+		prompt.WriteString(fmt.Sprintf("\n\nCurrent time: %s", currentTime))
+	}
 
 	return prompt.String()
 }
@@ -240,6 +260,11 @@ func (e *Engine) GetProvider() provider.Provider {
 	return e.provider
 }
 
+// GetSessionAPI returns the session API
+func (e *Engine) GetSessionAPI() *api.SessionAPI {
+	return e.sessionAPI
+}
+
 // RegisterTool registers a tool handler
 func (e *Engine) RegisterTool(name string, handler ToolHandler) {
 	e.tools[name] = handler
@@ -247,3 +272,81 @@ func (e *Engine) RegisterTool(name string, handler ToolHandler) {
 
 // ToolHandler handles tool execution
 type ToolHandler func(ctx context.Context, params map[string]interface{}) (string, error)
+
+// PersistentMemory handles persistent conversation storage
+type PersistentMemory struct {
+	messageRepo *repository.MessageRepository
+	sessionRepo *repository.SessionRepository
+}
+
+// NewPersistentMemory creates a new persistent memory instance
+func NewPersistentMemory(db *gorm.DB) *PersistentMemory {
+	return &PersistentMemory{
+		messageRepo: repository.NewMessageRepository(db),
+		sessionRepo: repository.NewSessionRepository(db),
+	}
+}
+
+// SaveMessages saves messages to the database
+func (m *PersistentMemory) SaveMessages(ctx context.Context, sessionID string, messages ...provider.Message) error {
+	if sessionID == "" {
+		return nil // Don't save messages without a session
+	}
+
+	var dbMessages []*model.Message
+	for _, msg := range messages {
+		dbMessages = append(dbMessages, &model.Message{
+			SessionID: sessionID,
+			Role:      model.MessageRole(msg.Role),
+			Content:   msg.Content,
+		})
+	}
+
+	if len(dbMessages) > 0 {
+		return m.messageRepo.CreateBatch(ctx, dbMessages)
+	}
+
+	return nil
+}
+
+// GetHistory retrieves message history for a session
+func (m *PersistentMemory) GetHistory(ctx context.Context, sessionID string, limit int) ([]provider.Message, error) {
+	if sessionID == "" {
+		return []provider.Message{}, nil
+	}
+
+	messages, err := m.messageRepo.GetBySessionID(ctx, sessionID, limit)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]provider.Message, len(messages))
+	for i, msg := range messages {
+		result[i] = provider.Message{
+			Role:    provider.MessageRole(msg.Role),
+			Content: msg.Content,
+		}
+	}
+
+	return result, nil
+}
+
+// CreateSession creates a new session
+func (m *PersistentMemory) CreateSession(ctx context.Context, userID, title, modelName string) (string, error) {
+	session := &model.Session{
+		UserID: userID,
+		Title:  title,
+		Model:  modelName,
+	}
+
+	if err := m.sessionRepo.Create(ctx, session); err != nil {
+		return "", err
+	}
+
+	return session.ID, nil
+}
+
+// GetSession retrieves a session
+func (m *PersistentMemory) GetSession(ctx context.Context, sessionID string) (*model.Session, error) {
+	return m.sessionRepo.GetByID(ctx, sessionID)
+}
