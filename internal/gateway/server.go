@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -158,7 +159,7 @@ func (s *Server) GetClientCount() int {
 }
 
 // HandleChatMessage handles chat messages from clients
-func HandleChatMessage(agentClient AgentClient) MessageHandler {
+func HandleChatMessage(agentClient *AgentClient) MessageHandler {
 	return func(client *Client, msg *Message) error {
 		if msg.Type != MessageTypeChat {
 			return nil
@@ -182,7 +183,7 @@ func HandleChatMessage(agentClient AgentClient) MessageHandler {
 		}
 
 		// Send to agent for processing
-		response, err := agentClient.SendMessage(client.UserID, client.SessionID, content)
+		response, err := agentClient.SendMessage(context.Background(), client.UserID, client.SessionID, content)
 		if err != nil {
 			return fmt.Errorf("failed to get agent response: %w", err)
 		}
@@ -203,9 +204,4 @@ func HandleChatMessage(agentClient AgentClient) MessageHandler {
 
 		return nil
 	}
-}
-
-// AgentClient represents the interface for communicating with the agent
-type AgentClient interface {
-	SendMessage(userID, sessionID, content string) (string, error)
 }

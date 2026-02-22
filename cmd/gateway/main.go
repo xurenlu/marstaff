@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -51,29 +52,87 @@ func run(cmd *cobra.Command, args []string) {
 	hub := gateway.NewHub()
 	go hub.Run()
 
+	// Create agent client
+	agentClient := gateway.NewAgentClient("http://localhost:18790")
+
 	// Create server
 	server := gateway.NewServer(hub)
 
-	// Set up message handler (for demo, echo back)
+	// Set up message handler to forward to agent
 	server.SetMessageHandler(func(client *gateway.Client, msg *gateway.Message) error {
 		log.Info().
 			Str("type", string(msg.Type)).
 			Str("user_id", msg.UserID).
+			Str("session_id", msg.SessionID).
 			Msg("received message")
 
-		// Echo the message back for testing
+		// Handle chat messages
 		if msg.Type == gateway.MessageTypeChat {
-			response := &gateway.Message{
-				Type:      gateway.MessageTypeChat,
-				SessionID: msg.SessionID,
-				UserID:    msg.UserID,
+			// Extract content
+			var content string
+			if c, ok := msg.Data.(string); ok {
+				content = c
+			} else if data, ok := msg.Data.(map[string]interface{}); ok {
+				if c, exists := data["content"]; exists {
+					if str, ok := c.(string); ok {
+						content = str
+					}
+				}
+			}
+
+			if content == "" {
+				return fmt.Errorf("invalid message content")
+			}
+
+			// Send typing indicator
+			typingMsg := &gateway.Message{
+				Type:      "typing",
+				UserID:    client.UserID,
+				SessionID: client.SessionID,
 				Data: map[string]interface{}{
-					"content": fmt.Sprintf("Echo: %v", msg.Data),
+					"typing": true,
 				},
 				Timestamp: time.Now().Unix(),
 			}
-			hub.Broadcast(response)
+			typingData, _ := json.Marshal(typingMsg)
+			client.Send <- typingData
+
+			// Send to agent (async)
+			go func() {
+				response, err := agentClient.SendMessage(context.Background(), client.UserID, client.SessionID, content)
+				if err != nil {
+					log.Error().Err(err).Msg("failed to get agent response")
+
+					// Send error back to client
+					errorMsg := &gateway.Message{
+						Type:      gateway.MessageTypeError,
+						UserID:    client.UserID,
+						SessionID: client.SessionID,
+						Data: map[string]interface{}{
+							"error": err.Error(),
+						},
+						Timestamp: time.Now().Unix(),
+					}
+					errorData, _ := json.Marshal(errorMsg)
+					client.Send <- errorData
+					return
+				}
+
+				// Send response back to client
+				respMsg := &gateway.Message{
+					Type:      gateway.MessageTypeChat,
+					UserID:    client.UserID,
+					SessionID: client.SessionID,
+					Data: map[string]interface{}{
+						"content": response,
+					},
+					Timestamp: time.Now().Unix(),
+				}
+				respData, _ := json.Marshal(respMsg)
+				client.Send <- respData
+			}()
 		}
+
 		return nil
 	})
 
