@@ -1,0 +1,61 @@
+# Marstaff Configuration
+
+server:
+  host: "0.0.0.0"
+  port: 18789
+  mode: "debug"
+  read_timeout: 60
+  write_timeout: 60
+
+database:
+  driver: "mysql"
+  host: "localhost"
+  port: 3306
+  database: "marstaff"
+  username: "marstaff"
+  password: "password"
+  max_open_conns: 25
+  max_idle_conns: 25
+  conn_max_lifetime: 300
+
+provider:
+  default: "zai"
+  zai:
+    api_key: "${ZAI_API_KEY}"
+    base_url: "https://api.z.ai"
+    model: "claude-sonnet-4-20250514"
+  qwen:
+    api_key: "${QWEN_API_KEY}"
+    base_url: "https://dashscope.aliyuncs.com"
+    model: "qwen-max"
+  openai:
+    api_key: "${OPENAI_API_KEY}"
+    base_url: "https://api.openai.com/v1"
+    model: "gpt-4"
+  fallback:
+    - "qwen"
+
+adapters:
+  - type: "telegram"
+    enabled: true
+    config:
+      bot_token: "${TELEGRAM_BOT_TOKEN}"
+  - type: "matrix"
+    enabled: false
+    config:
+      homeserver: "https://matrix.org"
+      bot_username: "${MATRIX_BOT_USERNAME}"
+      bot_password: "${MATRIX_BOT_PASSWORD}"
+  - type: "websocket"
+    enabled: true
+    config:
+      path: "/ws"
+
+skills:
+  path: "./skills"
+  auto_load: true
+
+log:
+  level: "info"
+  format: "console"
+  output: "stdout"

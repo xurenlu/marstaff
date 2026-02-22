@@ -1,0 +1,36 @@
+package model
+
+import (
+	"time"
+
+	"github.com/google/uuid"
+	"gorm.io/gorm"
+)
+
+// Session represents a conversation session (supports tree structure)
+type Session struct {
+	ID          string         `gorm:"type:varchar(36);primaryKey" json:"id"`
+	UserID      string         `gorm:"type:varchar(36);not null;index" json:"user_id"`
+	ParentID    *string        `gorm:"type:varchar(36);index" json:"parent_id,omitempty"`
+	Title       string         `gorm:"type:varchar(255)" json:"title"`
+	Model       string         `gorm:"type:varchar(100);not null" json:"model"`
+	SystemPrompt string        `gorm:"type:text" json:"system_prompt,omitempty"`
+	Metadata    string         `gorm:"type:json" json:"metadata,omitempty"`
+	CreatedAt   time.Time      `json:"created_at"`
+	UpdatedAt   time.Time      `json:"updated_at"`
+	DeletedAt   gorm.DeletedAt `gorm:"index" json:"-"`
+
+	// Relationships
+	User     *User      `gorm:"foreignKey:UserID" json:"-"`
+	Parent   *Session   `gorm:"foreignKey:ParentID" json:"parent,omitempty"`
+	Children []*Session `gorm:"foreignKey:ParentID" json:"children,omitempty"`
+	Messages []*Message `gorm:"foreignKey:SessionID" json:"messages,omitempty"`
+}
+
+// BeforeCreate creates a UUID before inserting
+func (s *Session) BeforeCreate(tx *gorm.DB) error {
+	if s.ID == "" {
+		s.ID = uuid.New().String()
+	}
+	return nil
+}
