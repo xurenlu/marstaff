@@ -63,7 +63,7 @@
         }
 
         .sidebar {
-            width: 260px;
+            width: 280px;
             background: #2a2a2a;
             border-right: 1px solid #3a3a3a;
             display: flex;
@@ -102,10 +102,11 @@
             border-radius: 6px;
             cursor: pointer;
             font-size: 0.9rem;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
             margin-bottom: 0.25rem;
+            position: relative;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
 
         .session-item:hover {
@@ -114,6 +115,32 @@
 
         .session-item.active {
             background: #4a4a4a;
+        }
+
+        .session-title {
+            flex: 1;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .session-delete {
+            opacity: 0;
+            background: none;
+            border: none;
+            color: #f44336;
+            cursor: pointer;
+            padding: 4px;
+            font-size: 1rem;
+            transition: opacity 0.2s;
+        }
+
+        .session-item:hover .session-delete {
+            opacity: 1;
+        }
+
+        .session-delete:hover {
+            color: #ff6b6b;
         }
 
         .chat {
@@ -232,6 +259,44 @@
         .typing:empty {
             display: none;
         }
+
+        .empty-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: #888;
+        }
+
+        .empty-state-icon {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+        }
+
+        /* Scrollbar styles */
+        .sessions::-webkit-scrollbar,
+        .messages::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .sessions::-webkit-scrollbar-track,
+        .messages::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .sessions::-webkit-scrollbar-thumb,
+        .messages::-webkit-scrollbar-thumb {
+            background: #3a3a3a;
+            border-radius: 3px;
+        }
+
+        .loading-sessions {
+            padding: 1rem;
+            text-align: center;
+            color: #888;
+            font-size: 0.9rem;
+        }
     </style>
 </head>
 <body>
@@ -249,7 +314,7 @@
                 <button class="new-chat-btn" id="newChatBtn">+ New Chat</button>
             </div>
             <div class="sessions" id="sessions">
-                <div class="session-item active">New Conversation</div>
+                <div class="loading-sessions">Loading sessions...</div>
             </div>
         </div>
 
@@ -273,10 +338,12 @@
     </div>
 
     <script>
+        const API_BASE = window.location.origin;
         const WS_URL = `ws://${window.location.hostname}:18789/ws`;
         let ws = null;
         let sessionId = null;
         let userId = null;
+        let sessions = [];
 
         const statusDot = document.getElementById('statusDot');
         const statusText = document.getElementById('statusText');
@@ -284,9 +351,122 @@
         const inputBox = document.getElementById('inputBox');
         const sendBtn = document.getElementById('sendBtn');
         const typingIndicator = document.getElementById('typing');
+        const sessionsContainer = document.getElementById('sessions');
+
+        // Initialize
+        init();
+
+        async function init() {
+            // Generate/get user ID
+            userId = localStorage.getItem('marstaff_user_id');
+            if (!userId) {
+                userId = 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+                localStorage.setItem('marstaff_user_id', userId);
+            }
+
+            // Connect to WebSocket
+            connect();
+
+            // Load sessions
+            await loadSessions();
+        }
+
+        async function loadSessions() {
+            try {
+                const response = await fetch(`${API_BASE}/api/sessions?user_id=${userId}&platform=web`);
+                const data = await response.json();
+                sessions = data.sessions || [];
+                renderSessions();
+            } catch (error) {
+                console.error('Failed to load sessions:', error);
+                sessionsContainer.innerHTML = '<div class="loading-sessions">Failed to load sessions</div>';
+            }
+        }
+
+        function renderSessions() {
+            if (sessions.length === 0) {
+                sessionsContainer.innerHTML = '<div class="loading-sessions">No conversations yet</div>';
+                return;
+            }
+
+            sessionsContainer.innerHTML = sessions.map(session => `
+                <div class="session-item ${session.id === sessionId ? 'active' : ''}" data-id="${session.id}">
+                    <span class="session-title">${escapeHtml(session.title || 'Untitled')}</span>
+                    <button class="session-delete" onclick="deleteSession(event, '${session.id}')">×</button>
+                </div>
+            `).join('');
+
+            // Add click listeners
+            document.querySelectorAll('.session-item').forEach(item => {
+                item.addEventListener('click', (e) => {
+                    if (!e.target.classList.contains('session-delete')) {
+                        loadSession(item.dataset.id);
+                    }
+                });
+            });
+        }
+
+        async function loadSession(id) {
+            sessionId = id;
+            renderSessions();
+
+            try {
+                const response = await fetch(`${API_BASE}/api/sessions/${id}`);
+                const data = await response.json();
+
+                // Clear and load messages
+                messagesContainer.innerHTML = '';
+
+                if (data.messages && data.messages.length > 0) {
+                    data.messages.forEach(msg => {
+                        const role = msg.role === 'user' ? 'user' : 'assistant';
+                        addMessage(role, msg.content, false);
+                    });
+                } else {
+                    // Show welcome message for empty sessions
+                    messagesContainer.innerHTML = `
+                        <div class="message assistant">
+                            <div class="message-avatar">🤖</div>
+                            <div class="message-content">
+                                Hello! I'm Marstaff, your AI assistant. How can I help you today?
+                            </div>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                console.error('Failed to load session:', error);
+            }
+        }
+
+        async function deleteSession(event, id) {
+            event.stopPropagation();
+
+            if (!confirm('Delete this conversation?')) return;
+
+            try {
+                await fetch(`${API_BASE}/api/sessions/${id}`, { method: 'DELETE' });
+                sessions = sessions.filter(s => s.id !== id);
+
+                if (sessionId === id) {
+                    sessionId = null;
+                    messagesContainer.innerHTML = `
+                        <div class="message assistant">
+                            <div class="message-avatar">🤖</div>
+                            <div class="message-content">
+                                Hello! I'm Marstaff, your AI assistant. How can I help you today?
+                            </div>
+                        </div>
+                    `;
+                }
+
+                renderSessions();
+            } catch (error) {
+                console.error('Failed to delete session:', error);
+            }
+        }
 
         function connect() {
-            ws = new WebSocket(WS_URL);
+            ws = new WebSocket(WS_URL + '?user_id=' + userId);
 
             ws.onopen = () => {
                 statusDot.className = 'status-dot';
@@ -342,7 +522,7 @@
             }
         }
 
-        function addMessage(role, content) {
+        function addMessage(role, content, scroll = true) {
             const msgDiv = document.createElement('div');
             msgDiv.className = `message ${role}`;
             msgDiv.innerHTML = `
@@ -350,7 +530,9 @@
                 <div class="message-content">${formatMessage(content)}</div>
             `;
             messagesContainer.appendChild(msgDiv);
-            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            if (scroll) {
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            }
         }
 
         function getAvatar(role) {
@@ -380,6 +562,12 @@
             return html;
         }
 
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
         function sendMessage() {
             const content = inputBox.value.trim();
             if (!content || !ws || ws.readyState !== WebSocket.OPEN) return;
@@ -390,6 +578,7 @@
 
             const message = {
                 type: 'chat',
+                user_id: userId,
                 data: {
                     content: content
                 }
@@ -398,11 +587,13 @@
             if (sessionId) {
                 message.session_id = sessionId;
             }
-            if (userId) {
-                message.user_id = userId;
-            }
 
             ws.send(JSON.stringify(message));
+
+            // Reload sessions after a delay to get the new session
+            setTimeout(() => {
+                loadSessions();
+            }, 500);
         }
 
         sendBtn.addEventListener('click', sendMessage);
@@ -422,6 +613,7 @@
         // New chat button
         document.getElementById('newChatBtn').addEventListener('click', () => {
             sessionId = null;
+            renderSessions();
             messagesContainer.innerHTML = `
                 <div class="message assistant">
                     <div class="message-avatar">🤖</div>
@@ -432,8 +624,8 @@
             `;
         });
 
-        // Connect on load
-        connect();
+        // Make deleteSession global
+        window.deleteSession = deleteSession;
     </script>
 </body>
 </html>
