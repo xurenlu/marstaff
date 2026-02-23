@@ -79,14 +79,15 @@ func NewEngine(cfg *Config) (*Engine, error) {
 
 // ChatRequest is a request for chat completion
 type ChatRequest struct {
-	SessionID   string
-	UserID      string
-	Messages    []provider.Message
-	Model       string
-	Temperature float64
-	Tools       []provider.Tool
-	PlanMode    bool // when true, LLM outputs plan only, no tool execution
-	Thinking    *provider.ThinkingParams // Thinking mode (for Zhipu GLM, etc.)
+	SessionID        string
+	UserID           string
+	Messages         []provider.Message
+	Model            string
+	Temperature      float64
+	Tools            []provider.Tool
+	PlanMode         bool // when true, LLM outputs plan only, no tool execution
+	Thinking         *provider.ThinkingParams // Thinking mode (for Zhipu GLM, etc.)
+	ProviderOverride provider.Provider       // when set (e.g. for vision), use this provider instead of default
 }
 
 // ChatResponse is the response from chat completion
@@ -115,8 +116,12 @@ func (e *Engine) Chat(ctx context.Context, req *ChatRequest) (*ChatResponse, err
 		Thinking:    req.Thinking,
 	}
 
+	p := e.provider
+	if req.ProviderOverride != nil {
+		p = req.ProviderOverride
+	}
 	// Call provider
-	completion, err := e.provider.CreateChatCompletion(ctx, providerReq)
+	completion, err := p.CreateChatCompletion(ctx, providerReq)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create completion: %w", err)
 	}
@@ -144,44 +149,108 @@ func (e *Engine) Chat(ctx context.Context, req *ChatRequest) (*ChatResponse, err
 	return response, nil
 }
 
-// ChatStream processes a chat request with streaming response
-func (e *Engine) ChatStream(ctx context.Context, req *ChatRequest) (<-chan string, error) {
-	ch := make(chan string)
+// GenerateSessionTitle generates a short summary (≤15 chars) of user message for session title
+func (e *Engine) GenerateSessionTitle(ctx context.Context, userContent string) string {
+	if userContent == "" {
+		return "新对话"
+	}
+	// Truncate for prompt to avoid token waste
+	truncated := userContent
+	if len(truncated) > 200 {
+		truncated = truncated[:200] + "..."
+	}
+	messages := []provider.Message{
+		{Role: provider.RoleSystem, Content: "请用一句话概括以下用户消息的核心意图，作为会话标题。只输出标题本身，不超过15个字，不要加引号或标点。"},
+		{Role: provider.RoleUser, Content: truncated},
+	}
+	providerReq := provider.ChatCompletionRequest{
+		Model:       "default",
+		Messages:    messages,
+		Tools:       nil,
+		Temperature: 0.3,
+	}
+	completion, err := e.provider.CreateChatCompletion(ctx, providerReq)
+	if err != nil {
+		n := 50
+		if len(truncated) < n {
+			n = len(truncated)
+		}
+		log.Warn().Err(err).Str("content", truncated[:n]).Msg("failed to generate session title")
+		return truncateForTitle(userContent)
+	}
+	title := strings.TrimSpace(completion.Choices[0].Message.Content)
+	title = strings.Trim(title, `"'""''`)
+	if title == "" {
+		return truncateForTitle(userContent)
+	}
+	if len([]rune(title)) > 20 {
+		return string([]rune(title)[:20])
+	}
+	return title
+}
 
-	// Build context
+func truncateForTitle(s string) string {
+	r := []rune(strings.TrimSpace(s))
+	if len(r) <= 15 {
+		return string(r)
+	}
+	return string(r[:15]) + "…"
+}
+
+// StreamChunkCallback is called for each content/thinking delta during streaming
+type StreamChunkCallback func(contentDelta, thinkingDelta string)
+
+// ChatStreamWithCallback processes a chat request with streaming response.
+// Calls onChunk for each content and thinking delta. Returns full response when done.
+func (e *Engine) ChatStreamWithCallback(ctx context.Context, req *ChatRequest, onChunk StreamChunkCallback) (*ChatResponse, error) {
 	messages, err := e.buildContext(ctx, req)
 	if err != nil {
-		close(ch)
 		return nil, fmt.Errorf("failed to build context: %w", err)
 	}
 
-	// Create provider request (no tools in plan mode)
 	providerReq := provider.ChatCompletionRequest{
 		Model:       req.Model,
 		Messages:    messages,
 		Tools:       e.getProviderTools(req),
 		Temperature: req.Temperature,
 		Stream:      true,
+		Thinking:    req.Thinking,
 	}
 
-	// Call provider
-	stream, err := e.provider.CreateChatCompletionStream(ctx, providerReq)
+	p := e.provider
+	if req.ProviderOverride != nil {
+		p = req.ProviderOverride
+	}
+	stream, err := p.CreateChatCompletionStream(ctx, providerReq)
 	if err != nil {
-		close(ch)
 		return nil, fmt.Errorf("failed to create stream: %w", err)
 	}
 
-	// Read stream in background
-	go func() {
-		defer close(ch)
-		defer stream.Close()
+	var cb func(provider.StreamDelta)
+	if onChunk != nil {
+		cb = func(d provider.StreamDelta) {
+			onChunk(d.Content, d.Thinking)
+		}
+	}
+	result, err := provider.ParseSSEStream(stream, cb)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse stream: %w", err)
+	}
 
-		// TODO: Parse SSE stream and send chunks to channel
-		// For now, just close
-		log.Debug().Msg("streaming not fully implemented")
-	}()
+	resp := &ChatResponse{
+		Content:  result.Content,
+		Thinking: result.Thinking,
+		ToolCalls: result.ToolCalls,
+	}
 
-	return ch, nil
+	if e.memory != nil && req.SessionID != "" && resp.Content != "" {
+		e.memory.SaveMessages(ctx, req.SessionID, append(req.Messages, provider.Message{
+			Role:    provider.RoleAssistant,
+			Content: resp.Content,
+		})...)
+	}
+
+	return resp, nil
 }
 
 // buildContext builds the message context with system prompt

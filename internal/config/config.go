@@ -8,14 +8,20 @@ import (
 
 // Config is the main configuration structure
 type Config struct {
-	Server   ServerConfig      `mapstructure:"server"`
-	Database DatabaseConfig    `mapstructure:"database"`
-	Provider ProviderConfig    `mapstructure:"provider"`
-	Media    MediaConfig       `mapstructure:"media"`
-	OSS      OSSConfig         `mapstructure:"oss"`
-	Skills   SkillsConfig      `mapstructure:"skills"`
-	Adapters []AdapterConfig   `mapstructure:"adapters"`
-	Log      LogConfig         `mapstructure:"log"`
+	Server    ServerConfig    `mapstructure:"server"`
+	Database  DatabaseConfig  `mapstructure:"database"`
+	Provider  ProviderConfig  `mapstructure:"provider"`
+	Media     MediaConfig     `mapstructure:"media"`
+	OSS       OSSConfig       `mapstructure:"oss"`
+	Workspace WorkspaceConfig `mapstructure:"workspace"`
+	Skills    SkillsConfig    `mapstructure:"skills"`
+	Adapters  []AdapterConfig `mapstructure:"adapters"`
+	Log       LogConfig       `mapstructure:"log"`
+}
+
+// WorkspaceConfig holds workspace configuration for programming mode
+type WorkspaceConfig struct {
+	BasePath string `mapstructure:"base_path"` // root dir for new projects
 }
 
 // ServerConfig holds server configuration
@@ -170,6 +176,9 @@ func setDefaults(c *Config) {
 	}
 	if c.Provider.Default == "" {
 		c.Provider.Default = "zai"
+	}
+	if c.Workspace.BasePath == "" {
+		c.Workspace.BasePath = "./workspace/projects"
 	}
 	if c.Skills.Path == "" {
 		c.Skills.Path = "./skills"

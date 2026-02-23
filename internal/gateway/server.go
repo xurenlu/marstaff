@@ -48,10 +48,9 @@ func (s *Server) ServeWebSocket(c *gin.Context) {
 	sessionID := c.Query("session_id")
 	userID := c.Query("user_id")
 
-	// Validate user ID (in production, verify auth token)
+	// Single-user mode: use fixed user ID when not provided
 	if userID == "" {
-		// For development, generate a random user ID
-		userID = "user_" + uuid.New().String()[:8]
+		userID = "default"
 	}
 
 	// Upgrade HTTP connection to WebSocket

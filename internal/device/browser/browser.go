@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"image"
 	"image/draw"
+	_ "image/jpeg"
 	_ "image/png"
 	"time"
 
@@ -49,11 +50,28 @@ func (d *Device) Connect(ctx context.Context) error {
 			chromedp.ProxyServer(d.remoteURL),
 		)
 	} else {
-		// Launch local browser
+		// Launch local browser with comprehensive options
 		allocOpts = append(allocOpts,
+			// Headless mode
 			chromedp.Flag("headless", d.headless),
-			chromedp.Flag("disable-gpu", true),
-			chromedp.Flag("no-sandbox", true),
+			chromedp.Flag("hide-scrollbars", true),
+			chromedp.Flag("mute-audio", true),
+			// Window size for consistent rendering
+			chromedp.Flag("window-size", "1920,1080"),
+			// Disable various Chrome features for stability
+			chromedp.Flag("disable-dev-shm-usage", true),
+			chromedp.Flag("disable-software-rasterizer", true),
+			chromedp.Flag("disable-extensions", true),
+			chromedp.Flag("disable-background-networking", true),
+			chromedp.Flag("disable-background-timer-throttling", true),
+			chromedp.Flag("disable-backgrounding-occluded-windows", true),
+			chromedp.Flag("disable-renderer-backgrounding", true),
+			// Prevent detection
+			chromedp.Flag("disable-blink-features", "AutomationControlled"),
+			// User agent to appear as a normal browser
+			chromedp.UserAgent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"),
+			// Ignore certificate errors for testing
+			chromedp.Flag("ignore-certificate-errors", true),
 		)
 	}
 
@@ -361,9 +379,11 @@ func (d *Device) Navigate(ctx context.Context, url string) error {
 
 	log.Debug().Str("url", url).Msg("navigating")
 
+	// Use Navigate action without waiting
 	err := chromedp.Run(d.ctx,
-		chromedp.Navigate(url),
-		chromedp.WaitReady("body"),
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			return chromedp.Navigate(url).Do(ctx)
+		}),
 	)
 	if err != nil {
 		return fmt.Errorf("navigate failed: %w", err)

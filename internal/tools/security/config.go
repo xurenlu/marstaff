@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/viper"
 )
@@ -102,6 +103,43 @@ func (c *Config) Validate() error {
 // GetConfig returns the global security configuration
 func GetConfig() *Config {
 	return globalConfig
+}
+
+// ValidateWorkDir validates that a path is a valid working directory for sessions.
+// It must exist, be a directory, and be within allowed working directories.
+func ValidateWorkDir(path string) error {
+	if path == "" {
+		return nil
+	}
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return fmt.Errorf("invalid path: %w", err)
+	}
+	info, err := os.Stat(absPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("directory does not exist: %s", path)
+		}
+		return fmt.Errorf("failed to stat path: %w", err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("path is not a directory: %s", path)
+	}
+	cfg := GetConfig()
+	if cfg == nil || len(cfg.WorkingDirectories) == 0 {
+		return nil
+	}
+	for _, wd := range cfg.WorkingDirectories {
+		absWd, err := filepath.Abs(wd)
+		if err != nil {
+			continue
+		}
+		rel, err := filepath.Rel(absWd, absPath)
+		if err == nil && !strings.HasPrefix(rel, "..") {
+			return nil
+		}
+	}
+	return fmt.Errorf("path is outside allowed working directories: %s", path)
 }
 
 // expandPaths expands ~ to home directory in paths

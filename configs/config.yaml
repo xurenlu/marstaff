@@ -19,11 +19,12 @@ database:
   conn_max_lifetime: 300
 
 provider:
-  default: "qwen"
+  default: "zai"
   zai:
-    api_key: "${ZAI_API_KEY}"
-    base_url: "https://api.z.ai"
-    model: "claude-sonnet-4-20250514"
+    api_key: "${ZHIPU_API_KEY}"
+    base_url: "https://api.z.ai/api/paas/v4"
+    model: "glm-5"
+    vision_model: "glm-4v-plus"  # 当消息含图片时使用视觉模型
   qwen:
     api_key: "${QWEN_API_KEY}"
     base_url: "https://dashscope.aliyuncs.com"
@@ -72,11 +73,15 @@ adapters:
     config:
       path: "/ws"
 
+# Workspace for programming mode (new project creation)
+workspace:
+  base_path: "./workspace/projects"
+
 skills:
   path: "./skills"
   auto_load: true
 
 log:
-  level: "info"
+  level: "debug"   # 排查时用 debug，生产用 info
   format: "console"
   output: "stdout"

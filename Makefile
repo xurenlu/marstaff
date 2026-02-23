@@ -63,6 +63,12 @@ migrate-up:
 	@echo "Running database migrations up..."
 	@echo "Please run manually: mysql -u root -p marstaff < migrations/001_init_schema.up.sql"
 
+migrate-single-user:
+	@echo "Migrating sessions to default user (single-user mode)..."
+	@mkdir -p $(BINARY_DIR)
+	$(GO) build $(GOFLAGS) -o $(BINARY_DIR)/migrate ./cmd/migrate/
+	./$(BINARY_DIR)/migrate --config configs/config.yaml
+
 migrate-down:
 	@echo "Running database migrations down..."
 	@echo "Please run manually: mysql -u root -p marstaff < migrations/001_init_schema.down.sql"
@@ -81,5 +87,6 @@ help:
 	@echo "  run           - Build and run server"
 	@echo "  docker-build  - Build Docker image"
 	@echo "  docker-run    - Run with Docker Compose"
-	@echo "  migrate-up    - Run database migrations up"
-	@echo "  migrate-down  - Run database migrations down"
+	@echo "  migrate-up        - Run database migrations up"
+	@echo "  migrate-single-user - Migrate sessions to default user"
+	@echo "  migrate-down      - Run database migrations down"
