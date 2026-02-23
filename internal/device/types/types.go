@@ -8,4 +8,5 @@ const (
 	PlatformAndroid Platform = "android"
 	PlatformMacOS   Platform = "macos"
 	PlatformLinux   Platform = "linux"
+	PlatformBrowser Platform = "browser"
 )
