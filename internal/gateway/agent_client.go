@@ -37,12 +37,23 @@ type ChatRequest struct {
 	Temperature float64        `json:"temperature,omitempty"`
 	Stream      bool           `json:"stream,omitempty"`
 	Tools       bool           `json:"tools,omitempty"`
+	PlanMode    bool           `json:"plan_mode,omitempty"`
 }
 
-// AgentMessage is a chat message for the agent API
+// AgentMessage is a chat message for the agent API (supports text and multimodal)
 type AgentMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role         string                 `json:"role"`
+	Content      string                 `json:"content,omitempty"`
+	ContentParts []ContentPart          `json:"content_parts,omitempty"`
+}
+
+// ContentPart represents a part of multimodal content
+type ContentPart struct {
+	Type     string  `json:"type,omitempty"`
+	Text     string  `json:"text,omitempty"`
+	ImageURL *struct {
+		URL string `json:"url"`
+	} `json:"image_url,omitempty"`
 }
 
 // ChatResponse is the response from the agent chat API
@@ -72,16 +83,31 @@ type Usage struct {
 
 // SendMessage sends a chat message to the agent and returns the response
 func (c *AgentClient) SendMessage(ctx context.Context, userID, sessionID, content string) (string, error) {
+	return c.SendMessageWithOptions(ctx, userID, sessionID, content, false)
+}
+
+// SendMessageWithOptions sends a chat message with optional plan mode
+func (c *AgentClient) SendMessageWithOptions(ctx context.Context, userID, sessionID, content string, planMode bool) (string, error) {
+	return c.SendMessageWithContent(ctx, userID, sessionID, content, nil, planMode)
+}
+
+// SendMessageWithContent sends a chat message with optional content parts (for images)
+func (c *AgentClient) SendMessageWithContent(ctx context.Context, userID, sessionID, content string, contentParts []ContentPart, planMode bool) (string, error) {
+	userMsg := AgentMessage{Role: "user"}
+	// Always set content (text summary)
+	userMsg.Content = content
+	// Set content_parts if available (for multimodal)
+	if len(contentParts) > 0 {
+		userMsg.ContentParts = contentParts
+	}
+
 	req := &ChatRequest{
-		SessionID: sessionID,
-		UserID:    userID,
-		Messages: []AgentMessage{
-			{
-				Role:    "user",
-				Content: content,
-			},
-		},
-		Stream: false,
+		SessionID:   sessionID,
+		UserID:      userID,
+		Messages:    []AgentMessage{userMsg},
+		Stream:      false,
+		Tools:       !planMode,
+		PlanMode:    planMode,
 	}
 
 	resp, err := c.Chat(ctx, req)

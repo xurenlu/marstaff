@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -23,6 +24,7 @@ type SessionAPI struct {
 	sessionRepo *repository.SessionRepository
 	messageRepo *repository.MessageRepository
 	memoryRepo  *repository.MemoryRepository
+	todoRepo    *repository.TodoRepository
 }
 
 // NewSessionAPI creates a new session API
@@ -32,16 +34,20 @@ func NewSessionAPI(db *gorm.DB) *SessionAPI {
 		sessionRepo: repository.NewSessionRepository(db),
 		messageRepo: repository.NewMessageRepository(db),
 		memoryRepo:  repository.NewMemoryRepository(db),
+		todoRepo:    repository.NewTodoRepository(db),
 	}
 }
 
 // CreateSessionRequest is a request to create a session
 type CreateSessionRequest struct {
-	UserID    string `json:"user_id"`
-	Platform  string `json:"platform"`
-	Title     string `json:"title,omitempty"`
-	Model     string `json:"model,omitempty"`
-	ParentID  string `json:"parent_id,omitempty"`
+	SessionID        string `json:"session_id,omitempty"`        // optional, use this ID if provided
+	UserID           string `json:"user_id"`
+	Platform         string `json:"platform"`
+	Title            string `json:"title,omitempty"`
+	Model            string `json:"model,omitempty"`
+	ParentID         string `json:"parent_id,omitempty"`
+	WorkDir          string `json:"work_dir,omitempty"`          // edit mode: restrict file/command ops to this dir
+	WorkingDirectory string `json:"working_directory,omitempty"` // alias for work_dir
 }
 
 // CreateSessionResponse is a response for creating a session
@@ -50,6 +56,7 @@ type CreateSessionResponse struct {
 	UserID    string `json:"user_id"`
 	Title     string `json:"title"`
 	Model     string `json:"model"`
+	WorkDir   string `json:"work_dir,omitempty"`
 	CreatedAt string `json:"created_at"`
 }
 
@@ -71,9 +78,13 @@ func (api *SessionAPI) CreateSession(c *gin.Context) {
 		return
 	}
 
-	// Create session
+	// Create session (use provided ID if any)
+	sessionID := req.SessionID
+	if sessionID == "" {
+		sessionID = uuid.New().String()
+	}
 	session := &model.Session{
-		ID:     uuid.New().String(),
+		ID:     sessionID,
 		UserID: user.ID,
 		Title:  req.Title,
 		Model:  req.Model,
@@ -81,6 +92,12 @@ func (api *SessionAPI) CreateSession(c *gin.Context) {
 
 	if req.ParentID != "" {
 		session.ParentID = &req.ParentID
+	}
+
+	if req.WorkDir != "" {
+		session.WorkDir = req.WorkDir
+	} else if req.WorkingDirectory != "" {
+		session.WorkDir = req.WorkingDirectory
 	}
 
 	if err := api.sessionRepo.Create(ctx, session); err != nil {
@@ -94,8 +111,19 @@ func (api *SessionAPI) CreateSession(c *gin.Context) {
 		UserID:    user.ID,
 		Title:     session.Title,
 		Model:     session.Model,
+		WorkDir:   session.WorkDir,
 		CreatedAt: session.CreatedAt.Format(time.RFC3339),
 	})
+}
+
+// messageWithParts is the response format including content_parts from metadata
+type messageWithParts struct {
+	ID           string                 `json:"id"`
+	SessionID    string                 `json:"session_id"`
+	Role         string                 `json:"role"`
+	Content      string                 `json:"content"`
+	ContentParts []ContentPartForStorage `json:"content_parts,omitempty"`
+	CreatedAt    string                 `json:"created_at"`
 }
 
 // GetSession retrieves a session
@@ -115,15 +143,36 @@ func (api *SessionAPI) GetSession(c *gin.Context) {
 		log.Error().Err(err).Msg("failed to load messages")
 	}
 
+	// Enrich messages with content_parts from metadata
+	msgsResp := make([]messageWithParts, len(messages))
+	for i, m := range messages {
+		msgsResp[i] = messageWithParts{
+			ID:        m.ID,
+			SessionID: m.SessionID,
+			Role:      string(m.Role),
+			Content:   m.Content,
+			CreatedAt: m.CreatedAt.Format(time.RFC3339),
+		}
+		if m.Metadata != "" {
+			var meta struct {
+				ContentParts []ContentPartForStorage `json:"content_parts"`
+			}
+			if json.Unmarshal([]byte(m.Metadata), &meta) == nil && len(meta.ContentParts) > 0 {
+				msgsResp[i].ContentParts = meta.ContentParts
+			}
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"id":         session.ID,
 		"user_id":    session.UserID,
 		"title":      session.Title,
 		"model":      session.Model,
+		"work_dir":   session.WorkDir,
 		"parent_id":  session.ParentID,
 		"created_at": session.CreatedAt.Format(time.RFC3339),
 		"updated_at": session.UpdatedAt.Format(time.RFC3339),
-		"messages":   messages,
+		"messages":   msgsResp,
 	})
 }
 
@@ -162,6 +211,50 @@ func (api *SessionAPI) ListSessions(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"sessions": sessions})
 }
 
+// UpdateSessionRequest is a request to update session metadata
+type UpdateSessionRequest struct {
+	Title   string `json:"title,omitempty"`
+	WorkDir string `json:"work_dir,omitempty"`
+}
+
+// UpdateSession updates session metadata (title, work_dir)
+func (api *SessionAPI) UpdateSession(c *gin.Context) {
+	sessionID := c.Param("id")
+	ctx := c.Request.Context()
+
+	var req UpdateSessionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	session, err := api.sessionRepo.GetByID(ctx, sessionID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "session not found"})
+		return
+	}
+
+	if req.Title != "" {
+		session.Title = req.Title
+	}
+	if req.WorkDir != "" {
+		session.WorkDir = req.WorkDir
+	}
+
+	if err := api.sessionRepo.Update(ctx, session); err != nil {
+		log.Error().Err(err).Msg("failed to update session")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update session"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"id":         session.ID,
+		"title":      session.Title,
+		"work_dir":   session.WorkDir,
+		"updated_at": session.UpdatedAt.Format(time.RFC3339),
+	})
+}
+
 // DeleteSession deletes a session
 func (api *SessionAPI) DeleteSession(c *gin.Context) {
 	sessionID := c.Param("id")
@@ -173,6 +266,11 @@ func (api *SessionAPI) DeleteSession(c *gin.Context) {
 	}
 
 	// Delete session
+	// Delete todos for this session
+	if err := api.todoRepo.DeleteBySessionID(ctx, sessionID); err != nil {
+		log.Warn().Err(err).Msg("failed to delete session todos")
+	}
+
 	if err := api.sessionRepo.Delete(ctx, sessionID); err != nil {
 		log.Error().Err(err).Msg("failed to delete session")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete session"})
@@ -365,9 +463,13 @@ func (api *SessionAPI) CreateSessionDirect(ctx context.Context, req *CreateSessi
 		return nil, fmt.Errorf("failed to get or create user: %w", err)
 	}
 
-	// Create session
+	// Create session (use provided ID if any)
+	sessionID := req.SessionID
+	if sessionID == "" {
+		sessionID = uuid.New().String()
+	}
 	session := &model.Session{
-		ID:     uuid.New().String(),
+		ID:     sessionID,
 		UserID: user.ID,
 		Title:  req.Title,
 		Model:  req.Model,
@@ -375,6 +477,12 @@ func (api *SessionAPI) CreateSessionDirect(ctx context.Context, req *CreateSessi
 
 	if req.ParentID != "" {
 		session.ParentID = &req.ParentID
+	}
+
+	if req.WorkDir != "" {
+		session.WorkDir = req.WorkDir
+	} else if req.WorkingDirectory != "" {
+		session.WorkDir = req.WorkingDirectory
 	}
 
 	if err := api.sessionRepo.Create(ctx, session); err != nil {
@@ -390,10 +498,23 @@ func (api *SessionAPI) CreateSessionDirect(ctx context.Context, req *CreateSessi
 	}, nil
 }
 
+// ImageURLPart is the image URL structure for content parts
+type ImageURLPart struct {
+	URL string `json:"url"`
+}
+
+// ContentPartForStorage represents image/text part for storage (matches provider format)
+type ContentPartForStorage struct {
+	Type     string        `json:"type,omitempty"`
+	Text     string        `json:"text,omitempty"`
+	ImageURL *ImageURLPart `json:"image_url,omitempty"`
+}
+
 // AddMessageRequest is a request to add a message
 type AddMessageRequest struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role         string                 `json:"role"`
+	Content      string                 `json:"content"`
+	ContentParts []ContentPartForStorage `json:"content_parts,omitempty"`
 }
 
 // AddMessageToSession adds a message to a session (helper method)
@@ -409,6 +530,11 @@ func (api *SessionAPI) AddMessageToSession(ctx context.Context, sessionID string
 		SessionID: sessionID,
 		Role:      model.MessageRole(req.Role),
 		Content:   req.Content,
+	}
+
+	if len(req.ContentParts) > 0 {
+		meta, _ := json.Marshal(map[string]interface{}{"content_parts": req.ContentParts})
+		message.Metadata = string(meta)
 	}
 
 	if err := api.messageRepo.Create(ctx, message); err != nil {

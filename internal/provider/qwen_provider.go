@@ -56,10 +56,12 @@ func (p *QwenProvider) CreateChatCompletion(ctx context.Context, req ChatComplet
 		req.Model = p.model
 	}
 
-	// Qwen uses a slightly different format
+	// Qwen compatible-mode supports OpenAI format: content can be string or array of parts
 	type QwenMessage struct {
-		Role    string `json:"role"`
-		Content string `json:"content"`
+		Role       interface{} `json:"role"`
+		Content    interface{} `json:"content,omitempty"` // string or []ContentPart for vision
+		ToolCalls  []ToolCall  `json:"tool_calls,omitempty"`
+		ToolCallID string      `json:"tool_call_id,omitempty"`
 	}
 
 	type QwenRequest struct {
@@ -82,10 +84,14 @@ func (p *QwenProvider) CreateChatCompletion(ctx context.Context, req ChatComplet
 	}
 
 	for _, msg := range req.Messages {
-		qwenReq.Messages = append(qwenReq.Messages, QwenMessage{
-			Role:    string(msg.Role),
-			Content: msg.Content,
-		})
+		content := buildQwenContent(msg)
+		qwenMsg := QwenMessage{
+			Role:       string(msg.Role),
+			Content:    content,
+			ToolCalls:  msg.ToolCalls,
+			ToolCallID: msg.ToolCallID,
+		}
+		qwenReq.Messages = append(qwenReq.Messages, qwenMsg)
 	}
 
 	body, err := json.Marshal(qwenReq)
@@ -126,6 +132,30 @@ func (p *QwenProvider) CreateChatCompletion(ctx context.Context, req ChatComplet
 	return &completion, nil
 }
 
+// buildQwenContent converts Message to Qwen content format (string or array for vision)
+func buildQwenContent(msg Message) interface{} {
+	if len(msg.ContentParts) > 0 {
+		parts := make([]map[string]interface{}, 0, len(msg.ContentParts))
+		for _, p := range msg.ContentParts {
+			part := make(map[string]interface{})
+			if p.Type == "text" {
+				part["type"] = "text"
+				part["text"] = p.Text
+			} else if p.Type == "image_url" && p.ImageURL != nil {
+				part["type"] = "image_url"
+				part["image_url"] = map[string]string{"url": p.ImageURL.URL}
+			}
+			if len(part) > 0 {
+				parts = append(parts, part)
+			}
+		}
+		if len(parts) > 0 {
+			return parts
+		}
+	}
+	return msg.Content
+}
+
 func (p *QwenProvider) CreateChatCompletionStream(ctx context.Context, req ChatCompletionRequest) (io.ReadCloser, error) {
 	if req.Model == "" {
 		req.Model = p.model
@@ -133,8 +163,10 @@ func (p *QwenProvider) CreateChatCompletionStream(ctx context.Context, req ChatC
 	req.Stream = true
 
 	type QwenMessage struct {
-		Role    string `json:"role"`
-		Content string `json:"content"`
+		Role       interface{} `json:"role"`
+		Content    interface{} `json:"content,omitempty"`
+		ToolCalls  []ToolCall  `json:"tool_calls,omitempty"`
+		ToolCallID string      `json:"tool_call_id,omitempty"`
 	}
 
 	type QwenRequest struct {
@@ -157,10 +189,14 @@ func (p *QwenProvider) CreateChatCompletionStream(ctx context.Context, req ChatC
 	}
 
 	for _, msg := range req.Messages {
-		qwenReq.Messages = append(qwenReq.Messages, QwenMessage{
-			Role:    string(msg.Role),
-			Content: msg.Content,
-		})
+		content := buildQwenContent(msg)
+		qwenMsg := QwenMessage{
+			Role:       string(msg.Role),
+			Content:    content,
+			ToolCalls:  msg.ToolCalls,
+			ToolCallID: msg.ToolCallID,
+		}
+		qwenReq.Messages = append(qwenReq.Messages, qwenMsg)
 	}
 
 	body, err := json.Marshal(qwenReq)
@@ -222,6 +258,8 @@ func (p *QwenProvider) SupportedModels() []string {
 		"qwen-plus",
 		"qwen-turbo",
 		"qwen-long",
+		"qwen-vl-max",
+		"qwen-vl-plus",
 	}
 }
 

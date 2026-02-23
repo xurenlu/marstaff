@@ -9,13 +9,14 @@ import (
 
 // Session represents a conversation session (supports tree structure)
 type Session struct {
-	ID          string         `gorm:"type:varchar(36);primaryKey" json:"id"`
-	UserID      string         `gorm:"type:varchar(36);not null;index" json:"user_id"`
-	ParentID    *string        `gorm:"type:varchar(36);index" json:"parent_id,omitempty"`
-	Title       string         `gorm:"type:varchar(255)" json:"title"`
-	Model       string         `gorm:"type:varchar(100);not null" json:"model"`
-	SystemPrompt string        `gorm:"type:text" json:"system_prompt,omitempty"`
-	Metadata    string         `gorm:"type:json" json:"metadata,omitempty"`
+	ID           string         `gorm:"type:varchar(36);primaryKey" json:"id"`
+	UserID       string         `gorm:"type:varchar(36);not null;index" json:"user_id"`
+	ParentID     *string        `gorm:"type:varchar(36);index" json:"parent_id,omitempty"`
+	Title        string         `gorm:"type:varchar(255)" json:"title"`
+	Model        string         `gorm:"type:varchar(100);not null" json:"model"`
+	WorkDir      string         `gorm:"type:varchar(1024)" json:"work_dir,omitempty"` // edit mode: restrict file ops to this dir
+	SystemPrompt string         `gorm:"type:text" json:"system_prompt,omitempty"`
+	Metadata     string         `gorm:"type:json" json:"metadata,omitempty"`
 	CreatedAt   time.Time      `json:"created_at"`
 	UpdatedAt   time.Time      `json:"updated_at"`
 	DeletedAt   gorm.DeletedAt `gorm:"index" json:"-"`

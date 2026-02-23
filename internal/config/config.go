@@ -1,6 +1,8 @@
 package config
 
 import (
+	"os"
+
 	"github.com/spf13/viper"
 )
 
@@ -9,6 +11,8 @@ type Config struct {
 	Server   ServerConfig      `mapstructure:"server"`
 	Database DatabaseConfig    `mapstructure:"database"`
 	Provider ProviderConfig    `mapstructure:"provider"`
+	Media    MediaConfig       `mapstructure:"media"`
+	OSS      OSSConfig         `mapstructure:"oss"`
 	Skills   SkillsConfig      `mapstructure:"skills"`
 	Adapters []AdapterConfig   `mapstructure:"adapters"`
 	Log      LogConfig         `mapstructure:"log"`
@@ -42,7 +46,24 @@ type ProviderConfig struct {
 	ZAI      map[string]interface{} `mapstructure:"zai"`
 	Qwen     map[string]interface{} `mapstructure:"qwen"`
 	OpenAI   map[string]interface{} `mapstructure:"openai"`
+	Zhipu    map[string]interface{} `mapstructure:"zhipu"`
 	Fallback []string               `mapstructure:"fallback"`
+}
+
+// MediaConfig holds media generation provider configuration
+type MediaConfig struct {
+	Default    string                 `mapstructure:"default"`
+	QWenWanxiang map[string]interface{} `mapstructure:"qwen_wanxiang"`
+}
+
+// OSSConfig holds Aliyun OSS configuration
+type OSSConfig struct {
+	AccessKeyID     string `mapstructure:"access_key_id"`
+	AccessKeySecret string `mapstructure:"access_key_secret"`
+	Bucket          string `mapstructure:"bucket"`
+	Endpoint        string `mapstructure:"endpoint"`
+	Domain          string `mapstructure:"domain"`
+	PathPrefix      string `mapstructure:"path_prefix"`
 }
 
 // SkillsConfig holds skills configuration
@@ -87,10 +108,44 @@ func Load(configPath string) (*Config, error) {
 		return nil, err
 	}
 
+	// Expand environment variables in provider configs
+	expandEnvInProviderConfig(config.Provider.Qwen)
+	expandEnvInProviderConfig(config.Provider.ZAI)
+	expandEnvInProviderConfig(config.Provider.OpenAI)
+	expandEnvInProviderConfig(config.Provider.Zhipu)
+
+	// Expand environment variables in media configs
+	expandEnvInProviderConfig(config.Media.QWenWanxiang)
+
+	// Expand environment variables in OSS config
+	config.OSS.AccessKeyID = expandEnv(config.OSS.AccessKeyID)
+	config.OSS.AccessKeySecret = expandEnv(config.OSS.AccessKeySecret)
+
 	// Set defaults
 	setDefaults(&config)
 
 	return &config, nil
+}
+
+// expandEnvInProviderConfig expands ${VAR} environment variables in provider config
+func expandEnvInProviderConfig(cfg map[string]interface{}) {
+	for key, value := range cfg {
+		if str, ok := value.(string); ok {
+			cfg[key] = expandEnv(str)
+		}
+	}
+}
+
+// expandEnv expands ${VAR} environment variables in a string
+func expandEnv(s string) string {
+	return os.Expand(s, func(key string) string {
+		// Try environment variable first
+		if val := os.Getenv(key); val != "" {
+			return val
+		}
+		// Return original if not found
+		return "${" + key + "}"
+	})
 }
 
 // setDefaults sets default values for configuration

@@ -12,14 +12,14 @@ database:
   host: "localhost"
   port: 3306
   database: "marstaff"
-  username: "marstaff"
-  password: "password"
+  username: "root"
+  password: ""
   max_open_conns: 25
   max_idle_conns: 25
   conn_max_lifetime: 300
 
 provider:
-  default: "zai"
+  default: "qwen"
   zai:
     api_key: "${ZAI_API_KEY}"
     base_url: "https://api.z.ai"
@@ -28,12 +28,33 @@ provider:
     api_key: "${QWEN_API_KEY}"
     base_url: "https://dashscope.aliyuncs.com"
     model: "qwen-max"
+    vision_model: "qwen-vl-max"  # 当消息含图片时自动使用视觉模型
   openai:
     api_key: "${OPENAI_API_KEY}"
     base_url: "https://api.openai.com/v1"
     model: "gpt-4"
+  zhipu:
+    api_key: "${ZHIPU_API_KEY}"
+    base_url: "https://open.bigmodel.cn/api/paas/v4"
+    model: "glm-5"
   fallback:
     - "qwen"
+
+# Media generation configuration (images and videos)
+media:
+  default: "qwen_wanxiang"
+  qwen_wanxiang:
+    api_key: "${QWEN_API_KEY}"
+    base_url: "https://dashscope.aliyuncs.com"
+
+# Aliyun OSS configuration for image upload
+oss:
+  access_key_id: "${ALIYUN_ACCESS_KEY_ID}"
+  access_key_secret: "${ALIYUN_ACCESS_KEY_SECRET}"
+  bucket: "phimhoa"
+  endpoint: "oss-accelerate.aliyuncs.com"
+  domain: "https://phimhoa.oss-accelerate.aliyuncs.com"
+  path_prefix: "uploads/"
 
 adapters:
   - type: "telegram"

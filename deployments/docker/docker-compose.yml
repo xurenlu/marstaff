@@ -41,24 +41,5 @@ services:
     command: /app/gateway --config /app/configs/config.yaml
     restart: unless-stopped
 
-  agent:
-    build:
-      context: ../..
-      dockerfile: deployments/docker/Dockerfile
-    container_name: marstaff-agent
-    environment:
-      - MARSTAFF_DATABASE_HOST=mysql
-      - MARSTAFF_DATABASE_PORT=3306
-      - MARSTAFF_DATABASE_NAME=marstaff
-      - MARSTAFF_DATABASE_USER=marstaff
-      - MARSTAFF_DATABASE_PASSWORD=password
-      - ZAI_API_KEY=${ZAI_API_KEY}
-      - QWEN_API_KEY=${QWEN_API_KEY}
-    depends_on:
-      mysql:
-        condition: service_healthy
-    command: /app/agent --config /app/configs/config.yaml
-    restart: unless-stopped
-
 volumes:
   mysql-data:

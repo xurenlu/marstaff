@@ -30,44 +30,52 @@ func NewToolExecutor(engine *agent.Engine) *ToolExecutor {
 // RegisterBuiltInTools registers device control tools with the engine
 func (e *ToolExecutor) RegisterBuiltInTools() {
 	// Windows device tools
-	e.engine.RegisterTool("device_windows_connect", e.toolWindowsConnect)
-	e.engine.RegisterTool("device_windows_tap", e.toolWindowsTap)
-	e.engine.RegisterTool("device_windows_swipe", e.toolWindowsSwipe)
-	e.engine.RegisterTool("device_windows_input", e.toolWindowsInput)
-	e.engine.RegisterTool("device_windows_key", e.toolWindowsKey)
-	e.engine.RegisterTool("device_windows_launch", e.toolWindowsLaunch)
-	e.engine.RegisterTool("device_windows_close", e.toolWindowsClose)
-	e.engine.RegisterTool("device_windows_screenshot", e.toolWindowsScreenshot)
+	e.registerTool("device_windows_connect", "Connects to a Windows device for remote control", e.toolWindowsConnect)
+	e.registerTool("device_windows_tap", "Taps on Windows screen at coordinates", e.toolWindowsTap)
+	e.registerTool("device_windows_swipe", "Swipes on Windows screen", e.toolWindowsSwipe)
+	e.registerTool("device_windows_input", "Inputs text on Windows", e.toolWindowsInput)
+	e.registerTool("device_windows_key", "Presses a key on Windows", e.toolWindowsKey)
+	e.registerTool("device_windows_launch", "Launches an app on Windows", e.toolWindowsLaunch)
+	e.registerTool("device_windows_close", "Closes an app on Windows", e.toolWindowsClose)
+	e.registerTool("device_windows_screenshot", "Takes a screenshot of Windows screen", e.toolWindowsScreenshot)
 
 	// Android device tools
-	e.engine.RegisterTool("device_android_connect", e.toolAndroidConnect)
-	e.engine.RegisterTool("device_android_tap", e.toolAndroidTap)
-	e.engine.RegisterTool("device_android_swipe", e.toolAndroidSwipe)
-	e.engine.RegisterTool("device_android_input", e.toolAndroidInput)
-	e.engine.RegisterTool("device_android_key", e.toolAndroidKey)
-	e.engine.RegisterTool("device_android_launch", e.toolAndroidLaunch)
-	e.engine.RegisterTool("device_android_close", e.toolAndroidClose)
-	e.engine.RegisterTool("device_android_screenshot", e.toolAndroidScreenshot)
+	e.registerTool("device_android_connect", "Connects to an Android device via ADB", e.toolAndroidConnect)
+	e.registerTool("device_android_tap", "Taps on Android screen at coordinates", e.toolAndroidTap)
+	e.registerTool("device_android_swipe", "Swipes on Android screen", e.toolAndroidSwipe)
+	e.registerTool("device_android_input", "Inputs text on Android", e.toolAndroidInput)
+	e.registerTool("device_android_key", "Presses a key on Android", e.toolAndroidKey)
+	e.registerTool("device_android_launch", "Launches an app on Android", e.toolAndroidLaunch)
+	e.registerTool("device_android_close", "Closes an app on Android", e.toolAndroidClose)
+	e.registerTool("device_android_screenshot", "Takes a screenshot of Android screen", e.toolAndroidScreenshot)
 
 	// Browser device tools
-	e.engine.RegisterTool("device_browser_connect", e.toolBrowserConnect)
-	e.engine.RegisterTool("device_browser_navigate", e.toolBrowserNavigate)
-	e.engine.RegisterTool("device_browser_click_element", e.toolBrowserClickElement)
-	e.engine.RegisterTool("device_browser_input_to", e.toolBrowserInputTo)
-	e.engine.RegisterTool("device_browser_get_text", e.toolBrowserGetText)
-	e.engine.RegisterTool("device_browser_get_html", e.toolBrowserGetHTML)
-	e.engine.RegisterTool("device_browser_get_url", e.toolBrowserGetURL)
-	e.engine.RegisterTool("device_browser_get_title", e.toolBrowserGetTitle)
-	e.engine.RegisterTool("device_browser_screenshot", e.toolBrowserScreenshot)
-	e.engine.RegisterTool("device_browser_eval", e.toolBrowserEval)
-	e.engine.RegisterTool("device_browser_wait_for", e.toolBrowserWaitFor)
-	e.engine.RegisterTool("device_browser_select_option", e.toolBrowserSelectOption)
-	e.engine.RegisterTool("device_browser_tap", e.toolBrowserTap)
-	e.engine.RegisterTool("device_browser_swipe", e.toolBrowserSwipe)
-	e.engine.RegisterTool("device_browser_input", e.toolBrowserInput)
-	e.engine.RegisterTool("device_browser_key", e.toolBrowserKey)
+	e.registerTool("device_browser_connect", "Connects to a browser for automation", e.toolBrowserConnect)
+	e.registerTool("device_browser_navigate", "Navigates to a URL in the browser", e.toolBrowserNavigate)
+	e.registerTool("device_browser_click_element", "Clicks an element by CSS selector", e.toolBrowserClickElement)
+	e.registerTool("device_browser_input_to", "Inputs text into an element", e.toolBrowserInputTo)
+	e.registerTool("device_browser_get_text", "Gets text from an element", e.toolBrowserGetText)
+	e.registerTool("device_browser_get_html", "Gets HTML from an element", e.toolBrowserGetHTML)
+	e.registerTool("device_browser_get_url", "Gets the current page URL", e.toolBrowserGetURL)
+	e.registerTool("device_browser_get_title", "Gets the current page title", e.toolBrowserGetTitle)
+	e.registerTool("device_browser_screenshot", "Takes a screenshot of the browser page", e.toolBrowserScreenshot)
+	e.registerTool("device_browser_eval", "Executes JavaScript in the browser", e.toolBrowserEval)
+	e.registerTool("device_browser_wait_for", "Waits for an element to appear", e.toolBrowserWaitFor)
+	e.registerTool("device_browser_select_option", "Selects an option from a select element", e.toolBrowserSelectOption)
+	e.registerTool("device_browser_tap", "Taps/clicks at coordinates in browser", e.toolBrowserTap)
+	e.registerTool("device_browser_swipe", "Scrolls in the browser", e.toolBrowserSwipe)
+	e.registerTool("device_browser_input", "Inputs text in the browser", e.toolBrowserInput)
+	e.registerTool("device_browser_key", "Presses a key in the browser", e.toolBrowserKey)
 
 	log.Info().Msg("registered device control tools")
+}
+
+// registerTool is a helper to register a tool with basic metadata
+func (e *ToolExecutor) registerTool(name, description string, handler agent.ToolHandler) {
+	e.engine.RegisterTool(name, description, map[string]interface{}{
+		"type":       "object",
+		"properties": map[string]interface{}{},
+	}, handler)
 }
 
 // toolWindowsConnect connects to a Windows device
