@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -41,24 +42,27 @@ func NewSessionAPI(db *gorm.DB) *SessionAPI {
 
 // CreateSessionRequest is a request to create a session
 type CreateSessionRequest struct {
-	SessionID        string `json:"session_id,omitempty"`        // optional, use this ID if provided
-	UserID           string `json:"user_id"`
-	Platform         string `json:"platform"`
-	Title            string `json:"title,omitempty"`
-	Model            string `json:"model,omitempty"`
-	ParentID         string `json:"parent_id,omitempty"`
-	WorkDir          string `json:"work_dir,omitempty"`          // edit mode: restrict file/command ops to this dir
-	WorkingDirectory string `json:"working_directory,omitempty"` // alias for work_dir
+	SessionID        string  `json:"session_id,omitempty"`        // optional, use this ID if provided
+	UserID           string  `json:"user_id"`
+	Platform         string  `json:"platform"`
+	Title            string  `json:"title,omitempty"`
+	Model            string  `json:"model,omitempty"`
+	ParentID         string  `json:"parent_id,omitempty"`
+	WorkDir          string  `json:"work_dir,omitempty"`          // edit mode: restrict file/command ops to this dir
+	WorkingDirectory string  `json:"working_directory,omitempty"` // alias for work_dir
+	ProjectID        string  `json:"project_id,omitempty"`        // project association (programming mode)
+	Mode             string  `json:"mode,omitempty"`              // "chat" | "programming"
 }
 
 // CreateSessionResponse is a response for creating a session
 type CreateSessionResponse struct {
-	SessionID string `json:"session_id"`
-	UserID    string `json:"user_id"`
-	Title     string `json:"title"`
-	Model     string `json:"model"`
-	WorkDir   string `json:"work_dir,omitempty"`
-	CreatedAt string `json:"created_at"`
+	SessionID string  `json:"session_id"`
+	UserID    string  `json:"user_id"`
+	Title     string  `json:"title"`
+	Model     string  `json:"model"`
+	WorkDir   string  `json:"work_dir,omitempty"`
+	ProjectID *string `json:"project_id,omitempty"`
+	CreatedAt string  `json:"created_at"`
 }
 
 // CreateSession creates a new session
@@ -95,6 +99,11 @@ func (api *SessionAPI) CreateSession(c *gin.Context) {
 		session.ParentID = &req.ParentID
 	}
 
+	// Handle project association for programming mode
+	if req.ProjectID != "" {
+		session.ProjectID = &req.ProjectID
+	}
+
 	if req.WorkDir != "" {
 		if err := security.ValidateWorkDir(req.WorkDir); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -121,6 +130,7 @@ func (api *SessionAPI) CreateSession(c *gin.Context) {
 		Title:     session.Title,
 		Model:     session.Model,
 		WorkDir:   session.WorkDir,
+		ProjectID: session.ProjectID,
 		CreatedAt: session.CreatedAt.Format(time.RFC3339),
 	})
 }
@@ -179,6 +189,7 @@ func (api *SessionAPI) GetSession(c *gin.Context) {
 		"model":      session.Model,
 		"work_dir":   session.WorkDir,
 		"parent_id":  session.ParentID,
+		"project_id": session.ProjectID,
 		"created_at": session.CreatedAt.Format(time.RFC3339),
 		"updated_at": session.UpdatedAt.Format(time.RFC3339),
 		"messages":   msgsResp,
@@ -489,6 +500,7 @@ func (api *SessionAPI) GetOrCreateSessionDirect(ctx context.Context, req *Create
 			Title:     existing.Title,
 			Model:     existing.Model,
 			WorkDir:   existing.WorkDir,
+			ProjectID: existing.ProjectID,
 			CreatedAt: existing.CreatedAt.Format(time.RFC3339),
 		}, nil
 	}
@@ -500,6 +512,143 @@ func (api *SessionAPI) GetOrCreateSessionDirect(ctx context.Context, req *Create
 // UpdateSessionTitleDirect updates session title by ID (for programmatic use, no gin context)
 func (api *SessionAPI) UpdateSessionTitleDirect(ctx context.Context, sessionID, title string) error {
 	return api.sessionRepo.UpdateTitle(ctx, sessionID, title)
+}
+
+// GetSessionSummary retrieves the conversation summary for a session
+func (api *SessionAPI) GetSessionSummary(c *gin.Context) {
+	sessionID := c.Param("id")
+	ctx := c.Request.Context()
+
+	session, err := api.sessionRepo.GetByID(ctx, sessionID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "session not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"session_id": sessionID,
+		"summary":    session.Summary,
+	})
+}
+
+// TriggerSummary manually triggers conversation summarization for a session
+func (api *SessionAPI) TriggerSummary(c *gin.Context) {
+	sessionID := c.Param("id")
+	ctx := c.Request.Context()
+
+	// Check session exists
+	_, err := api.sessionRepo.GetByID(ctx, sessionID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "session not found"})
+		return
+	}
+
+	// Get message count
+	count, err := api.messageRepo.CountBySessionID(ctx, sessionID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to count messages"})
+		return
+	}
+
+	if count < 5 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "not enough messages to summarize (need at least 5)"})
+		return
+	}
+
+	// Return async job info (actual summarization happens via background service)
+	c.JSON(http.StatusAccepted, gin.H{
+		"status":     "queued",
+		"session_id": sessionID,
+		"message":    "Summarization queued. Use GET /api/sessions/:id/summary to check result.",
+	})
+}
+
+// TriggerMemoryExtraction manually triggers memory extraction from a session
+func (api *SessionAPI) TriggerMemoryExtraction(c *gin.Context) {
+	sessionID := c.Param("id")
+	ctx := c.Request.Context()
+
+	// Check session exists
+	session, err := api.sessionRepo.GetByID(ctx, sessionID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "session not found"})
+		return
+	}
+
+	// Get message count
+	count, err := api.messageRepo.CountBySessionID(ctx, sessionID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to count messages"})
+		return
+	}
+
+	if count < 3 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "not enough messages to extract memories (need at least 3)"})
+		return
+	}
+
+	// Return async job info (actual extraction happens via background service)
+	c.JSON(http.StatusAccepted, gin.H{
+		"status":     "queued",
+		"session_id": sessionID,
+		"user_id":    session.UserID,
+		"message":    "Memory extraction queued. Use GET /api/memory/:user_id to check results.",
+	})
+}
+
+// SearchMemories searches memories by query string
+func (api *SessionAPI) SearchMemories(c *gin.Context) {
+	userID := c.Query("user_id")
+	query := c.Query("q")
+	category := c.Query("category")
+
+	if userID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "user_id is required"})
+		return
+	}
+
+	ctx := c.Request.Context()
+
+	var memories []*model.Memory
+	var err error
+
+	if query != "" {
+		// For now, get all memories and filter by keyword
+		// TODO: Implement semantic search with embeddings
+		allMemories, memErr := api.memoryRepo.GetAll(ctx, userID)
+		if memErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": memErr.Error()})
+			return
+		}
+
+		queryLower := strings.ToLower(query)
+		for _, mem := range allMemories {
+			if strings.Contains(strings.ToLower(mem.Key), queryLower) ||
+			   strings.Contains(strings.ToLower(mem.Value), queryLower) {
+				memories = append(memories, mem)
+			}
+		}
+	} else if category != "" {
+		memories, err = api.memoryRepo.GetByCategory(ctx, userID, model.MemoryCategory(category))
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	} else {
+		memories, err = api.memoryRepo.GetAll(ctx, userID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"user_id":  userID,
+		"query":    query,
+		"category": category,
+		"count":    len(memories),
+		"memories": memories,
+	})
 }
 
 // CreateSessionDirect creates a new session directly (helper method)
@@ -526,6 +675,11 @@ func (api *SessionAPI) CreateSessionDirect(ctx context.Context, req *CreateSessi
 		session.ParentID = &req.ParentID
 	}
 
+	// Handle project association for programming mode
+	if req.ProjectID != "" {
+		session.ProjectID = &req.ProjectID
+	}
+
 	if req.WorkDir != "" {
 		if err := security.ValidateWorkDir(req.WorkDir); err != nil {
 			return nil, fmt.Errorf("invalid work_dir: %w", err)
@@ -547,6 +701,8 @@ func (api *SessionAPI) CreateSessionDirect(ctx context.Context, req *CreateSessi
 		UserID:    user.ID,
 		Title:     session.Title,
 		Model:     session.Model,
+		WorkDir:   session.WorkDir,
+		ProjectID: session.ProjectID,
 		CreatedAt: session.CreatedAt.Format(time.RFC3339),
 	}, nil
 }

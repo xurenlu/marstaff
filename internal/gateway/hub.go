@@ -36,6 +36,8 @@ const (
 	MessageTypePing        MessageType = "ping"
 	MessageTypeOpenSearch  MessageType = "open_search"
 	MessageTypeSessionTitle MessageType = "session_title" // session title/summary updated
+	MessageTypeAFKTaskStatus  MessageType = "afk_task_status"  // AFK task status update
+	MessageTypeAFKNotification MessageType = "afk_notification" // AFK task notification
 )
 
 // Message represents a WebSocket message

@@ -74,3 +74,27 @@ func (r *MessageRepository) CountBySessionID(ctx context.Context, sessionID stri
 	err := r.db.WithContext(ctx).Model(&model.Message{}).Where("session_id = ?", sessionID).Count(&count).Error
 	return count, err
 }
+
+// GetBeforeID retrieves messages before a specific message ID (for summarization)
+// Used to get older messages that should be compressed into summary
+func (r *MessageRepository) GetBeforeID(ctx context.Context, sessionID string, beforeMessageID string, limit int) ([]*model.Message, error) {
+	var messages []*model.Message
+	query := r.db.WithContext(ctx).
+		Where("session_id = ? AND id < ?", sessionID, beforeMessageID).
+		Order("created_at ASC")
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+	err := query.Find(&messages).Error
+	return messages, err
+}
+
+// GetAllBySessionID retrieves all messages for a session (for summarization)
+func (r *MessageRepository) GetAllBySessionID(ctx context.Context, sessionID string) ([]*model.Message, error) {
+	var messages []*model.Message
+	err := r.db.WithContext(ctx).
+		Where("session_id = ?", sessionID).
+		Order("created_at ASC").
+		Find(&messages).Error
+	return messages, err
+}

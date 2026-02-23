@@ -90,6 +90,11 @@ adapters:
 workspace:
   base_path: "./workspace/projects"
 
+# AFK/Idle Mode Configuration
+afk:
+  enabled: true
+  scheduler_interval: 60s  # How often to check for pending tasks
+
 skills:
   path: "./skills"
   auto_load: true

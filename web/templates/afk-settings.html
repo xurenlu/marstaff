@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Notification Settings - Marstaff</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --bg-primary: #1a1a1a;
+            --bg-secondary: #2a2a2a;
+            --bg-tertiary: #3a3a3a;
+            --text-primary: #e0e0e0;
+            --text-secondary: #888;
+            --border-color: #3a3a3a;
+            --success-color: #4caf50;
+        }
+        [data-theme="light"] {
+            --bg-primary: #f5f5f5;
+            --bg-secondary: #ffffff;
+            --bg-tertiary: #e8e8e8;
+            --text-primary: #1a1a1a;
+            --text-secondary: #666;
+            --border-color: #e0e0e0;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            padding: 2rem;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        .back-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: var(--text-secondary);
+            text-decoration: none;
+            margin-bottom: 2rem;
+            font-size: 0.95rem;
+        }
+        .back-link:hover { color: var(--text-primary); }
+        h1 {
+            font-size: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+        .section {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+        .section-title {
+            font-size: 1rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .section-desc {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin-bottom: 1rem;
+        }
+        .form-group {
+            margin-bottom: 1rem;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-size: 0.9rem;
+        }
+        .form-group input {
+            width: 100%;
+            padding: 0.75rem;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-size: 0.95rem;
+        }
+        .form-group input:focus {
+            outline: none;
+            border-color: var(--success-color);
+        }
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .checkbox-group input[type="checkbox"] {
+            width: auto;
+        }
+        .checkbox-group label {
+            margin: 0;
+            cursor: pointer;
+        }
+        .row {
+            display: flex;
+            gap: 1rem;
+        }
+        .row .form-group {
+            flex: 1;
+        }
+        .btn {
+            padding: 0.6rem 1.5rem;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.95rem;
+        }
+        .btn-primary {
+            background: var(--success-color);
+            color: white;
+        }
+        .saved {
+            font-size: 0.85rem;
+            color: var(--success-color);
+            margin-top: 0.5rem;
+            display: none;
+        }
+        .saved.show { display: block; }
+        .help-text {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            margin-top: 0.3rem;
+        }
+        .channel-icon {
+            font-size: 1.2rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="javascript:history.go(-1)" class="back-link">← Back to Tasks</a>
+        <h1>🔔 Notification Settings</h1>
+
+        <form id="settingsForm">
+            <!-- Feishu Section -->
+            <div class="section">
+                <div class="section-title">
+                    <span class="channel-icon">📱</span>
+                    Feishu Bot
+                </div>
+                <div class="section-desc">
+                    Send notifications to Feishu using a webhook URL.
+                    <a href="https://open.feishu.cn/document/ukTMukTMukTM/uEjNwUjLxYDM14SM2ATN" target="_blank" style="color: var(--success-color);">Learn how to get webhook URL</a>
+                </div>
+                <div class="form-group checkbox-group">
+                    <input type="checkbox" id="feishu_enabled" name="feishu_enabled">
+                    <label for="feishu_enabled">Enable Feishu notifications</label>
+                </div>
+                <div class="form-group">
+                    <label>Webhook URL</label>
+                    <input type="url" id="feishu_webhook" name="feishu_webhook"
+                           placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/...">
+                </div>
+            </div>
+
+            <!-- Telegram Section -->
+            <div class="section">
+                <div class="section-title">
+                    <span class="channel-icon">✈️</span>
+                    Telegram Bot
+                </div>
+                <div class="section-desc">
+                    Send notifications to Telegram. Configure the bot token in server settings.
+                </div>
+                <div class="form-group checkbox-group">
+                    <input type="checkbox" id="telegram_enabled" name="telegram_enabled">
+                    <label for="telegram_enabled">Enable Telegram notifications</label>
+                </div>
+                <div class="form-group">
+                    <label>Chat ID</label>
+                    <input type="text" id="telegram_chat_id" name="telegram_chat_id"
+                           placeholder="Your Telegram chat ID">
+                    <div class="help-text">
+                        Get your chat ID from <a href="https://t.me/userinfobot" target="_blank" style="color: var(--success-color);">@userinfobot</a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Email Section -->
+            <div class="section">
+                <div class="section-title">
+                    <span class="channel-icon">📧</span>
+                    Email
+                </div>
+                <div class="section-desc">
+                    Send notifications via email using Resend or SMTP.
+                </div>
+                <div class="form-group checkbox-group">
+                    <input type="checkbox" id="email_enabled" name="email_enabled">
+                    <label for="email_enabled">Enable email notifications</label>
+                </div>
+                <div class="form-group">
+                    <label>Email Address</label>
+                    <input type="email" id="email_address" name="email_address"
+                           placeholder="your@email.com">
+                </div>
+            </div>
+
+            <!-- Web Push Section -->
+            <div class="section">
+                <div class="section-title">
+                    <span class="channel-icon">🔔</span>
+                    Web Push
+                </div>
+                <div class="section-desc">
+                    Browser push notifications (requires browser permission).
+                </div>
+                <div class="form-group checkbox-group">
+                    <input type="checkbox" id="web_push_enabled" name="web_push_enabled" disabled>
+                    <label for="web_push_enabled">Enable web push notifications</label>
+                </div>
+                <div class="help-text" style="color: var(--warning-color);">
+                    Coming soon - VAPID keys need to be configured on the server
+                </div>
+            </div>
+
+            <!-- Quiet Hours Section -->
+            <div class="section">
+                <div class="section-title">
+                    <span>🌙</span>
+                    Quiet Hours
+                </div>
+                <div class="section-desc">
+                    Suppress notifications during specific hours (e.g., sleep time).
+                </div>
+                <div class="form-group checkbox-group">
+                    <input type="checkbox" id="quiet_hours_enabled" name="quiet_hours_enabled">
+                    <label for="quiet_hours_enabled">Enable quiet hours</label>
+                </div>
+                <div class="row">
+                    <div class="form-group">
+                        <label>Start Time</label>
+                        <input type="time" id="quiet_hours_start" name="quiet_hours_start" value="22:00">
+                    </div>
+                    <div class="form-group">
+                        <label>End Time</label>
+                        <input type="time" id="quiet_hours_end" name="quiet_hours_end" value="08:00">
+                    </div>
+                </div>
+            </div>
+
+            <button type="submit" class="btn btn-primary">Save Settings</button>
+            <div class="saved" id="savedHint">✓ Settings saved successfully</div>
+        </form>
+    </div>
+
+    <script>
+        const API_BASE = window.location.origin;
+
+        // Load theme
+        const savedTheme = localStorage.getItem('marstaff_theme') || 'dark';
+        document.documentElement.setAttribute('data-theme', savedTheme);
+
+        document.addEventListener('DOMContentLoaded', loadSettings);
+
+        async function loadSettings() {
+            try {
+                const res = await fetch(`${API_BASE}/api/afk/notification-settings/default`);
+                const settings = await res.json();
+
+                document.getElementById('feishu_enabled').checked = settings.feishu_enabled;
+                document.getElementById('feishu_webhook').value = settings.feishu_webhook_url || '';
+                document.getElementById('telegram_enabled').checked = settings.telegram_enabled;
+                document.getElementById('telegram_chat_id').value = settings.telegram_chat_id || '';
+                document.getElementById('email_enabled').checked = settings.email_enabled;
+                document.getElementById('email_address').value = settings.email_address || '';
+                document.getElementById('quiet_hours_enabled').checked = settings.quiet_hours_enabled;
+                document.getElementById('quiet_hours_start').value = settings.quiet_hours_start || '22:00';
+                document.getElementById('quiet_hours_end').value = settings.quiet_hours_end || '08:00';
+            } catch (error) {
+                console.error('Failed to load settings:', error);
+            }
+        }
+
+        document.getElementById('settingsForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const payload = {
+                feishu_enabled: document.getElementById('feishu_enabled').checked,
+                feishu_webhook_url: document.getElementById('feishu_webhook').value || null,
+                telegram_enabled: document.getElementById('telegram_enabled').checked,
+                telegram_chat_id: document.getElementById('telegram_chat_id').value || null,
+                email_enabled: document.getElementById('email_enabled').checked,
+                email_address: document.getElementById('email_address').value || null,
+                quiet_hours_enabled: document.getElementById('quiet_hours_enabled').checked,
+                quiet_hours_start: document.getElementById('quiet_hours_start').value || null,
+                quiet_hours_end: document.getElementById('quiet_hours_end').value || null,
+            };
+
+            try {
+                const res = await fetch(`${API_BASE}/api/afk/notification-settings/default`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (res.ok) {
+                    const hint = document.getElementById('savedHint');
+                    hint.classList.add('show');
+                    setTimeout(() => { hint.classList.remove('show'); }, 3000);
+                } else {
+                    alert('Failed to save settings');
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        });
+
+        // Auto-disable channel fields when checkbox is unchecked
+        ['feishu', 'telegram', 'email'].forEach(channel => {
+            const checkbox = document.getElementById(`${channel}_enabled`);
+            const input = document.getElementById(`${channel === 'feishu' ? 'feishu_webhook' : channel + '_' + (channel === 'telegram' ? 'chat_id' : 'address')}`);
+            if (checkbox && input) {
+                checkbox.addEventListener('change', () => {
+                    input.disabled = !checkbox.checked;
+                    if (checkbox.checked) {
+                        input.focus();
+                    }
+                });
+                input.disabled = !checkbox.checked;
+            }
+        });
+    </script>
+</body>
+</html>

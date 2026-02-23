@@ -6,6 +6,7 @@ working_directories:
   - "/Users/rocky/Sites/marstaff"
   - "./workspace"
   - "./tmp"
+  - "."  # Allow current directory for git operations
 
 # File extension whitelist - only these extensions can be written
 allowed_extensions:
@@ -69,12 +70,12 @@ path_blacklist:
 
 # Operation limits
 limits:
-  max_read_size: 10485760      # 10MB - maximum file size to read
-  max_write_size: 5242880     # 5MB - maximum content size to write
-  max_search_results: 100     # maximum number of search results
-  max_list_depth: 10          # maximum directory depth for listing
-  command_timeout: 30         # command execution timeout in seconds
-  max_command_output: 1048576 # 1MB - maximum command output size
+  max_read_size: 10485760       # 10MB - maximum file size to read
+  max_write_size: 5242880      # 5MB - maximum content size to write
+  max_search_results: 100      # maximum number of search results
+  max_list_depth: 10           # maximum directory depth for listing
+  command_timeout: 60          # command execution timeout in seconds (increased for git operations)
+  max_command_output: 5242880  # 5MB - maximum command output size (increased for git diff/log)
 
 # Security policy switches
 policy:

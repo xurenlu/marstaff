@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -20,6 +22,7 @@ import (
 
 	"github.com/rocky/marstaff/internal/agent"
 	"github.com/rocky/marstaff/internal/api"
+	afkpkg "github.com/rocky/marstaff/internal/afk"
 	"github.com/rocky/marstaff/internal/config"
 	"github.com/rocky/marstaff/internal/device"
 	"github.com/rocky/marstaff/internal/gateway"
@@ -75,7 +78,7 @@ func run(cmd *cobra.Command, args []string) {
 		db = nil
 	} else {
 		log.Info().Msg("connected to database")
-		if err := db.AutoMigrate(&model.User{}, &model.Session{}, &model.Message{}, &model.Skill{}, &model.Memory{}, &model.TodoItem{}); err != nil {
+		if err := db.AutoMigrate(&model.User{}, &model.Session{}, &model.Message{}, &model.Skill{}, &model.Memory{}, &model.TodoItem{}, &model.Project{}, &model.Rule{}, &model.MCPServer{}, &model.MCPTool{}); err != nil {
 			log.Warn().Err(err).Msg("failed to auto migrate tables")
 		}
 	}
@@ -98,6 +101,20 @@ func run(cmd *cobra.Command, args []string) {
 					visionProviders[name] = vp
 					log.Info().Str("provider", name).Str("model", vm).Msg("vision provider registered")
 				}
+			}
+		}
+	}
+
+	// Build chat providers map (zai, qwen, gemini) for user-selectable chat engines
+	chatProviders := make(map[string]provider.Provider)
+	for _, name := range []string{"zai", "qwen", "gemini"} {
+		if provCfg := getProviderConfig(cfg, name); provCfg != nil {
+			cp, err := provider.CreateProvider(name, provCfg)
+			if err != nil {
+				log.Warn().Err(err).Str("provider", name).Msg("failed to create chat provider")
+			} else {
+				chatProviders[name] = cp
+				log.Info().Str("provider", name).Msg("chat provider registered")
 			}
 		}
 	}
@@ -169,11 +186,55 @@ func run(cmd *cobra.Command, args []string) {
 		log.Info().Msg("browser tools registered")
 	}
 
+	// Register git workflow tools
+	if toolsExecutor != nil {
+		toolsExecutor.RegisterGitTools()
+		log.Info().Msg("git workflow tools registered")
+	}
+
+	// Register install tools (skills, rules, MCP)
+	if toolsExecutor != nil {
+		installExecutor := tools.NewInstallExecutor(engine, toolsExecutor)
+		// Set API base to local server
+		installExecutor.SetAPIBase(fmt.Sprintf("http://%s:%d", cfg.Server.Host, cfg.Server.Port))
+		installExecutor.RegisterBuiltInTools()
+		log.Info().Msg("install tools registered (skills, rules, MCP)")
+	}
 
 	// Register cron tools
 	cronExecutor := tools.NewCronExecutor(engine)
 	cronExecutor.RegisterBuiltInTools()
 	log.Info().Msg("cron tools registered")
+
+	// Create AFK task scheduler and services
+	var afkScheduler *afkpkg.Scheduler
+	if db != nil {
+		afkTaskRepo := repository.NewAFKTaskRepository(db)
+		afkTaskAPI := api.NewAFKTaskAPI(db)
+
+		// Create AFK services
+		taskExecutor := afkpkg.NewTaskExecutor(engine)
+		notificationService := afkpkg.NewNotificationService(afkTaskRepo)
+
+		// Configure notification service from config/environment
+		if telegramToken := os.Getenv("TELEGRAM_BOT_TOKEN"); telegramToken != "" {
+			notificationService.SetTelegramBotToken(telegramToken)
+		}
+		if resendAPIKey := os.Getenv("RESEND_API_KEY"); resendAPIKey != "" {
+			fromEmail := os.Getenv("RESEND_FROM_EMAIL")
+			notificationService.SetResendConfig(resendAPIKey, fromEmail)
+		}
+
+		// Create and start scheduler
+		afkScheduler = afkpkg.NewScheduler(afkTaskRepo, taskExecutor, notificationService)
+		afkScheduler.Start(60 * time.Second) // Check every minute
+		log.Info().Msg("AFK task scheduler started")
+
+		// Register AFK tools
+		afkExecutor := tools.NewAFKExecutor(engine, afkTaskAPI, afkTaskRepo)
+		afkExecutor.RegisterBuiltInTools()
+		log.Info().Msg("AFK task tools registered")
+	}
 
 	registry := engine.GetSkillRegistry()
 	log.Info().Int("skills", len(registry.List())).Int("tools", len(registry.GetTools())).Msg("agent initialized")
@@ -182,6 +243,36 @@ func run(cmd *cobra.Command, args []string) {
 	var sessionAPI *api.SessionAPI
 	if db != nil {
 		sessionAPI = api.NewSessionAPI(db)
+	}
+
+	// Create summary and memory services
+	var summaryService *agent.SummaryService
+	var memoryService *agent.MemoryService
+	if db != nil {
+		messageRepo := repository.NewMessageRepository(db)
+		sessionRepo := repository.NewSessionRepository(db)
+		memoryRepo := repository.NewMemoryRepository(db)
+
+		// Create summary service
+		summaryService = agent.NewSummaryService(engine, prov, messageRepo, sessionRepo, agent.DefaultConversationSummaryConfig())
+		log.Info().Msg("Summary service initialized")
+
+		// Create memory service
+		memoryService = agent.NewMemoryService(engine, prov, memoryRepo, messageRepo, agent.DefaultMemoryConfig())
+		log.Info().Msg("Memory service initialized")
+	}
+
+	// Create project API
+	var projectAPI *api.ProjectAPI
+	if db != nil {
+		projectAPI = api.NewProjectAPI(db)
+	}
+
+	// Create skills API
+	var skillsAPI *api.SkillsAPI
+	if db != nil {
+		skillsAPI = api.NewSkillsAPI(db, cfg.Skills.Path, registry)
+		log.Info().Msg("Skills API initialized")
 	}
 
 	// Create hub and WebSocket server
@@ -222,9 +313,10 @@ func run(cmd *cobra.Command, args []string) {
 			return nil
 		}
 
-		// Parse content, content_parts, and settings (vision_provider, plan_mode, work_dir)
+		// Parse content, content_parts, and settings (provider, vision_provider, plan_mode, work_dir)
 		var content string
 		var contentParts []gateway.ContentPart
+		providerChoice := "zai" // default chat provider
 		visionProviderChoice := "qwen" // default
 		planMode := false
 		var workDirFromMsg string
@@ -264,6 +356,11 @@ func run(cmd *cobra.Command, args []string) {
 			if s, exists := data["vision_provider"]; exists {
 				if vp, ok := s.(string); ok && (vp == "qwen" || vp == "zai") {
 					visionProviderChoice = vp
+				}
+			}
+			if p, exists := data["provider"]; exists {
+				if prov, ok := p.(string); ok && (prov == "zai" || prov == "qwen" || prov == "gemini") {
+					providerChoice = prov
 				}
 			}
 			if pm, exists := data["plan_mode"]; exists {
@@ -403,7 +500,12 @@ func run(cmd *cobra.Command, args []string) {
 				Messages:    []provider.Message{{Role: provider.RoleUser, Content: content, ContentParts: provParts}},
 				PlanMode:    planMode,
 			}
-			// When message has images, use vision provider + vision_model
+			// Use selected chat provider if available (priority: user selection > vision provider for images > default)
+			if cp, ok := chatProviders[providerChoice]; ok {
+				chatReq.ProviderOverride = cp
+				log.Info().Str("provider", providerChoice).Msg("using selected chat provider")
+			}
+			// When message has images and no chat provider was selected, use vision provider + vision_model
 			hasImages := false
 			for _, p := range provParts {
 				if p.Type == "image_url" && p.ImageURL != nil {
@@ -411,7 +513,7 @@ func run(cmd *cobra.Command, args []string) {
 					break
 				}
 			}
-			if hasImages {
+			if hasImages && chatReq.ProviderOverride == nil {
 				if vp, ok := visionProviders[visionProviderChoice]; ok {
 					provCfg := getProviderConfig(cfg, visionProviderChoice)
 					if provCfg != nil {
@@ -432,6 +534,46 @@ func run(cmd *cobra.Command, args []string) {
 			}
 
 			ctx := context.WithValue(context.Background(), "current_time", time.Now().Format("2006-01-02 15:04:05"))
+
+			// Inject summary and memories into chat context (if available)
+			if summaryService != nil || memoryService != nil {
+				var contextParts []string
+
+				// Add conversation summary if exists
+				if summaryService != nil && sessionID != "" {
+					if summary, recentMsgs, err := summaryService.GetSummaryWithRecent(ctx, sessionID, 5); err == nil {
+						if summary != "" {
+							contextParts = append(contextParts, fmt.Sprintf("[对话摘要]\n%s\n", summary))
+						}
+						// Use recent messages from summary service instead of full history
+						if len(recentMsgs) > 0 {
+							chatReq.Messages = recentMsgs
+						}
+					}
+				}
+
+				// Add relevant memories
+				if memoryService != nil && client.UserID != "" {
+					// Extract keywords from user message for memory retrieval
+					query := content
+					if len(query) > 100 {
+						query = query[:100]
+					}
+					if memories, err := memoryService.RetrieveRelevantMemories(ctx, client.UserID, query, ""); err == nil {
+						if memoryText := memoryService.FormatMemoriesForPrompt(memories); memoryText != "" {
+							contextParts = append(contextParts, memoryText)
+						}
+					}
+				}
+
+				// Inject context as system message
+				if len(contextParts) > 0 {
+					contextMsg := fmt.Sprintf("[参考信息]\n%s\n请基于以上信息回答用户的问题。", strings.Join(contextParts, "\n\n"))
+					chatReq.Messages = append([]provider.Message{
+						{Role: provider.RoleSystem, Content: contextMsg},
+					}, chatReq.Messages...)
+				}
+			}
 
 			onChunk := func(contentDelta, thinkingDelta string) {
 				if thinkingDelta != "" {
@@ -469,7 +611,7 @@ func run(cmd *cobra.Command, args []string) {
 
 			response := resp.Content
 			if response == "" {
-				response = "（暂无回复）"
+				response = "（后端返回空响应，请检查 Agent 服务是否正常运行）"
 				log.Warn().Str("session_id", sessionID).Msg("agent returned empty response")
 			}
 
@@ -540,6 +682,30 @@ func run(cmd *cobra.Command, args []string) {
 					Data:     chatData,
 					Timestamp: time.Now().Unix(),
 				})
+
+				// Auto-trigger: Check if summarization is needed
+				if summaryService != nil && sessionID != "" {
+					go func(sid string) {
+						ctx := context.Background()
+						if shouldSummarize, err := summaryService.ShouldSummarize(ctx, sid); err == nil && shouldSummarize {
+							log.Info().Str("session_id", sid).Msg("auto-triggering conversation summarization")
+							if err := summaryService.SummarizeAndArchive(ctx, sid); err != nil {
+								log.Warn().Err(err).Str("session_id", sid).Msg("failed to summarize conversation")
+							}
+						}
+					}(sessionID)
+				}
+
+				// Auto-trigger: Extract and save memories
+				if memoryService != nil && sessionID != "" && client.UserID != "" {
+					go func(sid, uid string) {
+						ctx := context.Background()
+						log.Info().Str("session_id", sid).Msg("auto-triggering memory extraction")
+						if err := memoryService.ExtractAndSave(ctx, uid, sid); err != nil {
+							log.Warn().Err(err).Str("session_id", sid).Msg("failed to extract memories")
+						}
+					}(sessionID, client.UserID)
+				}
 			}
 		}()
 
@@ -568,10 +734,25 @@ func run(cmd *cobra.Command, args []string) {
 	// Web UI
 	router.Static("/static", "./web/static")
 	router.GET("/", func(c *gin.Context) {
+		c.File("./web/templates/welcome.html")
+	})
+	router.GET("/welcome", func(c *gin.Context) {
+		c.File("./web/templates/welcome.html")
+	})
+	router.GET("/chat", func(c *gin.Context) {
+		c.File("./web/templates/chat.html")
+	})
+	router.GET("/programming", func(c *gin.Context) {
 		c.File("./web/templates/chat.html")
 	})
 	router.GET("/settings", func(c *gin.Context) {
 		c.File("./web/templates/settings.html")
+	})
+	router.GET("/afk", func(c *gin.Context) {
+		c.File("./web/templates/afk.html")
+	})
+	router.GET("/afk-settings", func(c *gin.Context) {
+		c.File("./web/templates/afk-settings.html")
 	})
 	router.GET("/ws", server.ServeWebSocket)
 
@@ -588,15 +769,23 @@ func run(cmd *cobra.Command, args []string) {
 		})
 
 		apiGroup.GET("/settings", func(c *gin.Context) {
-			providers := []string{}
+			visionProvidersList := []string{}
 			for name := range visionProviders {
-				providers = append(providers, name)
+				visionProvidersList = append(visionProvidersList, name)
 			}
-			if len(providers) == 0 {
-				providers = []string{"qwen", "zai"}
+			if len(visionProvidersList) == 0 {
+				visionProvidersList = []string{"qwen", "zai"}
+			}
+			chatProvidersList := []string{}
+			for name := range chatProviders {
+				chatProvidersList = append(chatProvidersList, name)
+			}
+			if len(chatProvidersList) == 0 {
+				chatProvidersList = []string{"zai", "qwen", "gemini"}
 			}
 			c.JSON(http.StatusOK, gin.H{
-				"vision_providers": providers,
+				"vision_providers": visionProvidersList,
+				"chat_providers":   chatProvidersList,
 			})
 		})
 
@@ -696,21 +885,8 @@ func run(cmd *cobra.Command, args []string) {
 			})
 		})
 
-		apiGroup.GET("/skills", func(c *gin.Context) {
-			skills := registry.ListEnabled()
-			result := make([]gin.H, len(skills))
-			for i, s := range skills {
-				meta := s.Metadata()
-				result[i] = gin.H{
-					"id":          meta.ID,
-					"name":        meta.Name,
-					"description": meta.Description,
-					"category":    meta.Category,
-					"version":     meta.Version,
-				}
-			}
-			c.JSON(http.StatusOK, gin.H{"skills": result})
-		})
+		// Skills routes are handled by SkillsAPI below
+		// Note: SkillsAPI also provides MCP, rules, and tool management
 
 		// Workspace API for programming mode (create new project)
 		workspaceAPI := api.NewWorkspaceAPI(cfg.Workspace.BasePath)
@@ -725,9 +901,99 @@ func run(cmd *cobra.Command, args []string) {
 			sessions.DELETE("/:id", sessionAPI.DeleteSession)
 			sessions.POST("/:id/messages", sessionAPI.AddMessage)
 			sessions.GET("/:id/messages", sessionAPI.GetMessages)
+
+			// Summary and Memory endpoints
+			sessions.GET("/:id/summary", sessionAPI.GetSessionSummary)
+			sessions.POST("/:id/summarize", sessionAPI.TriggerSummary)
+			sessions.POST("/:id/extract-memories", sessionAPI.TriggerMemoryExtraction)
 		} else {
 			sessions.GET("", func(c *gin.Context) {
 				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "database not connected", "sessions": []interface{}{}})
+			})
+		}
+
+		// Memory search endpoint
+		apiGroup.GET("/memories/search", sessionAPI.SearchMemories)
+
+		// Project API
+		projects := apiGroup.Group("/projects")
+		if projectAPI != nil {
+			projects.POST("", projectAPI.CreateProject)
+			projects.GET("", projectAPI.ListProjects)
+			projects.GET("/templates", projectAPI.ListTemplates)
+			projects.GET("/:id", projectAPI.GetProject)
+			projects.PATCH("/:id", projectAPI.UpdateProject)
+			projects.DELETE("/:id", projectAPI.DeleteProject)
+			projects.GET("/:id/sessions", projectAPI.GetProjectSessions)
+		}
+
+		// Skills, Rules, and MCP API
+		if skillsAPI != nil {
+			skillsAPI.RegisterRoutes(apiGroup)
+			log.Info().Msg("Skills, Rules, and MCP API routes registered")
+		}
+
+		// AFK Task API
+		if db != nil {
+			afkTaskAPI := api.NewAFKTaskAPI(db)
+			afkTasks := apiGroup.Group("/afk/tasks")
+			{
+				afkTasks.POST("", afkTaskAPI.CreateTask)
+				afkTasks.GET("", afkTaskAPI.ListTasks)
+				afkTasks.GET("/:id", afkTaskAPI.GetTask)
+				afkTasks.PATCH("/:id", afkTaskAPI.UpdateTask)
+				afkTasks.DELETE("/:id", afkTaskAPI.DeleteTask)
+				afkTasks.GET("/:id/executions", afkTaskAPI.GetTaskExecutions)
+			}
+
+			afkSettings := apiGroup.Group("/afk/notification-settings")
+			{
+				afkSettings.GET("/:user_id", afkTaskAPI.GetNotificationSettings)
+				afkSettings.PATCH("/:user_id", afkTaskAPI.UpdateNotificationSettings)
+			}
+
+			// Test Telegram notification endpoint
+			apiGroup.POST("/afk/test-telegram", func(c *gin.Context) {
+				var req struct {
+					BotToken string `json:"bot_token"`
+					ChatID   string `json:"chat_id"`
+				}
+				if err := c.ShouldBindJSON(&req); err != nil {
+					c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+					return
+				}
+
+				// Send test message
+				url := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", req.BotToken)
+				payload := map[string]interface{}{
+					"chat_id": req.ChatID,
+					"text":    "✅ Test notification from Marstaff AFK Task System\n\nYour Telegram bot is configured correctly!",
+				}
+
+				jsonPayload, _ := json.Marshal(payload)
+				httpReq, err := http.NewRequest("POST", url, bytes.NewReader(jsonPayload))
+				if err != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+					return
+				}
+				httpReq.Header.Set("Content-Type", "application/json")
+
+				client := &http.Client{Timeout: 10 * time.Second}
+				resp, err := client.Do(httpReq)
+				if err != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+					return
+				}
+				defer resp.Body.Close()
+
+				if resp.StatusCode != http.StatusOK {
+					var result map[string]interface{}
+					json.NewDecoder(resp.Body).Decode(&result)
+					c.JSON(http.StatusBadRequest, gin.H{"error": result})
+					return
+				}
+
+				c.JSON(http.StatusOK, gin.H{"status": "success", "message": "Test notification sent"})
 			})
 		}
 
@@ -776,6 +1042,12 @@ func run(cmd *cobra.Command, args []string) {
 	<-quit
 
 	log.Info().Msg("shutting down server...")
+
+	// Stop AFK scheduler
+	if afkScheduler != nil {
+		afkScheduler.Stop()
+		log.Info().Msg("AFK task scheduler stopped")
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

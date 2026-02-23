@@ -56,6 +56,12 @@ func (e *Executor) GetValidator() *security.Validator {
 	return e.validator
 }
 
+// RegisterGitTools registers all git workflow tools
+func (e *Executor) RegisterGitTools() {
+	gitExecutor := NewGitExecutor(e.engine, e.validator)
+	gitExecutor.RegisterBuiltInTools()
+}
+
 // RegisterBuiltInTools registers all built-in file and command tools
 func (e *Executor) RegisterBuiltInTools() {
 	// read_file tool
