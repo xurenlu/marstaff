@@ -30,6 +30,19 @@ provider:
     base_url: "https://dashscope.aliyuncs.com"
     model: "qwen-max"
     vision_model: "qwen-vl-max"  # 当消息含图片时自动使用视觉模型
+  deepseek:
+    api_key: "${DEEPSEEK_API_KEY}"
+    base_url: "https://api.deepseek.com"
+    model: "deepseek-chat"
+  minimax:
+    api_key: "${MINIMAX_API_KEY}"
+    base_url: "https://api.minimax.chat/v1"
+    model: "abab6.5s-chat"
+    group_id: "${MINIMAX_GROUP_ID}"  # Optional
+  gemini:
+    api_key: "${GEMINI_API_KEY}"
+    base_url: "https://generativelanguage.googleapis.com/v1beta/openai"
+    model: "gemini-2.0-flash-exp"
   openai:
     api_key: "${OPENAI_API_KEY}"
     base_url: "https://api.openai.com/v1"
