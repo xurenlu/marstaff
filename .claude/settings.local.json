@@ -11,7 +11,8 @@
       "Bash(go list:*)",
       "Bash(go mod tidy:*)",
       "Bash(go doc:*)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Bash(find:*)"
     ],
     "deny": [],
     "ask": []

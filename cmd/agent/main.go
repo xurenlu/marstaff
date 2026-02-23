@@ -19,6 +19,7 @@ import (
 	"github.com/rocky/marstaff/internal/agent"
 	"github.com/rocky/marstaff/internal/api"
 	"github.com/rocky/marstaff/internal/config"
+	"github.com/rocky/marstaff/internal/device"
 	"github.com/rocky/marstaff/internal/model"
 	"github.com/rocky/marstaff/internal/provider"
 )
@@ -105,6 +106,10 @@ func run(cmd *cobra.Command, args []string) {
 	// Create and register tool executor
 	executor := agent.NewExecutor(engine)
 	executor.RegisterBuiltInTools()
+
+	// Create and register device control tools
+	deviceToolExecutor := device.NewToolExecutor(engine)
+	deviceToolExecutor.RegisterBuiltInTools()
 
 	// Log loaded skills
 	registry := engine.GetSkillRegistry()
