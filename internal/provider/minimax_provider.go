@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"time"
 
 	"github.com/rs/zerolog/log"
 )
@@ -47,7 +46,8 @@ func NewMiniMaxProvider(config map[string]interface{}) (Provider, error) {
 		model:   model,
 		groupID: groupID,
 		httpClient: &http.Client{
-			Timeout: 60 * time.Second,
+			// No timeout - rely on context timeout for streaming requests
+			// The context is passed via http.NewRequestWithContext
 		},
 	}, nil
 }

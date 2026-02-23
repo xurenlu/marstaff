@@ -75,3 +75,13 @@ func (r *SessionRepository) UpdateTitle(ctx context.Context, id, title string) e
 func (r *SessionRepository) UpdateWorkDir(ctx context.Context, id, workDir string) error {
 	return r.db.WithContext(ctx).Model(&model.Session{}).Where("id = ?", id).Update("work_dir", workDir).Error
 }
+
+// UpdateSummary updates the conversation summary for a session
+func (r *SessionRepository) UpdateSummary(ctx context.Context, id, summary string) error {
+	return r.db.WithContext(ctx).Model(&model.Session{}).Where("id = ?", id).Update("summary", summary).Error
+}
+
+// GetDB returns the underlying DB for direct queries
+func (r *SessionRepository) GetDB() *gorm.DB {
+	return r.db
+}

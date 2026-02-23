@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"time"
 
 	"github.com/rs/zerolog/log"
 )
@@ -42,7 +41,8 @@ func NewZAIProvider(config map[string]interface{}) (Provider, error) {
 		baseURL: baseURL,
 		model:   model,
 		httpClient: &http.Client{
-			Timeout: 60 * time.Second,
+			// No timeout - rely on context timeout for streaming requests
+			// The context is passed via http.NewRequestWithContext
 		},
 	}, nil
 }

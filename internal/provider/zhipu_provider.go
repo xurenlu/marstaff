@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"time"
 
 	"github.com/rs/zerolog/log"
 )
@@ -116,7 +115,8 @@ func NewZhipuProvider(config map[string]interface{}) (Provider, error) {
 		baseURL: baseURL,
 		model:   model,
 		httpClient: &http.Client{
-			Timeout: 120 * time.Second, // Longer timeout for thinking mode
+			// No timeout - rely on context timeout for streaming requests
+			// The context is passed via http.NewRequestWithContext
 		},
 	}, nil
 }

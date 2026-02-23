@@ -237,3 +237,43 @@ func (l *Loader) Load(skillID string) (Skill, error) {
 func (l *Loader) Reload() ([]Skill, error) {
 	return l.LoadAll()
 }
+
+// ParseSkillContent parses a skill from markdown content string
+func ParseSkillContent(content []byte) (*SkillMetadata, error) {
+	metadata, _, err := parseFrontMatterFromContent(string(content))
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse front matter: %w", err)
+	}
+
+	// Parse metadata
+	var meta SkillMetadata
+	if err := yaml.Unmarshal([]byte(metadata), &meta); err != nil {
+		return nil, fmt.Errorf("failed to parse metadata: %w", err)
+	}
+
+	// Set ID from name if not provided
+	if meta.ID == "" {
+		meta.ID = strings.ToLower(strings.ReplaceAll(meta.Name, " ", "-"))
+	}
+
+	return &meta, nil
+}
+
+// parseFrontMatterFromContent parses YAML front matter from markdown content
+func parseFrontMatterFromContent(content string) (string, string, error) {
+	// Check for front matter delimiter
+	if !strings.HasPrefix(content, "---") {
+		return "", content, nil
+	}
+
+	// Find the end delimiter
+	parts := strings.SplitN(content, "---", 3)
+	if len(parts) < 3 {
+		return "", "", fmt.Errorf("invalid front matter format")
+	}
+
+	metadata := strings.TrimSpace(parts[1])
+	body := strings.TrimSpace(parts[2])
+
+	return metadata, body, nil
+}

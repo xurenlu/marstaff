@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AFK Tasks - Marstaff</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --bg-primary: #1a1a1a;
+            --bg-secondary: #2a2a2a;
+            --bg-tertiary: #3a3a3a;
+            --text-primary: #e0e0e0;
+            --text-secondary: #888;
+            --border-color: #3a3a3a;
+            --success-color: #4caf50;
+            --warning-color: #ff9800;
+            --error-color: #f44336;
+            --info-color: #2196f3;
+        }
+        [data-theme="light"] {
+            --bg-primary: #f5f5f5;
+            --bg-secondary: #ffffff;
+            --bg-tertiary: #e8e8e8;
+            --text-primary: #1a1a1a;
+            --text-secondary: #666;
+            --border-color: #e0e0e0;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            padding: 2rem;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+        }
+        .header h1 {
+            font-size: 1.8rem;
+        }
+        .nav-links {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+        }
+        .nav-links a {
+            color: var(--text-secondary);
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            transition: background 0.2s;
+        }
+        .nav-links a:hover {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+        }
+        .btn {
+            padding: 0.6rem 1.2rem;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: opacity 0.2s, transform 0.1s;
+        }
+        .btn:active { transform: scale(0.98); }
+        .btn-primary {
+            background: var(--success-color);
+            color: white;
+        }
+        .btn-secondary {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+        }
+        .btn-danger {
+            background: var(--error-color);
+            color: white;
+        }
+        .btn:hover { opacity: 0.9; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-sm { padding: 0.4rem 0.8rem; font-size: 0.85rem; }
+
+        .task-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 1.5rem;
+        }
+        .task-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 1.5rem;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .task-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        }
+        .task-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 1rem;
+        }
+        .task-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+        .task-status {
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            font-weight: 600;
+        }
+        .status-active { background: rgba(76, 175, 80, 0.2); color: var(--success-color); }
+        .status-paused { background: rgba(255, 152, 0, 0.2); color: var(--warning-color); }
+        .status-disabled { background: rgba(128, 128, 128, 0.2); color: #888; }
+        .status-error { background: rgba(244, 67, 54, 0.2); color: var(--error-color); }
+        .status-completed { background: rgba(33, 150, 243, 0.2); color: var(--info-color); }
+
+        .task-info {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.5rem;
+        }
+        .task-description {
+            font-size: 0.9rem;
+            color: var(--text-primary);
+            margin-bottom: 1rem;
+            line-height: 1.4;
+        }
+        .task-actions {
+            display: flex;
+            gap: 0.5rem;
+            margin-top: 1rem;
+            flex-wrap: wrap;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.7);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal.active { display: flex; }
+        .modal-content {
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            padding: 2rem;
+            max-width: 600px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+        }
+        .modal-header h2 { font-size: 1.5rem; }
+        .close-btn {
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            color: var(--text-secondary);
+            cursor: pointer;
+        }
+        .form-group {
+            margin-bottom: 1.2rem;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-size: 0.9rem;
+            font-weight: 500;
+        }
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            padding: 0.75rem;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-size: 0.95rem;
+        }
+        .form-group input:focus,
+        .form-group select:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: var(--success-color);
+        }
+        .form-group small {
+            display: block;
+            margin-top: 0.3rem;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+        }
+        .checkbox-group {
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+        .checkbox-group label {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            cursor: pointer;
+        }
+        .checkbox-group input[type="checkbox"] {
+            width: auto;
+        }
+        .empty-state {
+            text-align: center;
+            padding: 4rem 2rem;
+            color: var(--text-secondary);
+        }
+        .empty-state h3 {
+            font-size: 1.2rem;
+            margin-bottom: 0.5rem;
+            color: var(--text-primary);
+        }
+        .empty-state p {
+            margin-bottom: 1.5rem;
+        }
+        .type-badge {
+            display: inline-block;
+            padding: 0.2rem 0.6rem;
+            background: var(--bg-tertiary);
+            border-radius: 4px;
+            font-size: 0.75rem;
+            margin-right: 0.5rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📋 AFK Tasks</h1>
+            <div class="nav-links">
+                <a href="/">Chat</a>
+                <a href="/settings">Settings</a>
+                <button class="btn btn-secondary" onclick="openSettings()">🔔 Notifications</button>
+                <button class="btn btn-primary" onclick="openCreateModal()">+ New Task</button>
+            </div>
+        </div>
+
+        <div id="taskList" class="task-grid">
+            <div class="empty-state">
+                <p>Loading tasks...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create Task Modal -->
+    <div id="createModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Create AFK Task</h2>
+                <button class="close-btn" onclick="closeCreateModal()">&times;</button>
+            </div>
+            <form id="createForm">
+                <div class="form-group">
+                    <label>Task Name *</label>
+                    <input type="text" name="name" required placeholder="e.g., Stock Price Alert">
+                </div>
+                <div class="form-group">
+                    <label>Description</label>
+                    <textarea name="description" rows="2" placeholder="What does this task do?"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Task Type *</label>
+                    <select name="task_type" required onchange="toggleTaskTypeFields()">
+                        <option value="scheduled">Scheduled (Cron-based)</option>
+                        <option value="ai_driven">AI-Driven Analysis</option>
+                        <option value="event_based">Event-Based (File/API Watch)</option>
+                    </select>
+                </div>
+
+                <!-- Scheduled Task Fields -->
+                <div id="scheduledFields">
+                    <div class="form-group">
+                        <label>Cron Expression</label>
+                        <input type="text" name="cron_expression" placeholder="*/5 * * * * (every 5 min)">
+                        <small>Format: minute hour day month weekday</small>
+                    </div>
+                    <div class="form-group">
+                        <label>Event Type</label>
+                        <select name="event_type" onchange="toggleEventTypeFields()">
+                            <option value="">None (just execute on schedule)</option>
+                            <option value="stock_price">Stock Price Check</option>
+                            <option value="api_check">API Response Check</option>
+                            <option value="news_search">News Search</option>
+                        </select>
+                    </div>
+                    <div id="stockPriceFields" style="display:none">
+                        <div class="form-group">
+                            <label>Stock Symbol</label>
+                            <input type="text" name="symbol" placeholder="AAPL">
+                        </div>
+                        <div class="form-group">
+                            <label>Threshold</label>
+                            <input type="number" name="threshold" step="0.01" placeholder="200">
+                        </div>
+                        <div class="form-group">
+                            <label>Comparison</label>
+                            <select name="comparison">
+                                <option value="gt">Greater than (&gt;)</option>
+                                <option value="lt">Less than (&lt;)</option>
+                                <option value="eq">Equal to</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Event-based Fields -->
+                <div id="eventBasedFields" style="display:none">
+                    <div class="form-group">
+                        <label>Event Type</label>
+                        <select name="event_type" onchange="toggleEventTypeFields()">
+                            <option value="file_change">File Change Detection</option>
+                            <option value="log_pattern">Log Pattern Match</option>
+                        </select>
+                    </div>
+                    <div id="fileWatchFields">
+                        <div class="form-group">
+                            <label>File Path to Watch</label>
+                            <input type="text" name="watch_path" placeholder="/var/log/app.log">
+                        </div>
+                        <div id="logPatternFields" style="display:none">
+                            <div class="form-group">
+                                <label>Pattern to Match</label>
+                                <input type="text" name="pattern" placeholder="ERROR|CRITICAL">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- AI-driven Fields -->
+                <div id="aiDrivenFields" style="display:none">
+                    <div class="form-group">
+                        <label>AI Prompt</label>
+                        <textarea name="ai_prompt" rows="3" placeholder="Ask the AI to analyze something..."></textarea>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Notification Channels</label>
+                    <div class="checkbox-group">
+                        <label><input type="checkbox" name="channels" value="feishu"> Feishu</label>
+                        <label><input type="checkbox" name="channels" value="telegram"> Telegram</label>
+                        <label><input type="checkbox" name="channels" value="email"> Email</label>
+                        <label><input type="checkbox" name="channels" value="web_push"> Web Push</label>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Notification Message</label>
+                    <textarea name="notify_message" rows="2" placeholder="Task '{{.TaskName}}' triggered at {{.ExecutionTime}}"></textarea>
+                    <small>Variables: {{.TaskName}}, {{.Status}}, {{.ExecutionTime}}</small>
+                </div>
+                <div style="display: flex; gap: 1rem; margin-top: 1.5rem;">
+                    <button type="button" class="btn btn-secondary" onclick="closeCreateModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Create Task</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = window.location.origin;
+
+        // Load theme
+        const savedTheme = localStorage.getItem('marstaff_theme') || 'dark';
+        document.documentElement.setAttribute('data-theme', savedTheme);
+
+        // Load tasks on page load
+        document.addEventListener('DOMContentLoaded', loadTasks);
+
+        async function loadTasks() {
+            try {
+                const res = await fetch(`${API_BASE}/api/afk/tasks?user_id=default`);
+                const data = await res.json();
+
+                if (data.tasks && data.tasks.length > 0) {
+                    renderTasks(data.tasks);
+                } else {
+                    document.getElementById('taskList').innerHTML = `
+                        <div class="empty-state">
+                            <h3>No AFK tasks yet</h3>
+                            <p>Create your first background monitoring task to get started.</p>
+                            <button class="btn btn-primary" onclick="openCreateModal()">+ Create Task</button>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                console.error('Failed to load tasks:', error);
+                document.getElementById('taskList').innerHTML = `
+                    <div class="empty-state">
+                        <p>Failed to load tasks. Please refresh the page.</p>
+                    </div>
+                `;
+            }
+        }
+
+        function renderTasks(tasks) {
+            const html = tasks.map(task => {
+                const statusClass = `status-${task.status}`;
+                const statusIcon = {
+                    'active': '🟢',
+                    'paused': '⏸️',
+                    'disabled': '⏹️',
+                    'error': '❌',
+                    'completed': '✅'
+                }[task.status] || '⚪';
+
+                const typeLabel = {
+                    'scheduled': 'Scheduled',
+                    'ai_driven': 'AI Analysis',
+                    'event_based': 'Event Watch'
+                }[task.task_type] || task.task_type;
+
+                const nextExec = task.next_execution_time ? new Date(task.next_execution_time).toLocaleString() : 'N/A';
+
+                return `
+                    <div class="task-card">
+                        <div class="task-header">
+                            <div class="task-title">${escapeHtml(task.name)}</div>
+                            <span class="task-status ${statusClass}">${statusIcon} ${task.status}</span>
+                        </div>
+                        <div class="task-info"><span class="type-badge">${typeLabel}</span></div>
+                        <div class="task-info">Executions: ${task.execution_count}</div>
+                        <div class="task-info">Next: ${nextExec}</div>
+                        ${task.description ? `<div class="task-description">${escapeHtml(task.description)}</div>` : ''}
+                        <div class="task-actions">
+                            <button class="btn btn-secondary btn-sm" onclick="viewTask('${task.id}')">View</button>
+                            ${task.status === 'active' ?
+                                `<button class="btn btn-secondary btn-sm" onclick="pauseTask('${task.id}')">Pause</button>` :
+                                `<button class="btn btn-primary btn-sm" onclick="resumeTask('${task.id}')">Resume</button>`
+                            }
+                            <button class="btn btn-danger btn-sm" onclick="deleteTask('${task.id}')">Delete</button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            document.getElementById('taskList').innerHTML = html;
+        }
+
+        function openCreateModal() {
+            document.getElementById('createModal').classList.add('active');
+        }
+
+        function closeCreateModal() {
+            document.getElementById('createModal').classList.remove('active');
+            document.getElementById('createForm').reset();
+        }
+
+        function toggleTaskTypeFields() {
+            const taskType = document.querySelector('select[name="task_type"]').value;
+            document.getElementById('scheduledFields').style.display = taskType === 'scheduled' ? 'block' : 'none';
+            document.getElementById('eventBasedFields').style.display = taskType === 'event_based' ? 'block' : 'none';
+            document.getElementById('aiDrivenFields').style.display = taskType === 'ai_driven' ? 'block' : 'none';
+        }
+
+        function toggleEventTypeFields() {
+            const eventType = document.querySelector('select[name="event_type"]').value;
+            document.getElementById('stockPriceFields').style.display = eventType === 'stock_price' ? 'block' : 'none';
+            document.getElementById('logPatternFields').style.display = eventType === 'log_pattern' ? 'block' : 'none';
+        }
+
+        document.getElementById('createForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const taskType = formData.get('task_type');
+
+            const trigger = { type: taskType };
+
+            if (taskType === 'scheduled') {
+                trigger.cron_expression = formData.get('cron_expression') || '0 * * * *';
+                trigger.event_type = formData.get('event_type');
+
+                if (formData.get('event_type') === 'stock_price') {
+                    trigger.event_config = {
+                        type: 'stock_price',
+                        symbol: formData.get('symbol')
+                    };
+                    trigger.comparison_type = formData.get('comparison');
+                    trigger.threshold_value = parseFloat(formData.get('threshold')) || 0;
+                }
+            } else if (taskType === 'event_based') {
+                trigger.event_type = formData.get('event_type');
+                trigger.watch_path = formData.get('watch_path');
+                trigger.pattern = formData.get('pattern');
+            } else if (taskType === 'ai_driven') {
+                trigger.ai_prompt = formData.get('ai_prompt');
+            }
+
+            const channels = [];
+            document.querySelectorAll('input[name="channels"]:checked').forEach(cb => {
+                channels.push(cb.value);
+            });
+
+            const payload = {
+                name: formData.get('name'),
+                description: formData.get('description'),
+                task_type: taskType,
+                trigger_config: trigger,
+                action_config: {
+                    notify_action: {
+                        enabled: true,
+                        message: formData.get('notify_message'),
+                        channels: channels.length > 0 ? channels : ['feishu']
+                    }
+                }
+            };
+
+            try {
+                const res = await fetch(`${API_BASE}/api/afk/tasks?user_id=default`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (res.ok) {
+                    closeCreateModal();
+                    loadTasks();
+                } else {
+                    const err = await res.json();
+                    alert('Failed to create task: ' + (err.error || 'Unknown error'));
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        });
+
+        async function pauseTask(taskId) {
+            await updateTaskStatus(taskId, 'paused');
+        }
+
+        async function resumeTask(taskId) {
+            await updateTaskStatus(taskId, 'active');
+        }
+
+        async function updateTaskStatus(taskId, status) {
+            try {
+                const res = await fetch(`${API_BASE}/api/afk/tasks/${taskId}?user_id=default`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status })
+                });
+                if (res.ok) {
+                    loadTasks();
+                } else {
+                    alert('Failed to update task');
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+
+        async function deleteTask(taskId) {
+            if (!confirm('Delete this task? This action cannot be undone.')) return;
+
+            try {
+                const res = await fetch(`${API_BASE}/api/afk/tasks/${taskId}?user_id=default`, {
+                    method: 'DELETE'
+                });
+                if (res.ok) {
+                    loadTasks();
+                } else {
+                    alert('Failed to delete task');
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+
+        async function viewTask(taskId) {
+            try {
+                const res = await fetch(`${API_BASE}/api/afk/tasks/${taskId}?user_id=default`);
+                const task = await res.json();
+                alert(JSON.stringify(task, null, 2));
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+
+        function openSettings() {
+            window.location.href = '/afk-settings';
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Close modal on escape key
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') closeCreateModal();
+        });
+
+        // Close modal on backdrop click
+        document.getElementById('createModal').addEventListener('click', (e) => {
+            if (e.target === document.getElementById('createModal')) {
+                closeCreateModal();
+            }
+        });
+    </script>
+</body>
+</html>

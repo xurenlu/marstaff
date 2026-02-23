@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Welcome - Marstaff</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg-primary: #0a0a0a;
+            --bg-secondary: #141414;
+            --bg-tertiary: #1c1c1c;
+            --text-primary: #ededed;
+            --text-secondary: #a1a1aa;
+            --text-muted: #71717a;
+            --border-color: #27272a;
+            --accent-chat: #3b82f6;
+            --accent-chat-hover: #2563eb;
+            --accent-programming: #10b981;
+            --accent-programming-hover: #059669;
+            --accent-afk: #f59e0b;
+            --accent-afk-hover: #d97706;
+            --shadow-lg: 0 10px 40px rgba(0, 0, 0, 0.5);
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 900px;
+            width: 100%;
+            text-align: center;
+        }
+
+        .logo {
+            margin-bottom: 20px;
+        }
+
+        .logo h1 {
+            font-size: 3rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--accent-chat), var(--accent-programming), var(--accent-afk));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .tagline {
+            color: var(--text-secondary);
+            font-size: 1.2rem;
+            margin-bottom: 50px;
+        }
+
+        .mode-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 25px;
+            margin-bottom: 40px;
+        }
+
+        .mode-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 35px 25px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-align: left;
+        }
+
+        .mode-card:hover {
+            transform: translateY(-4px);
+            box-shadow: var(--shadow-lg);
+        }
+
+        .mode-card.chat {
+            border-color: rgba(59, 130, 246, 0.3);
+        }
+
+        .mode-card.chat:hover {
+            border-color: var(--accent-chat);
+            box-shadow: 0 10px 40px rgba(59, 130, 246, 0.2);
+        }
+
+        .mode-card.programming {
+            border-color: rgba(16, 185, 129, 0.3);
+        }
+
+        .mode-card.programming:hover {
+            border-color: var(--accent-programming);
+            box-shadow: 0 10px 40px rgba(16, 185, 129, 0.2);
+        }
+
+        .mode-card.afk {
+            border-color: rgba(245, 158, 11, 0.3);
+        }
+
+        .mode-card.afk:hover {
+            border-color: var(--accent-afk);
+            box-shadow: 0 10px 40px rgba(245, 158, 11, 0.2);
+        }
+
+        .mode-icon {
+            width: 56px;
+            height: 56px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 18px;
+            font-size: 26px;
+        }
+
+        .mode-card.chat .mode-icon {
+            background: rgba(59, 130, 246, 0.15);
+            color: var(--accent-chat);
+        }
+
+        .mode-card.programming .mode-icon {
+            background: rgba(16, 185, 129, 0.15);
+            color: var(--accent-programming);
+        }
+
+        .mode-card.afk .mode-icon {
+            background: rgba(245, 158, 11, 0.15);
+            color: var(--accent-afk);
+        }
+
+        .mode-card h2 {
+            font-size: 1.35rem;
+            margin-bottom: 10px;
+            font-weight: 600;
+        }
+
+        .mode-card p {
+            color: var(--text-secondary);
+            line-height: 1.6;
+            margin-bottom: 16px;
+            font-size: 0.95rem;
+        }
+
+        .feature-list {
+            list-style: none;
+            margin-top: 16px;
+        }
+
+        .feature-list li {
+            color: var(--text-muted);
+            font-size: 0.85rem;
+            padding: 5px 0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .feature-list li::before {
+            content: '→';
+            color: var(--text-secondary);
+        }
+
+        .mode-card.chat .feature-list li::before {
+            color: var(--accent-chat);
+        }
+
+        .mode-card.programming .feature-list li::before {
+            color: var(--accent-programming);
+        }
+
+        .mode-card.afk .feature-list li::before {
+            color: var(--accent-afk);
+        }
+
+        .footer {
+            margin-top: 50px;
+            color: var(--text-muted);
+            font-size: 0.85rem;
+        }
+
+        .footer a {
+            color: var(--text-secondary);
+            text-decoration: none;
+        }
+
+        .footer a:hover {
+            color: var(--text-primary);
+        }
+
+        @media (max-width: 768px) {
+            .logo h1 {
+                font-size: 2rem;
+            }
+
+            .tagline {
+                font-size: 1rem;
+            }
+
+            .mode-cards {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">
+            <h1>Marstaff</h1>
+        </div>
+        <p class="tagline">选择模式开始使用 / Choose your mode</p>
+
+        <div class="mode-cards">
+            <!-- Chat Mode Card -->
+            <div class="mode-card chat" onclick="selectMode('chat')">
+                <div class="mode-icon">💬</div>
+                <h2>聊天模式</h2>
+                <p>Casual conversations and quick questions. Perfect for general queries.</p>
+                <ul class="feature-list">
+                    <li>自由对话</li>
+                    <li>快速问答</li>
+                    <li>不需要项目</li>
+                    <li>上下文感知</li>
+                </ul>
+            </div>
+
+            <!-- Programming Mode Card -->
+            <div class="mode-card programming" onclick="selectMode('programming')">
+                <div class="mode-icon">⚡</div>
+                <h2>编程模式</h2>
+                <p>Project-focused development with file operations and code editing.</p>
+                <ul class="feature-list">
+                    <li>项目管理</li>
+                    <li>文件读写</li>
+                    <li>代码调试</li>
+                    <li>技术任务</li>
+                </ul>
+            </div>
+
+            <!-- AFK Mode Card -->
+            <div class="mode-card afk" onclick="selectMode('afk')">
+                <div class="mode-icon">⏰</div>
+                <h2>挂机 App</h2>
+                <p>Manage and monitor AFK/idle agents running background tasks.</p>
+                <ul class="feature-list">
+                    <li>查看挂机任务</li>
+                    <li>监控运行状态</li>
+                    <li>任务管理</li>
+                    <li>定时任务</li>
+                </ul>
+            </div>
+        </div>
+
+        <footer class="footer">
+            <a href="/settings">设置 / Settings</a>
+        </footer>
+    </div>
+
+    <script>
+        // Handle mode selection
+        function selectMode(mode) {
+            // Redirect to selected mode
+            if (mode === 'chat') {
+                window.location.href = '/chat';
+            } else if (mode === 'programming') {
+                window.location.href = '/programming';
+            } else if (mode === 'afk') {
+                window.location.href = '/afk';
+            }
+        }
+    </script>
+</body>
+</html>

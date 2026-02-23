@@ -14,6 +14,7 @@
             --text-secondary: #888;
             --border-color: #3a3a3a;
             --success-color: #4caf50;
+            --error-color: #f44336;
         }
         [data-theme="light"] {
             --bg-primary: #f5f5f5;
@@ -31,7 +32,7 @@
             padding: 2rem;
         }
         .container {
-            max-width: 560px;
+            max-width: 700px;
             margin: 0 auto;
         }
         .back-link {
@@ -43,13 +44,30 @@
             margin-bottom: 2rem;
             font-size: 0.95rem;
         }
-        .back-link:hover {
-            color: var(--text-primary);
-        }
-        h1 {
-            font-size: 1.5rem;
+        .back-link:hover { color: var(--text-primary); }
+        h1 { font-size: 1.5rem; margin-bottom: 1.5rem; }
+        .nav-tabs {
+            display: flex;
+            gap: 1rem;
             margin-bottom: 1.5rem;
+            border-bottom: 1px solid var(--border-color);
         }
+        .nav-tab {
+            padding: 0.75rem 1rem;
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s;
+        }
+        .nav-tab:hover { color: var(--text-primary); }
+        .nav-tab.active {
+            color: var(--success-color);
+            border-bottom-color: var(--success-color);
+        }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
         .section {
             background: var(--bg-secondary);
             border: 1px solid var(--border-color);
@@ -60,10 +78,13 @@
         .section-title {
             font-size: 1rem;
             font-weight: 600;
-            margin-bottom: 1rem;
+            margin-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
         }
         .section-desc {
-            font-size: 0.9rem;
+            font-size: 0.85rem;
             color: var(--text-secondary);
             margin-bottom: 1rem;
         }
@@ -74,23 +95,49 @@
             padding: 0.75rem 0;
             border-bottom: 1px solid var(--border-color);
         }
-        .option-row:last-child {
-            border-bottom: none;
-        }
+        .option-row:last-child { border-bottom: none; }
         .option-row input[type="radio"] {
             width: 18px;
             height: 18px;
             accent-color: var(--success-color);
         }
-        .option-row label {
-            flex: 1;
-            cursor: pointer;
-            font-size: 0.95rem;
+        .option-row label { flex: 1; cursor: pointer; font-size: 0.95rem; }
+        .option-row .hint { font-size: 0.8rem; color: var(--text-secondary); }
+
+        /* Form styles for notification settings */
+        .form-group { margin-bottom: 1rem; }
+        .form-group label {
+            display: block;
+            margin-bottom: 0.4rem;
+            font-size: 0.9rem;
         }
-        .option-row .hint {
-            font-size: 0.8rem;
+        .form-group input, .form-group textarea {
+            width: 100%;
+            padding: 0.6rem;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            color: var(--text-primary);
+            font-size: 0.9rem;
+        }
+        .form-group input:focus, .form-group textarea:focus {
+            outline: none;
+            border-color: var(--success-color);
+        }
+        .form-group small {
+            display: block;
+            margin-top: 0.3rem;
+            font-size: 0.75rem;
             color: var(--text-secondary);
         }
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .checkbox-group input[type="checkbox"] { width: auto; }
+        .checkbox-group label { margin: 0; cursor: pointer; }
+
         .save-btn {
             background: var(--success-color);
             color: white;
@@ -99,57 +146,432 @@
             border-radius: 8px;
             font-size: 0.95rem;
             cursor: pointer;
-            margin-top: 1rem;
+            margin-top: 0.5rem;
         }
-        .save-btn:hover {
-            opacity: 0.9;
-        }
+        .save-btn:hover { opacity: 0.9; }
         .saved {
             font-size: 0.85rem;
             color: var(--success-color);
             margin-top: 0.5rem;
+            display: none;
         }
+        .channel-icon { font-size: 1.2rem; }
+        .row { display: flex; gap: 1rem; }
+        .row .form-group { flex: 1; }
+        .link { color: var(--success-color); text-decoration: none; }
+        .link:hover { text-decoration: underline; }
+
+        /* Modal styles */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal.active { display: flex; }
+        .modal-content {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 2rem;
+            width: 90%;
+            max-width: 600px;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+        }
+        .modal-header h2 {
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
+        .modal-close {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 1.5rem;
+            cursor: pointer;
+            padding: 0;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 6px;
+        }
+        .modal-close:hover {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+        }
+        .modal-body textarea {
+            min-height: 150px;
+            font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, monospace;
+            font-size: 0.85rem;
+            line-height: 1.5;
+        }
+        .modal-footer {
+            display: flex;
+            gap: 1rem;
+            margin-top: 1.5rem;
+            justify-content: flex-end;
+        }
+        .btn {
+            padding: 0.6rem 1.2rem;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.95rem;
+            cursor: pointer;
+        }
+        .btn-primary {
+            background: var(--success-color);
+            color: white;
+        }
+        .btn-primary:hover { opacity: 0.9; }
+        .btn-secondary {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+        }
+        .btn-secondary:hover { opacity: 0.8; }
+        .btn-danger {
+            background: var(--error-color);
+            color: white;
+        }
+        .btn-danger:hover { opacity: 0.9; }
+        .radio-group {
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+        .radio-option {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            cursor: pointer;
+        }
+        .radio-option input[type="radio"] {
+            width: 18px;
+            height: 18px;
+            accent-color: var(--success-color);
+        }
+        .tabs {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .tab-btn {
+            padding: 0.5rem 1rem;
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s;
+        }
+        .tab-btn:hover { color: var(--text-primary); }
+        .tab-btn.active {
+            color: var(--success-color);
+            border-bottom-color: var(--success-color);
+        }
+        .tab-panel { display: none; }
+        .tab-panel.active { display: block; }
     </style>
 </head>
 <body>
     <div class="container">
-        <a href="/" class="back-link">← 返回对话</a>
+        <a href="javascript:history.go(-1)" class="back-link">← 返回对话</a>
         <h1>设置</h1>
 
-        <div class="section">
-            <div class="section-title">图片识别模型</div>
-            <div class="section-desc">当消息包含图片时，选择使用哪种模型进行识别：</div>
-            <div class="option-row">
-                <input type="radio" name="vision_provider" id="vision_qwen" value="qwen">
-                <label for="vision_qwen">
-                    <strong>Qwen 系列</strong> (qwen-vl-max)
-                    <div class="hint">阿里通义千问视觉模型</div>
-                </label>
+        <div class="nav-tabs">
+            <button class="nav-tab active" onclick="switchTab('general')">通用设置</button>
+            <button class="nav-tab" onclick="switchTab('skills')">技能管理</button>
+            <button class="nav-tab" onclick="switchTab('rules')">规则管理</button>
+            <button class="nav-tab" onclick="switchTab('mcp')">MCP 服务器</button>
+            <button class="nav-tab" onclick="switchTab('notifications')">通知设置</button>
+            <button class="nav-tab" onclick="switchTab('projects')">项目管理</button>
+        </div>
+
+        <!-- General Settings Tab -->
+        <div id="tab-general" class="tab-content active">
+            <div class="section">
+                <div class="section-title">聊天 AI 引擎</div>
+                <div class="section-desc">选择用于对话的 AI 模型提供商：</div>
+                <div class="option-row">
+                    <input type="radio" name="chat_provider" id="chat_zai" value="zai">
+                    <label for="chat_zai">
+                        <strong>Z.ai 系列</strong> (glm-5 + thinking)
+                        <div class="hint">智谱 GLM，支持深度思考模式</div>
+                    </label>
+                </div>
+                <div class="option-row">
+                    <input type="radio" name="chat_provider" id="chat_qwen" value="qwen">
+                    <label for="chat_qwen">
+                        <strong>Qwen 系列</strong> (qwen-max)
+                        <div class="hint">阿里通义千问，稳定可靠</div>
+                    </label>
+                </div>
+                <div class="option-row">
+                    <input type="radio" name="chat_provider" id="chat_gemini" value="gemini">
+                    <label for="chat_gemini">
+                        <strong>Gemini 系列</strong> (gemini-2.0-flash-exp)
+                        <div class="hint">Google Gemini，实验性支持</div>
+                    </label>
+                </div>
+                <button class="save-btn" id="saveChatBtn">保存</button>
+                <div class="saved" id="chatSavedHint">已保存</div>
             </div>
-            <div class="option-row">
-                <input type="radio" name="vision_provider" id="vision_zai" value="zai">
-                <label for="vision_zai">
-                    <strong>Z.ai 系列</strong> (glm-4v-plus)
-                    <div class="hint">智谱 GLM 视觉模型</div>
-                </label>
+            <div class="section">
+                <div class="section-title">图片识别模型</div>
+                <div class="section-desc">当消息包含图片时，选择使用哪种模型进行识别：</div>
+                <div class="option-row">
+                    <input type="radio" name="vision_provider" id="vision_qwen" value="qwen">
+                    <label for="vision_qwen">
+                        <strong>Qwen 系列</strong> (qwen-vl-max)
+                        <div class="hint">阿里通义千问视觉模型</div>
+                    </label>
+                </div>
+                <div class="option-row">
+                    <input type="radio" name="vision_provider" id="vision_zai" value="zai">
+                    <label for="vision_zai">
+                        <strong>Z.ai 系列</strong> (glm-4v-plus)
+                        <div class="hint">智谱 GLM 视觉模型</div>
+                    </label>
+                </div>
+                <button class="save-btn" id="saveVisionBtn">保存</button>
+                <div class="saved" id="visionSavedHint">已保存</div>
             </div>
-            <button class="save-btn" id="saveBtn">保存</button>
-            <div class="saved" id="savedHint" style="display:none">已保存</div>
+        </div>
+
+        <!-- Skills Tab -->
+        <div id="tab-skills" class="tab-content">
+            <div class="section">
+                <div class="section-title">技能管理</div>
+                <div class="section-desc">启用/禁用 AI 技能，或安装新技能</div>
+
+                <div id="skillsList" style="margin-bottom: 1rem;">
+                    <div style="text-align: center; color: var(--text-secondary); padding: 1rem;">
+                        加载中...
+                    </div>
+                </div>
+
+                <div style="display: flex; gap: 0.5rem;">
+                    <button class="save-btn" id="installSkillBtn" style="background: var(--bg-tertiary);">+ 安装技能</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Rules Tab -->
+        <div id="tab-rules" class="tab-content">
+            <div class="section">
+                <div class="section-title">规则管理</div>
+                <div class="section-desc">系统提示词规则 - 定义 AI 的行为模式</div>
+
+                <div id="rulesList" style="margin-bottom: 1rem;">
+                    <div style="text-align: center; color: var(--text-secondary); padding: 1rem;">
+                        加载中...
+                    </div>
+                </div>
+
+                <button class="save-btn" id="createRuleBtn" style="background: var(--bg-tertiary);">+ 新建规则</button>
+            </div>
+        </div>
+
+        <!-- MCP Tab -->
+        <div id="tab-mcp" class="tab-content">
+            <div class="section">
+                <div class="section-title">MCP 服务器</div>
+                <div class="section-desc">管理 Model Context Protocol (MCP) 服务器</div>
+
+                <div id="mcpServersList" style="margin-bottom: 1rem;">
+                    <div style="text-align: center; color: var(--text-secondary); padding: 1rem;">
+                        加载中...
+                    </div>
+                </div>
+
+                <button class="save-btn" id="addMcpServerBtn" style="background: var(--bg-tertiary);">+ 添加服务器</button>
+            </div>
+        </div>
+
+        <!-- Notification Settings Tab -->
+        <div id="tab-notifications" class="tab-content">
+            <!-- Feishu Section -->
+            <div class="section">
+                <div class="section-title">
+                    <span class="channel-icon">📱</span>
+                    飞书机器人
+                </div>
+                <div class="section-desc">
+                    通过飞书机器人接收挂机任务通知。
+                    <a href="https://open.feishu.cn/document/ukTMukTMukTM/uEjNwUjLxYDM14SM2ATN" target="_blank" class="link">如何获取 Webhook</a>
+                </div>
+                <div class="form-group checkbox-group">
+                    <input type="checkbox" id="feishu_enabled">
+                    <label for="feishu_enabled">启用飞书通知</label>
+                </div>
+                <div class="form-group">
+                    <label>Webhook URL</label>
+                    <input type="url" id="feishu_webhook" placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/...">
+                    <small>在飞书群组中添加自定义机器人即可获得 Webhook URL</small>
+                </div>
+                <button class="save-btn" onclick="saveNotificationSettings()">保存</button>
+            </div>
+
+            <!-- WeChat Work Section -->
+            <div class="section">
+                <div class="section-title">
+                    <span class="channel-icon">💼</span>
+                    企业微信机器人
+                </div>
+                <div class="section-desc">
+                    通过企业微信群机器人接收挂机任务通知。
+                    <a href="https://developer.work.weixin.qq.com/document/path/91770" target="_blank" class="link">如何配置</a>
+                </div>
+                <div class="form-group checkbox-group">
+                    <input type="checkbox" id="wecom_enabled">
+                    <label for="wecom_enabled">启用企业微信通知</label>
+                </div>
+                <div class="form-group">
+                    <label>Webhook URL</label>
+                    <input type="url" id="wecom_webhook" placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=...">
+                    <small>在企业微信群组中添加群机器人即可获得 Webhook URL</small>
+                </div>
+                <button class="save-btn" onclick="saveNotificationSettings()">保存</button>
+            </div>
+
+            <!-- Telegram Section -->
+            <div class="section">
+                <div class="section-title">
+                    <span class="channel-icon">✈️</span>
+                    Telegram 机器人
+                </div>
+                <div class="section-desc">
+                    通过 Telegram Bot 接收挂机任务通知。需要先配置 Bot Token（服务器端）。
+                </div>
+                <div class="form-group checkbox-group">
+                    <input type="checkbox" id="telegram_enabled">
+                    <label for="telegram_enabled">启用 Telegram 通知</label>
+                </div>
+                <div class="form-group">
+                    <label>Chat ID</label>
+                    <input type="text" id="telegram_chat_id" placeholder="你的 Chat ID">
+                    <small>
+                        通过 <a href="https://t.me/userinfobot" target="_blank" class="link">@userinfobot</a> 获取你的 Chat ID，
+                        然后向你的 Bot 发送一条消息开始对话
+                    </small>
+                </div>
+                <div class="form-group">
+                    <label>Bot Token (可选，用于测试)</label>
+                    <input type="text" id="telegram_bot_token" placeholder="123456789:ABCdefGhIjKlmNoPQRsTUVwxyZ">
+                    <small>格式: BOT_ID:TOKEN。服务器端也需配置此 Token</small>
+                </div>
+                <button class="save-btn" onclick="saveNotificationSettings()">保存</button>
+                <button class="save-btn" style="background: var(--bg-tertiary); margin-left: 0.5rem;" onclick="testTelegram()">测试发送</button>
+            </div>
+
+            <!-- Email Section -->
+            <div class="section">
+                <div class="section-title">
+                    <span class="channel-icon">📧</span>
+                    邮件通知
+                </div>
+                <div class="section-desc">通过邮件接收挂机任务通知（使用 Resend 服务）。</div>
+                <div class="form-group checkbox-group">
+                    <input type="checkbox" id="email_enabled">
+                    <label for="email_enabled">启用邮件通知</label>
+                </div>
+                <div class="form-group">
+                    <label>接收邮箱</label>
+                    <input type="email" id="email_address" placeholder="your@email.com">
+                </div>
+                <button class="save-btn" onclick="saveNotificationSettings()">保存</button>
+            </div>
+
+            <!-- Quiet Hours Section -->
+            <div class="section">
+                <div class="section-title">
+                    <span>🌙</span>
+                    免打扰时段
+                </div>
+                <div class="section-desc">在指定时间段内 suppress 通知（例如睡觉时间）。</div>
+                <div class="form-group checkbox-group">
+                    <input type="checkbox" id="quiet_hours_enabled">
+                    <label for="quiet_hours_enabled">启用免打扰</label>
+                </div>
+                <div class="row">
+                    <div class="form-group">
+                        <label>开始时间</label>
+                        <input type="time" id="quiet_hours_start" value="22:00">
+                    </div>
+                    <div class="form-group">
+                        <label>结束时间</label>
+                        <input type="time" id="quiet_hours_end" value="08:00">
+                    </div>
+                </div>
+                <button class="save-btn" onclick="saveNotificationSettings()">保存</button>
+            </div>
+
+            <div class="saved" id="notificationSavedHint">✓ 通知设置已保存</div>
+        </div>
+
+        <!-- Projects Tab -->
+        <div id="tab-projects" class="tab-content">
+            <div class="section">
+                <div class="section-title">项目管理</div>
+                <div class="section-desc">编程模式需要先创建项目，所有会话都会关联到项目</div>
+
+                <div id="projectList" style="margin-bottom: 1rem;">
+                    <div style="text-align: center; color: var(--text-secondary); padding: 1rem;">
+                        加载中...
+                    </div>
+                </div>
+
+                <button class="save-btn" id="createProjectBtn" style="background: var(--bg-tertiary);">+ 新建项目</button>
+            </div>
         </div>
     </div>
 
+    <script src="/static/js/storage.js"></script>
+    <script src="/static/js/api.js"></script>
     <script>
-        const API_BASE = window.location.origin;
-
-        // Load saved theme
+        // Load theme
         const savedTheme = localStorage.getItem('marstaff_theme') || 'dark';
         document.documentElement.setAttribute('data-theme', savedTheme);
 
-        // Load saved preference
+        // Tab switching
+        function switchTab(tabName) {
+            document.querySelectorAll('.nav-tab').forEach(tab => tab.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+
+            document.querySelector(`.nav-tab[onclick="switchTab('${tabName}')"]`).classList.add('active');
+            document.getElementById(`tab-${tabName}`).classList.add('active');
+        }
+
+        // ===== CHAT PROVIDER SETTINGS =====
+        const savedChatProvider = localStorage.getItem('marstaff_chat_provider') || 'zai';
+        document.querySelector(`input[name="chat_provider"][value="${savedChatProvider}"]`).checked = true;
+
+        document.getElementById('saveChatBtn').addEventListener('click', () => {
+            const val = document.querySelector('input[name="chat_provider"]:checked')?.value || 'zai';
+            localStorage.setItem('marstaff_chat_provider', val);
+            const hint = document.getElementById('chatSavedHint');
+            hint.style.display = 'block';
+            setTimeout(() => { hint.style.display = 'none'; }, 2000);
+        });
+
+        // ===== VISION SETTINGS =====
         const saved = localStorage.getItem('marstaff_vision_provider') || 'qwen';
         document.querySelector(`input[name="vision_provider"][value="${saved}"]`).checked = true;
 
-        // Load available options from API
         fetch(`${API_BASE}/api/settings?t=${Date.now()}`)
             .then(r => r.ok ? r.json() : null)
             .then(data => {
@@ -163,13 +585,711 @@
             })
             .catch(() => {});
 
-        document.getElementById('saveBtn').addEventListener('click', () => {
+        document.getElementById('saveVisionBtn').addEventListener('click', () => {
             const val = document.querySelector('input[name="vision_provider"]:checked')?.value || 'qwen';
             localStorage.setItem('marstaff_vision_provider', val);
-            const hint = document.getElementById('savedHint');
+            const hint = document.getElementById('visionSavedHint');
             hint.style.display = 'block';
             setTimeout(() => { hint.style.display = 'none'; }, 2000);
         });
+
+        // ===== NOTIFICATION SETTINGS =====
+        let notificationSettings = {
+            feishu_enabled: false,
+            feishu_webhook_url: '',
+            wecom_enabled: false,
+            wecom_webhook_url: '',
+            telegram_enabled: false,
+            telegram_chat_id: '',
+            email_enabled: false,
+            email_address: '',
+            quiet_hours_enabled: false,
+            quiet_hours_start: '22:00',
+            quiet_hours_end: '08:00'
+        };
+
+        // Load notification settings
+        loadNotificationSettings();
+
+        async function loadNotificationSettings() {
+            try {
+                const res = await fetch(`${API_BASE}/api/afk/notification-settings/default`);
+                if (res.ok) {
+                    const data = await res.json();
+                    notificationSettings = data;
+
+                    document.getElementById('feishu_enabled').checked = data.feishu_enabled || false;
+                    document.getElementById('feishu_webhook').value = data.feishu_webhook_url || '';
+
+                    document.getElementById('wecom_enabled').checked = data.wecom_enabled || false;
+                    document.getElementById('wecom_webhook').value = data.wecom_webhook_url || '';
+
+                    document.getElementById('telegram_enabled').checked = data.telegram_enabled || false;
+                    document.getElementById('telegram_chat_id').value = data.telegram_chat_id || '';
+
+                    document.getElementById('email_enabled').checked = data.email_enabled || false;
+                    document.getElementById('email_address').value = data.email_address || '';
+
+                    document.getElementById('quiet_hours_enabled').checked = data.quiet_hours_enabled || false;
+                    document.getElementById('quiet_hours_start').value = data.quiet_hours_start || '22:00';
+                    document.getElementById('quiet_hours_end').value = data.quiet_hours_end || '08:00';
+                }
+            } catch (error) {
+                console.error('Failed to load notification settings:', error);
+            }
+        }
+
+        async function saveNotificationSettings() {
+            const payload = {
+                feishu_enabled: document.getElementById('feishu_enabled').checked,
+                feishu_webhook_url: document.getElementById('feishu_webhook').value || null,
+                wecom_enabled: document.getElementById('wecom_enabled').checked,
+                wecom_webhook_url: document.getElementById('wecom_webhook').value || null,
+                telegram_enabled: document.getElementById('telegram_enabled').checked,
+                telegram_chat_id: document.getElementById('telegram_chat_id').value || null,
+                email_enabled: document.getElementById('email_enabled').checked,
+                email_address: document.getElementById('email_address').value || null,
+                quiet_hours_enabled: document.getElementById('quiet_hours_enabled').checked,
+                quiet_hours_start: document.getElementById('quiet_hours_start').value || null,
+                quiet_hours_end: document.getElementById('quiet_hours_end').value || null,
+            };
+
+            try {
+                const res = await fetch(`${API_BASE}/api/afk/notification-settings/default`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (res.ok) {
+                    const hint = document.getElementById('notificationSavedHint');
+                    hint.classList.add('show');
+                    setTimeout(() => { hint.classList.remove('show'); }, 3000);
+                } else {
+                    alert('保存失败');
+                }
+            } catch (error) {
+                alert('错误: ' + error.message);
+            }
+        }
+
+        async function testTelegram() {
+            const chatId = document.getElementById('telegram_chat_id').value;
+            const botToken = document.getElementById('telegram_bot_token').value;
+
+            if (!chatId) {
+                alert('请先填写 Chat ID');
+                return;
+            }
+
+            // Use provided bot token or server default
+            const token = botToken || 'SERVER_DEFAULT';
+            const message = `🔔 测试通知来自 Marstaff\\n\\n时间: ${new Date().toLocaleString('zh-CN')}\\n这是一条测试消息，如果你看到这条消息说明配置成功！`;
+
+            try {
+                const res = await fetch(`${API_BASE}/api/test/telegram`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        chat_id: chatId,
+                        bot_token: botToken || null,
+                        message: message
+                    })
+                });
+
+                if (res.ok) {
+                    alert('测试消息已发送！请检查 Telegram。');
+                } else {
+                    const err = await res.json();
+                    alert('发送失败: ' + (err.error || '未知错误'));
+                }
+            } catch (error) {
+                alert('错误: ' + error.message);
+            }
+        }
+
+        // Enable/disable input based on checkbox
+        ['feishu', 'wecom', 'telegram', 'email'].forEach(channel => {
+            const checkbox = document.getElementById(`${channel}_enabled`);
+            const input = document.getElementById(`${channel}_webhook`) ||
+                         document.getElementById(`${channel}_chat_id`) ||
+                         document.getElementById(`${channel}_address`);
+
+            if (checkbox && input) {
+                checkbox.addEventListener('change', () => {
+                    input.disabled = !checkbox.checked;
+                    if (checkbox.checked) {
+                        input.focus();
+                    }
+                });
+                input.disabled = !checkbox.checked;
+            }
+        });
+
+        // ===== PROJECT MANAGEMENT =====
+        const userId = 'default';
+        let projects = [];
+
+        loadProjects();
+
+        async function loadProjects() {
+            try {
+                const response = await api.listProjects({ user_id: userId, limit: 100 });
+                projects = response.projects || [];
+                renderProjects();
+            } catch (error) {
+                console.error('Failed to load projects:', error);
+                document.getElementById('projectList').innerHTML =
+                    '<div style="text-align: center; color: var(--error-color); padding: 1rem;">加载失败</div>';
+            }
+        }
+
+        function renderProjects() {
+            const container = document.getElementById('projectList');
+            if (projects.length === 0) {
+                container.innerHTML = '<div style="text-align: center; color: var(--text-secondary); padding: 1rem;">暂无项目</div>';
+                return;
+            }
+
+            container.innerHTML = projects.map(project => `
+                <div class="option-row" style="flex-wrap: wrap; padding: 1rem; margin-bottom: 0.5rem; background: var(--bg-tertiary); border-radius: 8px;">
+                    <div style="flex: 1; min-width: 200px;">
+                        <div style="font-weight: 600;">${escapeHtml(project.name)}</div>
+                        <div style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 0.25rem;">
+                            ${project.template ? '<span style="background: var(--bg-secondary); padding: 2px 8px; border-radius: 4px;">' + escapeHtml(project.template) + '</span>' : ''}
+                            ${project.work_dir ? '<span style="margin-left: 0.5rem;">' + escapeHtml(project.work_dir) + '</span>' : ''}
+                        </div>
+                        ${project.description ? '<div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 0.5rem;">' + escapeHtml(project.description) + '</div>' : ''}
+                    </div>
+                    <div style="display: flex; gap: 0.5rem;">
+                        <button onclick="editProject('${project.id}')" style="padding: 0.4rem 0.8rem; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary); cursor: pointer;">编辑</button>
+                        <button onclick="deleteProject('${project.id}')" style="padding: 0.4rem 0.8rem; background: var(--error-color); border: 1px solid var(--error-color); border-radius: 6px; color: white; cursor: pointer;">删除</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        document.getElementById('createProjectBtn').addEventListener('click', showCreateProjectModal);
+
+        function showCreateProjectModal() {
+            const name = prompt('项目名称 (仅支持字母、数字、空格、下划线、连字符和点):');
+            if (!name) return;
+
+            const workDir = prompt('工作目录路径 (如: /Users/username/my-project):');
+            if (!workDir) {
+                alert('工作目录不能为空');
+                return;
+            }
+
+            const description = prompt('项目描述 (可选):') || '';
+            const template = prompt('项目模板 (可选，留空为自定义):') || '';
+
+            createProject({ name, work_dir: workDir, description, template });
+        }
+
+        async function createProject(data) {
+            try {
+                await api.createProject({
+                    user_id: userId,
+                    ...data
+                });
+                await loadProjects();
+                alert('项目创建成功!');
+            } catch (error) {
+                alert('创建项目失败: ' + error.message);
+            }
+        }
+
+        async function deleteProject(projectId) {
+            if (!confirm('确定要删除这个项目吗？关联的会话将不会被删除。')) {
+                return;
+            }
+
+            try {
+                await api.deleteProject(projectId);
+                await loadProjects();
+                alert('项目已删除');
+            } catch (error) {
+                alert('删除失败: ' + error.message);
+            }
+        }
+
+        async function editProject(projectId) {
+            const project = projects.find(p => p.id === projectId);
+            if (!project) return;
+
+            const name = prompt('项目名称:', project.name);
+            if (!name) return;
+
+            const workDir = prompt('工作目录路径:', project.work_dir);
+            if (!workDir) {
+                alert('工作目录不能为空');
+                return;
+            }
+
+            const description = prompt('项目描述:', project.description || '') || '';
+
+            try {
+                await api.updateProject(projectId, {
+                    name,
+                    work_dir: workDir,
+                    description
+                });
+                await loadProjects();
+                alert('项目已更新');
+            } catch (error) {
+                alert('更新失败: ' + error.message);
+            }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // ===== SKILLS MANAGEMENT =====
+        let skills = [];
+
+        // Load skills when tab is first opened
+        document.querySelector('.nav-tab[onclick="switchTab(\'skills\')"]').addEventListener('click', loadSkills);
+
+        async function loadSkills() {
+            try {
+                const response = await fetch(`${API_BASE}/api/skills`);
+                if (response.ok) {
+                    const data = await response.json();
+                    skills = data.skills || [];
+                    renderSkills();
+                }
+            } catch (error) {
+                console.error('Failed to load skills:', error);
+                document.getElementById('skillsList').innerHTML =
+                    '<div style="text-align: center; color: var(--error-color); padding: 1rem;">加载失败</div>';
+            }
+        }
+
+        function renderSkills() {
+            const container = document.getElementById('skillsList');
+            if (skills.length === 0) {
+                container.innerHTML = '<div style="text-align: center; color: var(--text-secondary); padding: 1rem;">暂无技能</div>';
+                return;
+            }
+
+            container.innerHTML = skills.map(skill => `
+                <div class="option-row" style="flex-wrap: wrap; padding: 1rem; margin-bottom: 0.5rem; background: var(--bg-tertiary); border-radius: 8px;">
+                    <div style="flex: 1; min-width: 200px;">
+                        <div style="font-weight: 600;">${escapeHtml(skill.name)}</div>
+                        <div style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 0.25rem;">
+                            ${skill.category ? '<span style="background: var(--bg-secondary); padding: 2px 8px; border-radius: 4px;">' + escapeHtml(skill.category) + '</span>' : ''}
+                            ${skill.version ? '<span style="margin-left: 0.5rem;">v' + escapeHtml(skill.version) + '</span>' : ''}
+                        </div>
+                        ${skill.description ? '<div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 0.5rem;">' + escapeHtml(skill.description) + '</div>' : ''}
+                    </div>
+                    <div style="display: flex; gap: 0.5rem; align-items: center;">
+                        <span style="font-size: 0.8rem; color: ${skill.enabled ? 'var(--success-color)' : 'var(--text-secondary)'};">
+                            ${skill.enabled ? '已启用' : '已禁用'}
+                        </span>
+                        <button onclick="toggleSkill('${skill.id}', ${!skill.enabled})" style="padding: 0.4rem 0.8rem; background: ${skill.enabled ? 'var(--bg-secondary)' : 'var(--success-color)'}; border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary); cursor: pointer;">
+                            ${skill.enabled ? '禁用' : '启用'}
+                        </button>
+                        <button onclick="deleteSkill('${skill.id}')" style="padding: 0.4rem 0.8rem; background: var(--error-color); border: 1px solid var(--error-color); border-radius: 6px; color: white; cursor: pointer;">删除</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        async function toggleSkill(skillId, enabled) {
+            try {
+                const endpoint = enabled ? 'enable' : 'disable';
+                const response = await fetch(`${API_BASE}/api/skills/${skillId}/${endpoint}`, {
+                    method: 'PUT'
+                });
+                if (response.ok) {
+                    await loadSkills();
+                } else {
+                    alert('操作失败');
+                }
+            } catch (error) {
+                alert('错误: ' + error.message);
+            }
+        }
+
+        async function deleteSkill(skillId) {
+            if (!confirm('确定要删除这个技能吗？')) {
+                return;
+            }
+            try {
+                const response = await fetch(`${API_BASE}/api/skills/uninstall/${skillId}`, {
+                    method: 'POST'
+                });
+                if (response.ok) {
+                    await loadSkills();
+                } else {
+                    alert('删除失败');
+                }
+            } catch (error) {
+                alert('错误: ' + error.message);
+            }
+        }
+
+        document.getElementById('installSkillBtn').addEventListener('click', showInstallSkillModal);
+
+        function showInstallSkillModal() {
+            const content = prompt('请输入 SKILL.md 内容 (YAML front matter + markdown):');
+            if (!content) return;
+
+            const overwrite = confirm('如果技能已存在，是否覆盖？');
+
+            installSkill(content, overwrite);
+        }
+
+        async function installSkill(content, overwrite) {
+            try {
+                const response = await fetch(`${API_BASE}/api/skills/install`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ content, overwrite })
+                });
+                if (response.ok) {
+                    await loadSkills();
+                    alert('技能安装成功!');
+                } else {
+                    const err = await response.json();
+                    alert('安装失败: ' + (err.error || '未知错误'));
+                }
+            } catch (error) {
+                alert('错误: ' + error.message);
+            }
+        }
+
+        // ===== RULES MANAGEMENT =====
+        let rules = [];
+
+        document.querySelector('.nav-tab[onclick="switchTab(\'rules\')"]').addEventListener('click', loadRules);
+
+        async function loadRules() {
+            try {
+                const response = await fetch(`${API_BASE}/api/rules?user_id=default`);
+                if (response.ok) {
+                    const data = await response.json();
+                    rules = data.rules || [];
+                    renderRules();
+                }
+            } catch (error) {
+                console.error('Failed to load rules:', error);
+                document.getElementById('rulesList').innerHTML =
+                    '<div style="text-align: center; color: var(--error-color); padding: 1rem;">加载失败</div>';
+            }
+        }
+
+        function renderRules() {
+            const container = document.getElementById('rulesList');
+            if (rules.length === 0) {
+                container.innerHTML = '<div style="text-align: center; color: var(--text-secondary); padding: 1rem;">暂无规则</div>';
+                return;
+            }
+
+            container.innerHTML = rules.map(rule => `
+                <div class="option-row" style="flex-wrap: wrap; padding: 1rem; margin-bottom: 0.5rem; background: var(--bg-tertiary); border-radius: 8px; border-left: 3px solid ${rule.is_active ? 'var(--success-color)' : 'transparent'};">
+                    <div style="flex: 1; min-width: 200px;">
+                        <div style="font-weight: 600;">
+                            ${escapeHtml(rule.name)}
+                            ${rule.is_builtin ? '<span style="font-size: 0.7rem; background: var(--bg-secondary); padding: 2px 6px; border-radius: 4px; margin-left: 0.5rem;">内置</span>' : ''}
+                            ${rule.is_active ? '<span style="font-size: 0.7rem; background: var(--success-color); color: white; padding: 2px 6px; border-radius: 4px; margin-left: 0.5rem;">活跃</span>' : ''}
+                        </div>
+                        <div style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 0.25rem;">
+                            ${rule.category ? '<span style="background: var(--bg-secondary); padding: 2px 8px; border-radius: 4px;">' + escapeHtml(rule.category) + '</span>' : ''}
+                        </div>
+                        ${rule.description ? '<div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 0.5rem;">' + escapeHtml(rule.description) + '</div>' : ''}
+                        <div style="font-size: 0.75rem; color: ${rule.enabled ? 'var(--success-color)' : 'var(--text-secondary)'}; margin-top: 0.25rem;">
+                            ${rule.enabled ? '已启用' : '已禁用'}
+                        </div>
+                    </div>
+                    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                        ${!rule.is_active ? `<button onclick="activateRule('${rule.id}')" style="padding: 0.4rem 0.8rem; background: var(--success-color); border: none; border-radius: 6px; color: white; cursor: pointer;">设为活跃</button>` : ''}
+                        ${!rule.is_builtin ? `<button onclick="editRule('${rule.id}')" style="padding: 0.4rem 0.8rem; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary); cursor: pointer;">编辑</button>` : ''}
+                        ${!rule.is_builtin ? `<button onclick="deleteRule('${rule.id}')" style="padding: 0.4rem 0.8rem; background: var(--error-color); border: 1px solid var(--error-color); border-radius: 6px; color: white; cursor: pointer;">删除</button>` : ''}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        async function activateRule(ruleId) {
+            try {
+                const response = await fetch(`${API_BASE}/api/rules/${ruleId}/activate?user_id=default`, {
+                    method: 'PUT'
+                });
+                if (response.ok) {
+                    await loadRules();
+                } else {
+                    alert('操作失败');
+                }
+            } catch (error) {
+                alert('错误: ' + error.message);
+            }
+        }
+
+        async function deleteRule(ruleId) {
+            if (!confirm('确定要删除这个规则吗？')) {
+                return;
+            }
+            try {
+                const response = await fetch(`${API_BASE}/api/rules/${ruleId}`, {
+                    method: 'DELETE'
+                });
+                if (response.ok) {
+                    await loadRules();
+                } else {
+                    alert('删除失败');
+                }
+            } catch (error) {
+                alert('错误: ' + error.message);
+            }
+        }
+
+        document.getElementById('createRuleBtn').addEventListener('click', showCreateRuleModal);
+
+        function showCreateRuleModal() {
+            const name = prompt('规则名称:');
+            if (!name) return;
+
+            const description = prompt('规则描述 (可选):') || '';
+            const content = prompt('规则内容 (系统提示词):');
+            if (!content) {
+                alert('规则内容不能为空');
+                return;
+            }
+
+            const category = prompt('分类 (可选):') || '';
+
+            createRule({ name, description, content, category });
+        }
+
+        async function createRule(data) {
+            try {
+                const response = await fetch(`${API_BASE}/api/rules?user_id=default`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                if (response.ok) {
+                    await loadRules();
+                    alert('规则创建成功!');
+                } else {
+                    const err = await response.json();
+                    alert('创建失败: ' + (err.error || '未知错误'));
+                }
+            } catch (error) {
+                alert('错误: ' + error.message);
+            }
+        }
+
+        async function editRule(ruleId) {
+            const rule = rules.find(r => r.id === ruleId);
+            if (!rule) return;
+
+            const name = prompt('规则名称:', rule.name);
+            if (!name) return;
+
+            const description = prompt('规则描述:', rule.description || '') || '';
+            const content = prompt('规则内容:', rule.content);
+            if (!content) {
+                alert('规则内容不能为空');
+                return;
+            }
+
+            const category = prompt('分类:', rule.category || '') || '';
+
+            try {
+                const response = await fetch(`${API_BASE}/api/rules/${ruleId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, description, content, category })
+                });
+                if (response.ok) {
+                    await loadRules();
+                    alert('规则已更新');
+                } else {
+                    const err = await response.json();
+                    alert('更新失败: ' + (err.error || '未知错误'));
+                }
+            } catch (error) {
+                alert('错误: ' + error.message);
+            }
+        }
+
+        // ===== MCP SERVERS MANAGEMENT =====
+        let mcpServers = [];
+
+        document.querySelector('.nav-tab[onclick="switchTab(\'mcp\')"]').addEventListener('click', loadMcpServers);
+
+        async function loadMcpServers() {
+            try {
+                const response = await fetch(`${API_BASE}/api/mcp/servers?user_id=default`);
+                if (response.ok) {
+                    const data = await response.json();
+                    mcpServers = data.servers || [];
+                    renderMcpServers();
+                }
+            } catch (error) {
+                console.error('Failed to load MCP servers:', error);
+                document.getElementById('mcpServersList').innerHTML =
+                    '<div style="text-align: center; color: var(--error-color); padding: 1rem;">加载失败</div>';
+            }
+        }
+
+        function renderMcpServers() {
+            const container = document.getElementById('mcpServersList');
+            if (mcpServers.length === 0) {
+                container.innerHTML = '<div style="text-align: center; color: var(--text-secondary); padding: 1rem;">暂无 MCP 服务器</div>';
+                return;
+            }
+
+            container.innerHTML = mcpServers.map(server => `
+                <div class="option-row" style="flex-wrap: wrap; padding: 1rem; margin-bottom: 0.5rem; background: var(--bg-tertiary); border-radius: 8px;">
+                    <div style="flex: 1; min-width: 200px;">
+                        <div style="font-weight: 600;">
+                            ${escapeHtml(server.name)}
+                            <span style="font-size: 0.7rem; background: ${server.enabled ? 'var(--success-color)' : 'var(--text-secondary)'}; color: white; padding: 2px 6px; border-radius: 4px; margin-left: 0.5rem;">
+                                ${server.enabled ? '已启用' : '已禁用'}
+                            </span>
+                        </div>
+                        ${server.description ? '<div style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 0.25rem;">' + escapeHtml(server.description) + '</div>' : ''}
+                        <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 0.25rem; word-break: break-all;">
+                            ${escapeHtml(server.endpoint)}
+                        </div>
+                    </div>
+                    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                        <button onclick="syncMcpServer('${server.id}')" style="padding: 0.4rem 0.8rem; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary); cursor: pointer;">同步工具</button>
+                        <button onclick="toggleMcpServer('${server.id}', ${!server.enabled})" style="padding: 0.4rem 0.8rem; background: ${server.enabled ? 'var(--bg-secondary)' : 'var(--success-color)'}; border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary); cursor: pointer;">
+                            ${server.enabled ? '禁用' : '启用'}
+                        </button>
+                        <button onclick="editMcpServer('${server.id}')" style="padding: 0.4rem 0.8rem; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary); cursor: pointer;">编辑</button>
+                        <button onclick="deleteMcpServer('${server.id}')" style="padding: 0.4rem 0.8rem; background: var(--error-color); border: 1px solid var(--error-color); border-radius: 6px; color: white; cursor: pointer;">删除</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        async function toggleMcpServer(serverId, enabled) {
+            try {
+                const endpoint = enabled ? 'enable' : 'disable';
+                const response = await fetch(`${API_BASE}/api/mcp/servers/${serverId}/${endpoint}`, {
+                    method: 'PUT'
+                });
+                if (response.ok) {
+                    await loadMcpServers();
+                } else {
+                    alert('操作失败');
+                }
+            } catch (error) {
+                alert('错误: ' + error.message);
+            }
+        }
+
+        async function syncMcpServer(serverId) {
+            try {
+                const response = await fetch(`${API_BASE}/api/mcp/servers/${serverId}/sync`, {
+                    method: 'POST'
+                });
+                if (response.ok) {
+                    alert('工具同步成功');
+                } else {
+                    const err = await response.json();
+                    alert('同步失败: ' + (err.error || '未知错误'));
+                }
+            } catch (error) {
+                alert('错误: ' + error.message);
+            }
+        }
+
+        async function deleteMcpServer(serverId) {
+            if (!confirm('确定要删除这个 MCP 服务器吗？')) {
+                return;
+            }
+            try {
+                const response = await fetch(`${API_BASE}/api/mcp/servers/${serverId}`, {
+                    method: 'DELETE'
+                });
+                if (response.ok) {
+                    await loadMcpServers();
+                } else {
+                    alert('删除失败');
+                }
+            } catch (error) {
+                alert('错误: ' + error.message);
+            }
+        }
+
+        document.getElementById('addMcpServerBtn').addEventListener('click', showAddMcpServerModal);
+
+        function showAddMcpServerModal() {
+            const name = prompt('服务器名称:');
+            if (!name) return;
+
+            const endpoint = prompt('服务器端点 URL (如: http://localhost:3000/mcp):');
+            if (!endpoint) {
+                alert('服务器端点不能为空');
+                return;
+            }
+
+            const description = prompt('服务器描述 (可选):') || '';
+
+            createMcpServer({ name, endpoint, description });
+        }
+
+        async function createMcpServer(data) {
+            try {
+                const response = await fetch(`${API_BASE}/api/mcp/servers?user_id=default`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                if (response.ok) {
+                    await loadMcpServers();
+                    alert('MCP 服务器添加成功!');
+                } else {
+                    const err = await response.json();
+                    alert('添加失败: ' + (err.error || '未知错误'));
+                }
+            } catch (error) {
+                alert('错误: ' + error.message);
+            }
+        }
+
+        async function editMcpServer(serverId) {
+            const server = mcpServers.find(s => s.id === serverId);
+            if (!server) return;
+
+            const name = prompt('服务器名称:', server.name);
+            if (!name) return;
+
+            const endpoint = prompt('服务器端点 URL:', server.endpoint);
+            if (!endpoint) {
+                alert('服务器端点不能为空');
+                return;
+            }
+
+            const description = prompt('服务器描述:', server.description || '') || '';
+
+            try {
+                const response = await fetch(`${API_BASE}/api/mcp/servers/${serverId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, endpoint, description })
+                });
+                if (response.ok) {
+                    await loadMcpServers();
+                    alert('服务器已更新');
+                } else {
+                    const err = await response.json();
+                    alert('更新失败: ' + (err.error || '未知错误'));
+                }
+            } catch (error) {
+                alert('错误: ' + error.message);
+            }
+        }
     </script>
 </body>
 </html>

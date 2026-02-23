@@ -17,12 +17,21 @@ import (
 
 // Engine is the AI agent engine
 type Engine struct {
-	provider      provider.Provider
-	skillRegistry  skill.Registry
-	memory        *PersistentMemory
-	tools         map[string]ToolDefinition
-	sessionAPI    *api.SessionAPI
-	todoRepo      *repository.TodoRepository
+	provider        provider.Provider
+	skillRegistry   skill.Registry
+	memory          *PersistentMemory
+	tools           map[string]ToolDefinition
+	sessionAPI      *api.SessionAPI
+	todoRepo        *repository.TodoRepository
+	summaryConfig   SummaryConfig // Configuration for conversation summarization
+}
+
+// SummaryConfig controls when and how to summarize conversations
+type SummaryConfig struct {
+	// Trigger summarization after this many messages
+	TriggerCount int // Default: 20
+	// Keep this many recent messages in full (not summarized)
+	KeepRecent int // Default: 6
 }
 
 // ToolDefinition represents a tool with its handler and metadata
@@ -57,6 +66,10 @@ func NewEngine(cfg *Config) (*Engine, error) {
 		skillRegistry: skillRegistry,
 		memory:       memory,
 		tools:        make(map[string]ToolDefinition),
+		summaryConfig: SummaryConfig{
+			TriggerCount: 20, // Summarize after 20 messages
+			KeepRecent:   6,  // Keep 6 recent messages in full
+		},
 	}
 
 	if cfg.DB != nil {
@@ -164,7 +177,7 @@ func (e *Engine) GenerateSessionTitle(ctx context.Context, userContent string) s
 		{Role: provider.RoleUser, Content: truncated},
 	}
 	providerReq := provider.ChatCompletionRequest{
-		Model:       "default",
+		Model:       "", // Use provider's default model
 		Messages:    messages,
 		Tools:       nil,
 		Temperature: 0.3,
@@ -266,20 +279,116 @@ func (e *Engine) buildContext(ctx context.Context, req *ChatRequest) ([]provider
 		})
 	}
 
-	// Add conversation history
+	// Add conversation history (with summary if available)
 	if e.memory != nil && req.SessionID != "" {
-		history, err := e.memory.GetHistory(ctx, req.SessionID, 10)
+		history, summary, err := e.memory.GetHistoryWithSummary(ctx, req.SessionID, e.summaryConfig.KeepRecent)
 		if err != nil {
 			log.Warn().Err(err).Msg("failed to get history, continuing without it")
 		} else {
+			// Add conversation summary as a system message if available
+			if summary != "" {
+				messages = append(messages, provider.Message{
+					Role:    provider.RoleSystem,
+					Content: "[Previous conversation summary]\n" + summary,
+				})
+			}
 			messages = append(messages, history...)
 		}
+
+		// Check if we need to generate a summary after this request
+		go e.checkAndSummarize(ctx, req.SessionID)
 	}
 
 	// Add current messages
 	messages = append(messages, req.Messages...)
 
 	return messages, nil
+}
+
+// checkAndSummarize checks if conversation needs summarization and generates it if needed
+func (e *Engine) checkAndSummarize(ctx context.Context, sessionID string) {
+	if sessionID == "" || e.memory == nil {
+		return
+	}
+
+	count, err := e.memory.messageRepo.CountBySessionID(ctx, sessionID)
+	if err != nil {
+		return
+	}
+
+	// Only summarize if we've exceeded the trigger count
+	if count < int64(e.summaryConfig.TriggerCount) {
+		return
+	}
+
+	// Get session to check if summary already exists
+	session, err := e.memory.GetSession(ctx, sessionID)
+	if err != nil || session == nil {
+		return
+	}
+
+	// Get recent messages to check if we've added enough new ones since last summary
+	// We'll regenerate summary every TriggerCount messages
+	newCount := count % int64(e.summaryConfig.TriggerCount)
+	if newCount < int64(e.summaryConfig.KeepRecent) && session.Summary != "" {
+		return // Not enough new messages yet
+	}
+
+	// Generate summary
+	summary := e.summarizeConversation(ctx, sessionID)
+	if summary != "" {
+		if err := e.memory.sessionRepo.UpdateSummary(ctx, sessionID, summary); err != nil {
+			log.Warn().Err(err).Str("session_id", sessionID).Msg("failed to update conversation summary")
+		}
+	}
+}
+
+// summarizeConversation generates a summary of the conversation history
+func (e *Engine) summarizeConversation(ctx context.Context, sessionID string) string {
+	// Get all messages for the session
+	messages, err := e.memory.messageRepo.GetAllBySessionID(ctx, sessionID)
+	if err != nil || len(messages) == 0 {
+		return ""
+	}
+
+	// Build a prompt for summarization
+	var summaryPrompt strings.Builder
+	summaryPrompt.WriteString("请总结以下对话的核心内容。要求：\n")
+	summaryPrompt.WriteString("1. 提取主要讨论的主题和结论\n")
+	summaryPrompt.WriteString("2. 保留关键信息（如用户需求、重要决定等）\n")
+	summaryPrompt.WriteString("3. 简洁明了，不超过200字\n\n")
+	summaryPrompt.WriteString("--- 对话内容 ---\n")
+
+	// Include all messages (the model will summarize them)
+	for _, msg := range messages {
+		role := msg.Role
+		content := msg.Content
+		if len(content) > 500 {
+			content = content[:500] + "..."
+		}
+		summaryPrompt.WriteString(fmt.Sprintf("[%s]: %s\n", role, content))
+	}
+
+	summaryPrompt.WriteString("\n--- 总结 ---")
+
+	// Call LLM to generate summary
+	req := provider.ChatCompletionRequest{
+		Model:       "default",
+		Messages: []provider.Message{
+			{Role: provider.RoleSystem, Content: "你是一个专业的对话总结助手。"},
+			{Role: provider.RoleUser, Content: summaryPrompt.String()},
+		},
+		Temperature: 0.3,
+		MaxTokens:   500,
+	}
+
+	completion, err := e.provider.CreateChatCompletion(ctx, req)
+	if err != nil {
+		log.Warn().Err(err).Str("session_id", sessionID).Msg("failed to generate conversation summary")
+		return ""
+	}
+
+	return strings.TrimSpace(completion.Choices[0].Message.Content)
 }
 
 // buildSystemPrompt builds the system prompt with available skills
@@ -459,6 +568,37 @@ func (m *PersistentMemory) GetHistory(ctx context.Context, sessionID string, lim
 	}
 
 	return result, nil
+}
+
+// GetHistoryWithSummary retrieves both message history and session summary
+// Returns: (recent messages, summary text, error)
+func (m *PersistentMemory) GetHistoryWithSummary(ctx context.Context, sessionID string, limit int) ([]provider.Message, string, error) {
+	if sessionID == "" {
+		return []provider.Message{}, "", nil
+	}
+
+	// Get session to retrieve summary
+	session, err := m.sessionRepo.GetByID(ctx, sessionID)
+	var summary string
+	if err == nil && session != nil {
+		summary = session.Summary
+	}
+
+	// Get recent messages
+	messages, err := m.messageRepo.GetBySessionID(ctx, sessionID, limit)
+	if err != nil {
+		return nil, "", err
+	}
+
+	result := make([]provider.Message, len(messages))
+	for i, msg := range messages {
+		result[i] = provider.Message{
+			Role:    provider.MessageRole(msg.Role),
+			Content: msg.Content,
+		}
+	}
+
+	return result, summary, nil
 }
 
 // CreateSession creates a new session
