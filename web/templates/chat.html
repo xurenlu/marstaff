@@ -931,12 +931,14 @@
             }
         });
 
-        // Initialize Mermaid
-        mermaid.initialize({
-            startOnLoad: false,
-            theme: 'dark',
-            securityLevel: 'loose'
-        });
+        // Initialize Mermaid (if loaded)
+        if (typeof mermaid !== 'undefined' && typeof mermaid.initialize === 'function') {
+            mermaid.initialize({
+                startOnLoad: false,
+                theme: 'dark',
+                securityLevel: 'loose'
+            });
+        }
 
         // Theme management
         const themeToggle = document.getElementById('themeToggle');
@@ -953,12 +955,14 @@
             document.documentElement.setAttribute('data-theme', currentTheme);
             localStorage.setItem('marstaff_theme', currentTheme);
             updateThemeUI();
-            // Update mermaid theme based on current theme
-            mermaid.initialize({
-                startOnLoad: false,
-                theme: currentTheme === 'dark' ? 'dark' : 'default',
-                securityLevel: 'loose'
-            });
+            // Update mermaid theme based on current theme (if loaded)
+            if (typeof mermaid !== 'undefined' && typeof mermaid.initialize === 'function') {
+                mermaid.initialize({
+                    startOnLoad: false,
+                    theme: currentTheme === 'dark' ? 'dark' : 'default',
+                    securityLevel: 'loose'
+                });
+            }
         });
 
         function updateThemeUI() {
@@ -1539,24 +1543,28 @@
         }
 
         function renderMathAndDiagrams(element) {
-            // Render LaTeX math with KaTeX
-            renderMathInElement(element, {
-                delimiters: [
-                    {left: '$$', right: '$$', display: true},
-                    {left: '$', right: '$', display: false},
-                    {left: '\\(', right: '\\)', display: false},
-                    {left: '\\[', right: '\\]', display: true}
-                ],
-                throwOnError: false
-            });
+            // Render LaTeX math with KaTeX (if loaded)
+            if (typeof renderMathInElement === 'function') {
+                renderMathInElement(element, {
+                    delimiters: [
+                        {left: '$$', right: '$$', display: true},
+                        {left: '$', right: '$', display: false},
+                        {left: '\\(', right: '\\)', display: false},
+                        {left: '\\[', right: '\\]', display: true}
+                    ],
+                    throwOnError: false
+                });
+            }
 
-            // Render Mermaid diagrams
-            const mermaidDivs = element.querySelectorAll('.mermaid');
-            mermaidDivs.forEach(div => {
-                mermaid.run({
-                    nodes: [div]
-                }).catch(err => console.warn('Mermaid render error:', err));
-            });
+            // Render Mermaid diagrams (if loaded)
+            if (typeof mermaid !== 'undefined' && typeof mermaid.run === 'function') {
+                const mermaidDivs = element.querySelectorAll('.mermaid');
+                mermaidDivs.forEach(div => {
+                    mermaid.run({
+                        nodes: [div]
+                    }).catch(err => console.warn('Mermaid render error:', err));
+                });
+            }
 
             // Add copy buttons to code blocks
             const codeBlocks = element.querySelectorAll('pre > code');
