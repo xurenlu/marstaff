@@ -70,3 +70,8 @@ func (r *SessionRepository) Delete(ctx context.Context, id string) error {
 func (r *SessionRepository) UpdateTitle(ctx context.Context, id, title string) error {
 	return r.db.WithContext(ctx).Model(&model.Session{}).Where("id = ?", id).Update("title", title).Error
 }
+
+// UpdateWorkDir updates the session work directory (edit mode)
+func (r *SessionRepository) UpdateWorkDir(ctx context.Context, id, workDir string) error {
+	return r.db.WithContext(ctx).Model(&model.Session{}).Where("id = ?", id).Update("work_dir", workDir).Error
+}

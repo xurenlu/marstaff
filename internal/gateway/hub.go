@@ -32,6 +32,7 @@ const (
 	MessageTypeStatus   MessageType = "status"
 	MessageTypePong     MessageType = "pong"
 	MessageTypePing     MessageType = "ping"
+	MessageTypeOpenSearch MessageType = "open_search"
 )
 
 // Message represents a WebSocket message
@@ -187,13 +188,24 @@ func (h *Hub) handleBroadcast(message *Message) {
 	// Broadcast to specific session or all clients
 	if message.SessionID != "" {
 		// Send to clients in the session
-		if sessionClients, ok := h.sessionClients[message.SessionID]; ok {
+		if sessionClients, ok := h.sessionClients[message.SessionID]; ok && len(sessionClients) > 0 {
 			for _, client := range sessionClients {
 				select {
 				case client.Send <- data:
 				default:
 					// Channel full, close client
 					h.unregister <- client
+				}
+			}
+		} else if message.UserID != "" {
+			// Fallback: new session just created, client not in session index yet (connects with empty session_id)
+			if userClients, ok := h.userClients[message.UserID]; ok {
+				for _, client := range userClients {
+					select {
+					case client.Send <- data:
+					default:
+						h.unregister <- client
+					}
 				}
 			}
 		}
@@ -258,6 +270,19 @@ func (h *Hub) GetClientsByUser(userID string) []*Client {
 		}
 	}
 	return clients
+}
+
+// AddClientToSession adds a client to the session index (e.g. when creating a new session)
+func (h *Hub) AddClientToSession(client *Client, sessionID string) {
+	if sessionID == "" {
+		return
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if _, ok := h.sessionClients[sessionID]; !ok {
+		h.sessionClients[sessionID] = make(map[string]*Client)
+	}
+	h.sessionClients[sessionID][client.ID] = client
 }
 
 // GetClientsBySession returns all clients for a session
@@ -335,21 +360,7 @@ func (c *Client) writePump() {
 			}
 
 			c.mu.Lock()
-			w, err := c.Conn.NextWriter(websocket.TextMessage)
-			if err != nil {
-				c.mu.Unlock()
-				return
-			}
-			w.Write(message)
-
-			// Add queued messages to the current message
-			n := len(c.Send)
-			for i := 0; i < n; i++ {
-				w.Write([]byte{'\n'})
-				w.Write(<-c.Send)
-			}
-
-			if err := w.Close(); err != nil {
+			if err := c.Conn.WriteMessage(websocket.TextMessage, message); err != nil {
 				c.mu.Unlock()
 				return
 			}

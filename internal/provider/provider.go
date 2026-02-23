@@ -15,12 +15,23 @@ const (
 	RoleTool      MessageRole = "tool"
 )
 
+// ContentPart represents a part of multimodal message content
+type ContentPart struct {
+	Type     string `json:"type,omitempty"` // "text" or "image_url"
+	Text     string `json:"text,omitempty"`
+	ImageURL *struct {
+		URL string `json:"url"` // data:image/png;base64,... or https://...
+	} `json:"image_url,omitempty"`
+}
+
 // Message represents a chat message
 type Message struct {
-	Role         MessageRole `json:"role"`
-	Content      string      `json:"content"`
-	ToolCallID   string      `json:"tool_call_id,omitempty"`
-	ToolCalls    []ToolCall  `json:"tool_calls,omitempty"`
+	Role         MessageRole   `json:"role"`
+	Content      string        `json:"content,omitempty"`       // text-only (when ContentParts empty)
+	ContentParts []ContentPart `json:"content_parts,omitempty"` // multimodal: text + image
+	ToolCallID   string        `json:"tool_call_id,omitempty"`
+	ToolCalls    []ToolCall    `json:"tool_calls,omitempty"`
+	Thinking     string        `json:"thinking,omitempty"` // thinking process content (for Zhipu GLM, etc.)
 }
 
 // ToolCall represents a function/tool call
@@ -43,17 +54,23 @@ type Tool struct {
 	} `json:"function"`
 }
 
+// ThinkingParams represents thinking mode parameters (for Zhipu GLM, etc.)
+type ThinkingParams struct {
+	Type string `json:"type"` // "enabled" or "disabled"
+}
+
 // ChatCompletionRequest is a request for chat completion
 type ChatCompletionRequest struct {
-	Model            string    `json:"model"`
-	Messages         []Message `json:"messages"`
-	Tools            []Tool    `json:"tools,omitempty"`
-	ToolChoice       any       `json:"tool_choice,omitempty"`
-	Temperature      float64   `json:"temperature,omitempty"`
-	MaxTokens        int       `json:"max_tokens,omitempty"`
-	TopP             float64   `json:"top_p,omitempty"`
-	Stream           bool      `json:"stream,omitempty"`
-	Stop             []string  `json:"stop,omitempty"`
+	Model            string          `json:"model"`
+	Messages         []Message       `json:"messages"`
+	Tools            []Tool          `json:"tools,omitempty"`
+	ToolChoice       any             `json:"tool_choice,omitempty"`
+	Temperature      float64         `json:"temperature,omitempty"`
+	MaxTokens        int             `json:"max_tokens,omitempty"`
+	TopP             float64         `json:"top_p,omitempty"`
+	Stream           bool            `json:"stream,omitempty"`
+	Stop             []string        `json:"stop,omitempty"`
+	Thinking         *ThinkingParams `json:"thinking,omitempty"` // Thinking mode support
 }
 
 // ChatCompletionResponse is the response from chat completion

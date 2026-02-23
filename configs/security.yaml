@@ -1,0 +1,86 @@
+# Security configuration for Marstaff AI Agent
+# This file controls access to file operations and command execution
+
+# Working directory whitelist - only these directories can be accessed
+working_directories:
+  - "/Users/rocky/Sites/marstaff"
+  - "./workspace"
+  - "./tmp"
+
+# File extension whitelist - only these extensions can be written
+allowed_extensions:
+  - ".go"
+  - ".md"
+  - ".txt"
+  - ".yaml"
+  - ".yml"
+  - ".json"
+  - ".xml"
+  - ".csv"
+  - ".html"
+  - ".css"
+  - ".js"
+  - ".ts"
+  - ".py"
+  - ".sh"
+  - ".conf"
+  - ".ini"
+
+# Command blacklist - these dangerous commands are blocked
+# Patterns are case-insensitive and * matches any sequence
+command_blacklist:
+  - "rm -rf *"      # Block recursive rm with any argument
+  - "rm -rf /*"     # Block rm -rf from root
+  - "mkfs*"         # Block filesystem creation commands
+  - "dd if="        # Block dd with input (dangerous disk operations)
+  - "format*"       # Block format commands
+  - "chmod 000"     # Block removing all permissions
+  - "chmod -R 000"  # Block recursive permission removal
+  - "chown root*"   # Block changing ownership to root
+  - "sudo su"       # Block sudo to su
+  - "su root"       # Block direct su to root
+  - "su -"          # Block su with login shell
+  - ":(){:|:&};:"   # Fork bomb
+  - "shutdown*"     # Block shutdown commands
+  - "reboot"        # Block reboot
+  - "halt"          # Block halt
+  - "poweroff"      # Block poweroff
+  - "DROP TABLE"    # Block SQL DROP TABLE
+  - "DELETE FROM*"  # Block SQL DELETE (use specific conditions)
+  - "TRUNCATE*"     # Block SQL TRUNCATE
+
+# Path blacklist - these sensitive paths cannot be accessed
+path_blacklist:
+  - "/etc/passwd"
+  - "/etc/shadow"
+  - "/etc/sudoers"
+  - "~/.ssh/"
+  - "~/.aws/"
+  - "~/.gnupg/"
+  - "/root/"
+  - "/boot/"
+  - "/sys/"
+  - "/proc/sys"
+  - "*.key"
+  - "*.pem"
+  - "*.cert"
+  - "*.p12"
+  - "*.pfx"
+
+# Operation limits
+limits:
+  max_read_size: 10485760      # 10MB - maximum file size to read
+  max_write_size: 5242880     # 5MB - maximum content size to write
+  max_search_results: 100     # maximum number of search results
+  max_list_depth: 10          # maximum directory depth for listing
+  command_timeout: 30         # command execution timeout in seconds
+  max_command_output: 1048576 # 1MB - maximum command output size
+
+# Security policy switches
+policy:
+  allow_commands: true        # enable command execution
+  allow_write: true           # enable file writing
+  allow_read: true            # enable file reading
+  allow_search: true          # enable file searching
+  allow_list: true            # enable directory listing
+  enable_logging: true        # enable security event logging

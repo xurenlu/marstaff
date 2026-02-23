@@ -1,6 +1,6 @@
 # Marstaff Makefile
 
-.PHONY: all build clean test run-gateway run-agent deps fmt lint docker
+.PHONY: all build clean test run deps fmt lint docker
 
 # Variables
 BINARY_DIR=bin
@@ -11,7 +11,6 @@ LDFLAGS=-w -s
 
 # Build targets
 GATEWAY_BINARY=$(BINARY_DIR)/gateway
-AGENT_BINARY=$(BINARY_DIR)/agent
 
 all: deps build
 
@@ -20,17 +19,12 @@ deps:
 	$(GO) mod download
 	$(GO) mod tidy
 
-build: build-gateway build-agent
+build: build-gateway
 
 build-gateway:
-	@echo "Building gateway..."
+	@echo "Building Marstaff server..."
 	@mkdir -p $(BINARY_DIR)
 	$(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(GATEWAY_BINARY) $(CMD_DIR)/gateway/main.go
-
-build-agent:
-	@echo "Building agent..."
-	@mkdir -p $(BINARY_DIR)
-	$(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(AGENT_BINARY) $(CMD_DIR)/agent/main.go
 
 clean:
 	@echo "Cleaning..."
@@ -53,13 +47,9 @@ lint:
 	@echo "Linting code..."
 	golangci-lint run ./...
 
-run-gateway: build-gateway
-	@echo "Running gateway..."
+run: build-gateway
+	@echo "Running Marstaff server..."
 	./$(GATEWAY_BINARY) --config configs/config.yaml
-
-run-agent: build-agent
-	@echo "Running agent..."
-	./$(AGENT_BINARY) --config configs/config.yaml
 
 docker-build:
 	@echo "Building Docker image..."
@@ -81,16 +71,14 @@ help:
 	@echo "Available targets:"
 	@echo "  all           - Install dependencies and build"
 	@echo "  deps          - Install dependencies"
-	@echo "  build         - Build all binaries"
-	@echo "  build-gateway - Build gateway binary"
-	@echo "  build-agent   - Build agent binary"
+	@echo "  build         - Build server binary"
+	@echo "  build-gateway - Build server binary"
 	@echo "  clean         - Remove build artifacts"
 	@echo "  test          - Run tests"
 	@echo "  test-coverage - Run tests with coverage"
 	@echo "  fmt           - Format code"
 	@echo "  lint          - Run linter"
-	@echo "  run-gateway   - Build and run gateway"
-	@echo "  run-agent     - Build and run agent"
+	@echo "  run           - Build and run server"
 	@echo "  docker-build  - Build Docker image"
 	@echo "  docker-run    - Run with Docker Compose"
 	@echo "  migrate-up    - Run database migrations up"

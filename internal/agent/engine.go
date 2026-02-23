@@ -17,11 +17,20 @@ import (
 
 // Engine is the AI agent engine
 type Engine struct {
-	provider     provider.Provider
-	skillRegistry skill.Registry
-	memory       *PersistentMemory
-	tools        map[string]ToolHandler
-	sessionAPI   *api.SessionAPI
+	provider      provider.Provider
+	skillRegistry  skill.Registry
+	memory        *PersistentMemory
+	tools         map[string]ToolDefinition
+	sessionAPI    *api.SessionAPI
+	todoRepo      *repository.TodoRepository
+}
+
+// ToolDefinition represents a tool with its handler and metadata
+type ToolDefinition struct {
+	Name        string
+	Description string
+	Parameters  map[string]interface{}
+	Handler     ToolHandler
 }
 
 // Config is the engine configuration
@@ -29,6 +38,7 @@ type Config struct {
 	Provider   provider.Provider
 	SkillsPath string
 	DB         *gorm.DB
+	TodoRepo   *repository.TodoRepository
 }
 
 // NewEngine creates a new agent engine
@@ -46,11 +56,14 @@ func NewEngine(cfg *Config) (*Engine, error) {
 		provider:     cfg.Provider,
 		skillRegistry: skillRegistry,
 		memory:       memory,
-		tools:        make(map[string]ToolHandler),
+		tools:        make(map[string]ToolDefinition),
 	}
 
 	if cfg.DB != nil {
 		engine.sessionAPI = api.NewSessionAPI(cfg.DB)
+	}
+	if cfg.TodoRepo != nil {
+		engine.todoRepo = cfg.TodoRepo
 	}
 
 	// Load skills
@@ -72,11 +85,14 @@ type ChatRequest struct {
 	Model       string
 	Temperature float64
 	Tools       []provider.Tool
+	PlanMode    bool // when true, LLM outputs plan only, no tool execution
+	Thinking    *provider.ThinkingParams // Thinking mode (for Zhipu GLM, etc.)
 }
 
 // ChatResponse is the response from chat completion
 type ChatResponse struct {
 	Content      string
+	Thinking     string // Thinking process content (from Zhipu GLM, etc.)
 	ToolCalls    []provider.ToolCall
 	Usage        provider.Usage
 	FinishReason string
@@ -90,12 +106,13 @@ func (e *Engine) Chat(ctx context.Context, req *ChatRequest) (*ChatResponse, err
 		return nil, fmt.Errorf("failed to build context: %w", err)
 	}
 
-	// Create provider request
+	// Create provider request (no tools in plan mode)
 	providerReq := provider.ChatCompletionRequest{
 		Model:       req.Model,
 		Messages:    messages,
-		Tools:       e.getProviderTools(),
+		Tools:       e.getProviderTools(req),
 		Temperature: req.Temperature,
+		Thinking:    req.Thinking,
 	}
 
 	// Call provider
@@ -106,6 +123,7 @@ func (e *Engine) Chat(ctx context.Context, req *ChatRequest) (*ChatResponse, err
 
 	response := &ChatResponse{
 		Content:      completion.Choices[0].Message.Content,
+		Thinking:     completion.Choices[0].Message.Thinking,
 		Usage:        completion.Usage,
 		FinishReason: completion.Choices[0].FinishReason,
 	}
@@ -137,11 +155,11 @@ func (e *Engine) ChatStream(ctx context.Context, req *ChatRequest) (<-chan strin
 		return nil, fmt.Errorf("failed to build context: %w", err)
 	}
 
-	// Create provider request
+	// Create provider request (no tools in plan mode)
 	providerReq := provider.ChatCompletionRequest{
 		Model:       req.Model,
 		Messages:    messages,
-		Tools:       e.getProviderTools(),
+		Tools:       e.getProviderTools(req),
 		Temperature: req.Temperature,
 		Stream:      true,
 	}
@@ -214,6 +232,22 @@ func (e *Engine) buildSystemPrompt(ctx context.Context, req *ChatRequest) string
 	prompt.WriteString("\nUse these skills when appropriate to help the user.")
 	prompt.WriteString("\n\nWhen a user asks for something that requires a skill, explain what you're going to do before doing it.")
 
+	// Plan mode: output plan only, no tool execution
+	if req != nil && req.PlanMode {
+		prompt.WriteString("\n\n**PLAN MODE**: You are in plan mode. Output a clear, step-by-step plan for the user's request. Do NOT execute any tools or take actions. Wait for the user to confirm before proceeding.")
+	}
+
+	// Inject todo list into context when available
+	if req != nil && req.SessionID != "" && e.todoRepo != nil {
+		if items, err := e.todoRepo.GetBySessionID(ctx, req.SessionID); err == nil && len(items) > 0 {
+			prompt.WriteString("\n\n**Current todo list:**")
+			for _, item := range items {
+				prompt.WriteString(fmt.Sprintf("\n- [%s] %s (id: %s)", item.Status, item.Description, item.ID))
+			}
+			prompt.WriteString("\nUse todo_add, todo_update, todo_list, todo_complete tools to manage the list.")
+		}
+	}
+
 	// Add current time context
 	if currentTime := ctx.Value("current_time"); currentTime != nil {
 		prompt.WriteString(fmt.Sprintf("\n\nCurrent time: %s", currentTime))
@@ -222,13 +256,19 @@ func (e *Engine) buildSystemPrompt(ctx context.Context, req *ChatRequest) string
 	return prompt.String()
 }
 
-// getProviderTools converts skill tools to provider tools
-func (e *Engine) getProviderTools() []provider.Tool {
-	skillTools := e.skillRegistry.GetTools()
-	tools := make([]provider.Tool, len(skillTools))
+// getProviderTools converts skill tools and engine tools to provider tools
+func (e *Engine) getProviderTools(req *ChatRequest) []provider.Tool {
+	// Plan mode: no tools, LLM outputs plan only
+	if req != nil && req.PlanMode {
+		return nil
+	}
 
-	for i, st := range skillTools {
-		tools[i] = provider.Tool{
+	var tools []provider.Tool
+
+	// Add tools from skill registry
+	skillTools := e.skillRegistry.GetTools()
+	for _, st := range skillTools {
+		tools = append(tools, provider.Tool{
 			Type: "function",
 			Function: struct {
 				Name        string                 `json:"name"`
@@ -239,7 +279,23 @@ func (e *Engine) getProviderTools() []provider.Tool {
 				Description: st.Description,
 				Parameters:  st.Parameters,
 			},
-		}
+		})
+	}
+
+	// Add tools registered directly on engine
+	for _, toolDef := range e.tools {
+		tools = append(tools, provider.Tool{
+			Type: "function",
+			Function: struct {
+				Name        string                 `json:"name"`
+				Description string                 `json:"description"`
+				Parameters  map[string]interface{} `json:"parameters"`
+			}{
+				Name:        toolDef.Name,
+				Description: toolDef.Description,
+				Parameters:  toolDef.Parameters,
+			},
+		})
 	}
 
 	return tools
@@ -265,9 +321,14 @@ func (e *Engine) GetSessionAPI() *api.SessionAPI {
 	return e.sessionAPI
 }
 
-// RegisterTool registers a tool handler
-func (e *Engine) RegisterTool(name string, handler ToolHandler) {
-	e.tools[name] = handler
+// RegisterTool registers a tool with metadata
+func (e *Engine) RegisterTool(name, description string, parameters map[string]interface{}, handler ToolHandler) {
+	e.tools[name] = ToolDefinition{
+		Name:        name,
+		Description: description,
+		Parameters:  parameters,
+		Handler:     handler,
+	}
 }
 
 // ToolHandler handles tool execution
@@ -349,4 +410,12 @@ func (m *PersistentMemory) CreateSession(ctx context.Context, userID, title, mod
 // GetSession retrieves a session
 func (m *PersistentMemory) GetSession(ctx context.Context, sessionID string) (*model.Session, error) {
 	return m.sessionRepo.GetByID(ctx, sessionID)
+}
+
+// GetSession retrieves a session (exposed on Engine for executor use)
+func (e *Engine) GetSession(ctx context.Context, sessionID string) (*model.Session, error) {
+	if e.memory == nil {
+		return nil, nil
+	}
+	return e.memory.GetSession(ctx, sessionID)
 }

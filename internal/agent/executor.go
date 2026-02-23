@@ -25,8 +25,26 @@ func NewExecutor(engine *Engine) *Executor {
 	}
 }
 
+// ContextKey type for agent context values
+type contextKey string
+
+const (
+	// ContextKeySessionWorkDir is the context key for session working directory (edit mode)
+	ContextKeySessionWorkDir contextKey = "session_work_dir"
+	// ContextKeySessionID is the context key for session ID (used by todo tools etc.)
+	ContextKeySessionID contextKey = "session_id"
+)
+
 // ExecuteToolCalls executes tool calls returned by the AI
 func (e *Executor) ExecuteToolCalls(ctx context.Context, sessionID, userID string, toolCalls []provider.ToolCall) ([]provider.Message, error) {
+	// Enrich context with session work_dir and session_id
+	if sessionID != "" {
+		ctx = context.WithValue(ctx, ContextKeySessionID, sessionID)
+		if session, err := e.engine.GetSession(ctx, sessionID); err == nil && session != nil && session.WorkDir != "" {
+			ctx = context.WithValue(ctx, ContextKeySessionWorkDir, session.WorkDir)
+		}
+	}
+
 	var results []provider.Message
 
 	for _, toolCall := range toolCalls {
@@ -79,8 +97,8 @@ func (e *Executor) executeToolCall(ctx context.Context, sessionID, userID string
 		Msg("executing tool")
 
 	// Try to find and execute built-in tool handler
-	if handler, exists := e.engine.tools[toolName]; exists {
-		return handler(ctx, args)
+	if toolDef, exists := e.engine.tools[toolName]; exists {
+		return toolDef.Handler(ctx, args)
 	}
 
 	// Try to find tool from skills
@@ -148,36 +166,59 @@ func (e *Executor) ExecuteWithTools(ctx context.Context, req *ChatRequest) (*Cha
 // RegisterBuiltInTools registers built-in tools
 func (e *Executor) RegisterBuiltInTools() {
 	// Calculator tool
-	e.engine.RegisterTool("calculator", func(ctx context.Context, params map[string]interface{}) (string, error) {
-		expr, ok := params["expression"].(string)
-		if !ok {
-			return "", fmt.Errorf("expression parameter is required")
-		}
+	e.engine.RegisterTool("calculator",
+		"Evaluates mathematical expressions",
+		map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"expression": map[string]interface{}{
+					"type":        "string",
+					"description": "Mathematical expression to evaluate (e.g., '2 + 3 * 4')",
+				},
+			},
+			"required": []string{"expression"},
+		},
+		func(ctx context.Context, params map[string]interface{}) (string, error) {
+			expr, ok := params["expression"].(string)
+			if !ok {
+				return "", fmt.Errorf("expression parameter is required")
+			}
 
-		result, err := e.evaluateExpression(expr)
-		if err != nil {
-			return "", err
-		}
+			result, err := e.evaluateExpression(expr)
+			if err != nil {
+				return "", err
+			}
 
-		return fmt.Sprintf("%s = %v", expr, result), nil
-	})
+			return fmt.Sprintf("%s = %v", expr, result), nil
+		})
 
 	// Get current time
-	e.engine.RegisterTool("get_current_time", func(ctx context.Context, params map[string]interface{}) (string, error) {
-		// Return formatted time
-		return fmt.Sprintf("Current time: %s", ctx.Value("current_time")), nil
-	})
+	e.engine.RegisterTool("get_current_time",
+		"Gets the current time",
+		map[string]interface{}{
+			"type":       "object",
+			"properties": map[string]interface{}{},
+		},
+		func(ctx context.Context, params map[string]interface{}) (string, error) {
+			return fmt.Sprintf("Current time: %s", ctx.Value("current_time")), nil
+		})
 
 	// Get skills list
-	e.engine.RegisterTool("list_skills", func(ctx context.Context, params map[string]interface{}) (string, error) {
-		skills := e.registry.ListEnabled()
-		var result string
-		for _, s := range skills {
-			meta := s.Metadata()
-			result += fmt.Sprintf("- %s: %s\n", meta.Name, meta.Description)
-		}
-		return result, nil
-	})
+	e.engine.RegisterTool("list_skills",
+		"Lists all available skills",
+		map[string]interface{}{
+			"type":       "object",
+			"properties": map[string]interface{}{},
+		},
+		func(ctx context.Context, params map[string]interface{}) (string, error) {
+			skills := e.registry.ListEnabled()
+			var result string
+			for _, s := range skills {
+				meta := s.Metadata()
+				result += fmt.Sprintf("- %s: %s\n", meta.Name, meta.Description)
+			}
+			return result, nil
+		})
 
 	log.Info().Msg("registered built-in tools")
 }

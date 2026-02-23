@@ -105,6 +105,10 @@ func (s *Server) ServeWebSocket(c *gin.Context) {
 
 // handleMessage handles incoming messages from a client
 func (s *Server) handleMessage(client *Client, msg *Message) {
+	// Update client.SessionID from message if client sent one (e.g. continuing existing chat)
+	if msg.SessionID != "" {
+		client.SessionID = msg.SessionID
+	}
 	// Set user and session from client
 	msg.UserID = client.UserID
 	msg.SessionID = client.SessionID

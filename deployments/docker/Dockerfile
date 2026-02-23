@@ -15,9 +15,8 @@ RUN go mod download
 # Copy source code
 COPY . .
 
-# Build binaries
+# Build binary
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -ldflags '-w -s' -o bin/gateway ./cmd/gateway
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -ldflags '-w -s' -o bin/agent ./cmd/agent
 
 # Final stage
 FROM alpine:latest
@@ -26,9 +25,8 @@ RUN apk --no-cache add ca-certificates
 
 WORKDIR /app
 
-# Copy binaries
+# Copy binary
 COPY --from=builder /build/bin/gateway /app/
-COPY --from=builder /build/bin/agent /app/
 
 # Copy configs and skills
 COPY --from=builder /build/configs /app/configs
