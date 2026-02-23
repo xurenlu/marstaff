@@ -7,6 +7,7 @@ import (
 
 	"github.com/rs/zerolog/log"
 
+	"github.com/rocky/marstaff/internal/contextkeys"
 	"github.com/rocky/marstaff/internal/provider"
 	"github.com/rocky/marstaff/internal/skill"
 )
@@ -25,23 +26,13 @@ func NewExecutor(engine *Engine) *Executor {
 	}
 }
 
-// ContextKey type for agent context values
-type contextKey string
-
-const (
-	// ContextKeySessionWorkDir is the context key for session working directory (edit mode)
-	ContextKeySessionWorkDir contextKey = "session_work_dir"
-	// ContextKeySessionID is the context key for session ID (used by todo tools etc.)
-	ContextKeySessionID contextKey = "session_id"
-)
-
 // ExecuteToolCalls executes tool calls returned by the AI
 func (e *Executor) ExecuteToolCalls(ctx context.Context, sessionID, userID string, toolCalls []provider.ToolCall) ([]provider.Message, error) {
 	// Enrich context with session work_dir and session_id
 	if sessionID != "" {
-		ctx = context.WithValue(ctx, ContextKeySessionID, sessionID)
+		ctx = context.WithValue(ctx, contextkeys.SessionID, sessionID)
 		if session, err := e.engine.GetSession(ctx, sessionID); err == nil && session != nil && session.WorkDir != "" {
-			ctx = context.WithValue(ctx, ContextKeySessionWorkDir, session.WorkDir)
+			ctx = context.WithValue(ctx, contextkeys.SessionWorkDir, session.WorkDir)
 		}
 	}
 
@@ -117,31 +108,37 @@ func (e *Executor) executeToolCall(ctx context.Context, sessionID, userID string
 
 // ExecuteWithTools executes a chat request with tool calling support
 func (e *Executor) ExecuteWithTools(ctx context.Context, req *ChatRequest) (*ChatResponse, error) {
-	// Initial chat request
-	resp, err := e.engine.Chat(ctx, req)
+	return e.ExecuteWithToolsStream(ctx, req, nil)
+}
+
+// ExecuteWithToolsStream executes with optional streaming. If onChunk is non-nil, streams the first response.
+func (e *Executor) ExecuteWithToolsStream(ctx context.Context, req *ChatRequest, onChunk StreamChunkCallback) (*ChatResponse, error) {
+	var resp *ChatResponse
+	var err error
+	if onChunk != nil {
+		resp, err = e.engine.ChatStreamWithCallback(ctx, req, onChunk)
+	} else {
+		resp, err = e.engine.Chat(ctx, req)
+	}
 	if err != nil {
 		return nil, err
 	}
 
-	// If no tool calls, return immediately
 	if len(resp.ToolCalls) == 0 {
 		return resp, nil
 	}
 
-	// Execute tool calls
 	maxIterations := 5
 	iteration := 0
 
 	for len(resp.ToolCalls) > 0 && iteration < maxIterations {
 		iteration++
 
-		// Execute tools
 		toolResults, err := e.ExecuteToolCalls(ctx, req.SessionID, req.UserID, resp.ToolCalls)
 		if err != nil {
 			return nil, fmt.Errorf("failed to execute tools: %w", err)
 		}
 
-		// Add tool results to messages
 		req.Messages = append(req.Messages, provider.Message{
 			Role:    provider.RoleAssistant,
 			Content: resp.Content,
@@ -153,7 +150,7 @@ func (e *Executor) ExecuteWithTools(ctx context.Context, req *ChatRequest) (*Cha
 		})
 		req.Messages = append(req.Messages, toolResults...)
 
-		// Get next response from AI
+		// Subsequent rounds use non-streaming (simpler for tool loop)
 		resp, err = e.engine.Chat(ctx, req)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get response after tool execution: %w", err)

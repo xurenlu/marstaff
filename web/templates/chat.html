@@ -398,6 +398,39 @@
             padding: 1rem;
             overflow-x: auto;
             margin: 0.75rem 0;
+            position: relative;
+        }
+
+        /* Code copy button */
+        .code-copy-btn {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            padding: 4px 8px;
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            cursor: pointer;
+            opacity: 0;
+            transition: opacity 0.2s, background 0.2s, color 0.2s;
+            z-index: 10;
+        }
+
+        .message-content pre:hover .code-copy-btn {
+            opacity: 1;
+        }
+
+        .code-copy-btn:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+
+        .code-copy-btn.copied {
+            background: var(--success-color);
+            color: white;
+            border-color: var(--success-color);
         }
 
         .message-content pre code {
@@ -421,6 +454,82 @@
             padding: 1rem;
             margin: 0.75rem 0;
             text-align: center;
+        }
+
+        /* Thinking block: fixed height when expanded to avoid layout flicker during streaming */
+        .thinking-block {
+            margin-top: 0.75rem;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            background: var(--bg-tertiary);
+            overflow: hidden;
+        }
+
+        .thinking-toggle {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 0.75rem;
+            cursor: pointer;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            user-select: none;
+            transition: background 0.2s, color 0.2s;
+        }
+
+        .thinking-toggle:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+
+        .thinking-toggle-icon {
+            transition: transform 0.2s;
+            font-size: 0.75rem;
+        }
+
+        .thinking-block.expanded .thinking-toggle-icon {
+            transform: rotate(90deg);
+        }
+
+        .thinking-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.25s ease-out;
+        }
+
+        .thinking-block.expanded .thinking-content {
+            max-height: 200px;
+        }
+
+        .thinking-inner {
+            max-height: 200px;
+            overflow-y: auto;
+            padding: 0.75rem 1rem;
+            font-size: 0.9rem;
+            line-height: 1.5;
+            color: var(--text-secondary);
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .message.streaming .streaming-content {
+            min-height: 1.5em;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .typing .thinking-stream {
+            max-height: 160px;
+            overflow-y: auto;
+            margin-top: 0.5rem;
+            padding: 0.5rem 0.75rem;
+            background: var(--bg-tertiary);
+            border-radius: 6px;
+            font-size: 0.85rem;
+            line-height: 1.5;
+            color: var(--text-secondary);
+            white-space: pre-wrap;
+            word-break: break-word;
         }
 
         .input-area {
@@ -609,12 +718,113 @@
             color: var(--text-secondary);
             font-size: 0.9rem;
         }
+
+        /* Mode toggle & workspace bar */
+        .mode-toggle {
+            display: flex;
+            gap: 0;
+            background: var(--bg-tertiary);
+            border-radius: 8px;
+            padding: 2px;
+            border: 1px solid var(--border-color);
+        }
+        .mode-toggle button {
+            padding: 0.4rem 0.8rem;
+            border: none;
+            background: transparent;
+            color: var(--text-secondary);
+            cursor: pointer;
+            font-size: 0.85rem;
+            border-radius: 6px;
+            transition: all 0.2s;
+        }
+        .mode-toggle button.active {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+        .mode-toggle button:hover:not(.active) {
+            color: var(--text-primary);
+        }
+        .workspace-bar {
+            display: none;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            background: var(--bg-tertiary);
+            border-bottom: 1px solid var(--border-color);
+            font-size: 0.85rem;
+        }
+        .workspace-bar.visible {
+            display: flex;
+            flex-wrap: wrap;
+        }
+        .workspace-bar input {
+            flex: 1;
+            min-width: 120px;
+            padding: 0.4rem 0.6rem;
+            background: var(--input-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            color: var(--text-primary);
+            font-size: 0.85rem;
+        }
+        .workspace-bar button {
+            padding: 0.4rem 0.6rem;
+            background: var(--bg-hover);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            color: var(--text-primary);
+            cursor: pointer;
+            font-size: 0.85rem;
+        }
+        .workspace-bar button:hover {
+            background: var(--bg-secondary);
+        }
+        .workspace-path {
+            color: var(--text-secondary);
+            font-family: monospace;
+            font-size: 0.8rem;
+            max-width: 200px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .plan-agent-toggle {
+            display: none;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 0.5rem;
+            font-size: 0.85rem;
+        }
+        .plan-agent-toggle.visible {
+            display: flex;
+        }
+        .plan-agent-toggle label {
+            color: var(--text-secondary);
+        }
+        .execute-plan-btn {
+            margin-top: 0.5rem;
+            padding: 0.4rem 0.8rem;
+            background: var(--success-color);
+            border: none;
+            border-radius: 6px;
+            color: white;
+            cursor: pointer;
+            font-size: 0.85rem;
+        }
+        .execute-plan-btn:hover {
+            opacity: 0.9;
+        }
     </style>
 </head>
 <body>
     <div class="header">
         <h1>Marstaff AI Assistant</h1>
         <div class="header-right">
+            <div class="mode-toggle">
+                <button type="button" id="modeChat" class="active" data-mode="chat">Chat</button>
+                <button type="button" id="modeProgramming" data-mode="programming">Programming</button>
+            </div>
+            <a href="/settings" class="theme-toggle" style="text-decoration:none" title="设置">⚙️</a>
             <button class="theme-toggle" id="themeToggle" title="Toggle theme">
                 <span id="themeIcon">🌙</span>
                 <span id="themeText">Dark</span>
@@ -637,6 +847,14 @@
         </div>
 
         <div class="chat">
+            <div class="workspace-bar" id="workspaceBar">
+                <input type="text" id="workspacePathInput" placeholder="Enter directory path...">
+                <button type="button" id="openWorkspaceBtn">Open</button>
+                <input type="text" id="newProjectInput" placeholder="New project name">
+                <button type="button" id="newProjectBtn">New Project</button>
+                <span class="workspace-path" id="currentWorkspacePath" title=""></span>
+                <button type="button" id="clearWorkspaceBtn">Clear</button>
+            </div>
             <div class="messages" id="messages">
                 <div class="message assistant">
                     <div class="message-avatar">🤖</div>
@@ -649,6 +867,13 @@
             </div>
             <div class="typing" id="typing"></div>
             <div class="input-area">
+                <div class="plan-agent-toggle" id="planAgentToggle">
+                    <label>Mode:</label>
+                    <div class="mode-toggle" style="padding:0;border:none;background:transparent">
+                        <button type="button" id="planAgentAgent" class="active" data-plan="false">Agent</button>
+                        <button type="button" id="planAgentPlan" data-plan="true">Plan</button>
+                    </div>
+                </div>
                 <div class="image-preview" id="imagePreview"></div>
                 <div class="input-wrapper">
                     <input type="file" id="imageInput" accept="image/*" style="display:none">
@@ -667,9 +892,30 @@
         let sessionId = null;
         let userId = null;
         let sessions = [];
-        let pendingImages = [];  // base64 data URLs for screenshot input
+        let pendingImages = [];  // OSS URLs or base64 data URLs (fallback when OSS unavailable)
         let lastUserMessage = null;  // Store last user message for regeneration
         let lastContentParts = null;  // Store last content parts for regeneration
+        let appMode = 'chat';  // 'chat' | 'programming'
+        let workspacePath = '';  // Current workspace path for programming mode
+        let planMode = false;   // true = plan only, false = agent executes
+        let lastMessageWasPlanMode = false;  // Track if last sent message was plan mode (for execute button)
+
+        // i18n (expand for full locale support)
+        const i18n = {
+            modeChat: 'Chat',
+            modeProgramming: 'Programming',
+            workspaceOpen: 'Open',
+            workspaceNewProject: 'New Project',
+            workspaceClear: 'Clear',
+            workspacePlaceholder: 'Enter directory path...',
+            workspaceNewPlaceholder: 'New project name',
+            planMode: 'Plan',
+            agentMode: 'Agent',
+            executePlan: 'Execute Plan',
+            loadingSessions: 'Loading sessions...',
+            noSessions: 'No conversations yet',
+            noReply: '（暂无回复，请稍后重试或检查 Agent 服务是否运行）',  // fallback
+        };
 
         // Configure marked for better markdown rendering
         marked.setOptions({
@@ -733,16 +979,149 @@
         const typingIndicator = document.getElementById('typing');
         const sessionsContainer = document.getElementById('sessions');
 
+        // Mode toggle (Chat / Programming)
+        document.getElementById('modeChat').addEventListener('click', () => setAppMode('chat'));
+        document.getElementById('modeProgramming').addEventListener('click', () => setAppMode('programming'));
+        function setAppMode(mode) {
+            appMode = mode;
+            document.querySelectorAll('.mode-toggle button[data-mode]').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.mode === mode);
+            });
+            const bar = document.getElementById('workspaceBar');
+            const planToggle = document.getElementById('planAgentToggle');
+            if (mode === 'programming') {
+                bar.classList.add('visible');
+                planToggle.classList.add('visible');
+                document.getElementById('currentWorkspacePath').textContent = workspacePath || '(no workspace)';
+            } else {
+                bar.classList.remove('visible');
+                planToggle.classList.remove('visible');
+            }
+        }
+
+        // Plan/Agent toggle
+        document.getElementById('planAgentAgent').addEventListener('click', () => { planMode = false; updatePlanToggleUI(); });
+        document.getElementById('planAgentPlan').addEventListener('click', () => { planMode = true; updatePlanToggleUI(); });
+        function updatePlanToggleUI() {
+            document.getElementById('planAgentAgent').classList.toggle('active', !planMode);
+            document.getElementById('planAgentPlan').classList.toggle('active', planMode);
+        }
+
+        // Workspace: Open directory
+        document.getElementById('openWorkspaceBtn').addEventListener('click', openWorkspace);
+        async function openWorkspace() {
+            const path = document.getElementById('workspacePathInput').value.trim();
+            if (!path) return;
+            try {
+                if (!sessionId) {
+                    sessionId = (await createNewSession(path)) || null;
+                    if (!sessionId) {
+                        alert('Failed to create session');
+                        return;
+                    }
+                } else {
+                    const res = await fetch(`${API_BASE}/api/sessions/${sessionId}`, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ work_dir: path })
+                    });
+                    if (!res.ok) {
+                        const err = await res.json();
+                        alert(err.error || 'Failed to open directory');
+                        return;
+                    }
+                }
+                workspacePath = path;
+                document.getElementById('currentWorkspacePath').textContent = path;
+                document.getElementById('currentWorkspacePath').title = path;
+                document.getElementById('workspacePathInput').value = '';
+                loadSessions();
+            } catch (e) {
+                alert('Failed to open directory: ' + e.message);
+            }
+        }
+
+        // Workspace: New project
+        document.getElementById('newProjectBtn').addEventListener('click', createNewProject);
+        async function createNewProject() {
+            const name = document.getElementById('newProjectInput').value.trim();
+            if (!name) return;
+            try {
+                const res = await fetch(`${API_BASE}/api/workspaces`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name })
+                });
+                if (!res.ok) {
+                    const err = await res.json();
+                    alert(err.error || 'Failed to create project');
+                    return;
+                }
+                const data = await res.json();
+                const path = data.path;
+                if (!sessionId) {
+                    sessionId = (await createNewSession(path)) || null;
+                    if (!sessionId) return;
+                } else {
+                    const patchRes = await fetch(`${API_BASE}/api/sessions/${sessionId}`, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ work_dir: path })
+                    });
+                    if (!patchRes.ok) {
+                        alert('Project created but failed to set workspace');
+                        return;
+                    }
+                }
+                workspacePath = path;
+                document.getElementById('currentWorkspacePath').textContent = path;
+                document.getElementById('currentWorkspacePath').title = path;
+                document.getElementById('newProjectInput').value = '';
+                loadSessions();
+            } catch (e) {
+                alert('Failed to create project: ' + e.message);
+            }
+        }
+
+        async function createNewSession(workDir) {
+            try {
+                const res = await fetch(`${API_BASE}/api/sessions`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        user_id: userId,
+                        platform: 'web',
+                        title: workDir ? 'Programming' : 'New Chat',
+                        work_dir: workDir || undefined
+                    })
+                });
+                if (!res.ok) return null;
+                const data = await res.json();
+                return data.session_id;
+            } catch (_) { return null; }
+        }
+
+        // Workspace: Clear
+        document.getElementById('clearWorkspaceBtn').addEventListener('click', () => {
+            if (!sessionId) { workspacePath = ''; document.getElementById('currentWorkspacePath').textContent = '(no workspace)'; return; }
+            fetch(`${API_BASE}/api/sessions/${sessionId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ work_dir: '' })
+            }).then(res => {
+                if (res.ok) {
+                    workspacePath = '';
+                    document.getElementById('currentWorkspacePath').textContent = '(no workspace)';
+                }
+            });
+        });
+
         // Initialize
         init();
 
         async function init() {
-            // Generate/get user ID
-            userId = localStorage.getItem('marstaff_user_id');
-            if (!userId) {
-                userId = 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-                localStorage.setItem('marstaff_user_id', userId);
-            }
+            // Single-user mode: fixed user ID
+            userId = 'default';
 
             // Connect to WebSocket
             connect();
@@ -803,6 +1182,12 @@
             try {
                 const response = await fetch(`${API_BASE}/api/sessions/${id}`);
                 const data = await response.json();
+
+                workspacePath = data.work_dir || '';
+                if (appMode === 'programming') {
+                    document.getElementById('currentWorkspacePath').textContent = workspacePath || '(no workspace)';
+                    document.getElementById('currentWorkspacePath').title = workspacePath;
+                }
 
                 // Clear and load messages
                 messagesContainer.innerHTML = '';
@@ -894,13 +1279,118 @@
             };
         }
 
+        let streamingThinkingBuffer = '';
+        let streamingContentBuffer = '';
+        let streamingPlaceholder = null;
+
         function showTypingIndicator(message) {
+            streamingThinkingBuffer = '';
+            streamingContentBuffer = '';
+            if (streamingPlaceholder) {
+                streamingPlaceholder.remove();
+                streamingPlaceholder = null;
+            }
             const text = message || 'AI is thinking...';
             typingIndicator.innerHTML = '<span class="typing-dots"><span></span><span></span><span></span></span><span>' + escapeHtml(text) + '</span>';
             typingIndicator.style.display = 'flex';
         }
 
+        function appendThinkingChunk(delta) {
+            if (delta == null || delta === '') return;
+            streamingThinkingBuffer += delta;
+            let streamEl = typingIndicator.querySelector('.thinking-stream');
+            if (!streamEl) {
+                typingIndicator.innerHTML = '<span class="typing-dots"><span></span><span></span><span></span></span><span>AI is thinking...</span><div class="thinking-stream"></div>';
+                streamEl = typingIndicator.querySelector('.thinking-stream');
+            }
+            streamEl.textContent = streamingThinkingBuffer;
+            streamEl.scrollTop = streamEl.scrollHeight;
+        }
+
+        function appendContentChunk(delta) {
+            if (delta == null || delta === '') return;
+            streamingContentBuffer += delta;
+            if (!streamingPlaceholder) {
+                streamingPlaceholder = createStreamingPlaceholder();
+            }
+            const el = streamingPlaceholder.querySelector('.streaming-content');
+            if (el) {
+                el.textContent = streamingContentBuffer;
+                el.scrollTop = el.scrollHeight;
+            }
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+
+        function createStreamingPlaceholder() {
+            const msgDiv = document.createElement('div');
+            msgDiv.className = 'message assistant streaming';
+            msgDiv.innerHTML = `
+                <div class="message-avatar">🤖</div>
+                <div class="message-wrapper">
+                    <div class="message-header">
+                        <span class="message-role">Assistant</span>
+                        <button class="regenerate-btn" onclick="regenerateResponse()" title="Regenerate response">🔄</button>
+                    </div>
+                    <div class="message-content">
+                        <div class="streaming-content"></div>
+                    </div>
+                </div>
+            `;
+            messagesContainer.appendChild(msgDiv);
+            return msgDiv;
+        }
+
+        function finalizeStreamingPlaceholder(content, thinking) {
+            if (!streamingPlaceholder) return;
+            const contentEl = streamingPlaceholder.querySelector('.message-content');
+            if (!contentEl) return;
+            let contentHtml = formatMessage(content || '');
+            if (thinking) {
+                contentHtml += buildThinkingBlockHtml(thinking, false);
+            }
+            contentEl.innerHTML = contentHtml;
+            if (lastMessageWasPlanMode) {
+                const btn = document.createElement('button');
+                btn.className = 'execute-plan-btn';
+                btn.textContent = i18n.executePlan;
+                btn.onclick = () => executePlan(streamingPlaceholder);
+                contentEl.appendChild(btn);
+            }
+            streamingPlaceholder.classList.remove('streaming');
+            const toggle = streamingPlaceholder.querySelector('.thinking-toggle');
+            if (toggle) {
+                toggle.addEventListener('click', () => {
+                    streamingPlaceholder.querySelector('.thinking-block').classList.toggle('expanded');
+                });
+            }
+            renderMathAndDiagrams(streamingPlaceholder);
+            streamingPlaceholder = null;
+        }
+
+        function executePlan(msgElement) {
+            if (!ws || ws.readyState !== WebSocket.OPEN) return;
+            const data = {
+                content: '请按照上述计划执行',
+                plan_mode: false
+            };
+            if (appMode === 'programming' && workspacePath) {
+                data.work_dir = workspacePath;
+            }
+            ws.send(JSON.stringify({
+                type: 'chat',
+                user_id: userId,
+                session_id: sessionId,
+                data: data
+            }));
+            showTypingIndicator();
+            const btn = msgElement && msgElement.querySelector('.execute-plan-btn');
+            if (btn) btn.disabled = true;
+        }
+        window.executePlan = executePlan;
+
         function hideTypingIndicator() {
+            streamingThinkingBuffer = '';
+            streamingContentBuffer = '';
             typingIndicator.innerHTML = '';
             typingIndicator.style.display = '';
         }
@@ -909,8 +1399,26 @@
             switch (data.type) {
                 case 'chat':
                     const content = data.data && data.data.content;
-                    addMessage('assistant', (content && content.trim()) ? content : '（暂无回复，请稍后重试或检查 Agent 服务是否运行）');
+                    let thinking = data.data && data.data.thinking;
+                    if (!thinking && streamingThinkingBuffer) {
+                        thinking = streamingThinkingBuffer;
+                    }
+                    if (data.session_id && data.session_id !== sessionId) {
+                        sessionId = data.session_id;
+                        loadSessions();
+                    }
+                    if (streamingPlaceholder) {
+                        finalizeStreamingPlaceholder((content && content.trim()) ? content : '（暂无回复，请稍后重试或检查 Agent 服务是否运行）', thinking || '');
+                    } else {
+                        addMessage('assistant', (content && content.trim()) ? content : '（暂无回复，请稍后重试或检查 Agent 服务是否运行）', true, [], thinking || '');
+                    }
                     hideTypingIndicator();
+                    break;
+                case 'content':
+                    appendContentChunk(data.data && data.data.delta);
+                    break;
+                case 'thinking':
+                    appendThinkingChunk(data.data && data.data.delta);
                     break;
                 case 'typing':
                     if (data.data && data.data.typing) {
@@ -920,6 +1428,10 @@
                     }
                     break;
                 case 'error':
+                    if (streamingPlaceholder) {
+                        streamingPlaceholder.remove();
+                        streamingPlaceholder = null;
+                    }
                     if (data.data && data.data.error) {
                         addMessage('error', `Error: ${data.data.error}`);
                     }
@@ -936,10 +1448,22 @@
                         window.open(data.data.url, '_blank');
                     }
                     break;
+                case 'session_title':
+                    if (data.session_id && data.data && data.data.title) {
+                        if (!sessionId) sessionId = data.session_id;
+                        const s = sessions.find(x => x.id === data.session_id);
+                        if (s) {
+                            s.title = data.data.title;
+                            renderSessions();
+                        } else {
+                            loadSessions();
+                        }
+                    }
+                    break;
             }
         }
 
-        function addMessage(role, content, scroll = true, imageUrls = []) {
+        function addMessage(role, content, scroll = true, imageUrls = [], thinking = '') {
             const msgDiv = document.createElement('div');
             msgDiv.className = `message ${role}`;
 
@@ -961,11 +1485,35 @@
                 contentHtml += imageUrls.map(url => `<img src="${escapeHtml(url)}" class="message-image" alt="attached">`).join('');
             }
 
+            // Add collapsible thinking block (collapsed by default when complete)
+            if (thinking && role === 'assistant') {
+                contentHtml += buildThinkingBlockHtml(thinking, false);
+            }
+
             innerHTML += `<div class="message-content">${contentHtml}</div>`;
             innerHTML += `</div>`;
 
             msgDiv.innerHTML = innerHTML;
             messagesContainer.appendChild(msgDiv);
+
+            if (role === 'assistant' && lastMessageWasPlanMode) {
+                const contentEl = msgDiv.querySelector('.message-content');
+                if (contentEl) {
+                    const btn = document.createElement('button');
+                    btn.className = 'execute-plan-btn';
+                    btn.textContent = i18n.executePlan;
+                    btn.onclick = () => executePlan(msgDiv);
+                    contentEl.appendChild(btn);
+                }
+            }
+
+            // Bind thinking toggle
+            const toggle = msgDiv.querySelector('.thinking-toggle');
+            if (toggle) {
+                toggle.addEventListener('click', () => {
+                    msgDiv.querySelector('.thinking-block').classList.toggle('expanded');
+                });
+            }
 
             // Render math and mermaid diagrams
             renderMathAndDiagrams(msgDiv);
@@ -973,6 +1521,21 @@
             if (scroll) {
                 messagesContainer.scrollTop = messagesContainer.scrollHeight;
             }
+        }
+
+        function buildThinkingBlockHtml(text, expanded = false) {
+            const escaped = escapeHtml(text || '');
+            return `
+                <div class="thinking-block${expanded ? ' expanded' : ''}">
+                    <div class="thinking-toggle">
+                        <span class="thinking-toggle-icon">▶</span>
+                        <span>${expanded ? '思考过程 (点击收起)' : '思考过程 (点击展开)'}</span>
+                    </div>
+                    <div class="thinking-content">
+                        <div class="thinking-inner">${escaped}</div>
+                    </div>
+                </div>
+            `;
         }
 
         function renderMathAndDiagrams(element) {
@@ -993,6 +1556,57 @@
                 mermaid.run({
                     nodes: [div]
                 }).catch(err => console.warn('Mermaid render error:', err));
+            });
+
+            // Add copy buttons to code blocks
+            const codeBlocks = element.querySelectorAll('pre > code');
+            codeBlocks.forEach(codeBlock => {
+                const pre = codeBlock.parentElement;
+                // Check if copy button already exists
+                if (!pre.querySelector('.code-copy-btn')) {
+                    const copyBtn = document.createElement('button');
+                    copyBtn.className = 'code-copy-btn';
+                    copyBtn.innerHTML = '📋 Copy';
+                    copyBtn.onclick = () => copyCode(codeBlock, copyBtn);
+                    pre.appendChild(copyBtn);
+                }
+            });
+        }
+
+        function copyCode(codeElement, button) {
+            const text = codeElement.textContent || codeElement.innerText;
+
+            navigator.clipboard.writeText(text).then(() => {
+                // Show copied state
+                button.innerHTML = '✓ Copied';
+                button.classList.add('copied');
+
+                // Reset after 2 seconds
+                setTimeout(() => {
+                    button.innerHTML = '📋 Copy';
+                    button.classList.remove('copied');
+                }, 2000);
+            }).catch(err => {
+                console.error('Failed to copy code:', err);
+                // Fallback for older browsers
+                const textArea = document.createElement('textarea');
+                textArea.value = text;
+                textArea.style.position = 'fixed';
+                textArea.style.left = '-999999px';
+                document.body.appendChild(textArea);
+                textArea.select();
+                try {
+                    document.execCommand('copy');
+                    button.innerHTML = '✓ Copied';
+                    button.classList.add('copied');
+                    setTimeout(() => {
+                        button.innerHTML = '📋 Copy';
+                        button.classList.remove('copied');
+                    }, 2000);
+                } catch (e) {
+                    button.innerHTML = '✗ Failed';
+                }
+                document.body.removeChild(textArea);
             });
         }
 
@@ -1051,6 +1665,13 @@
                     ...pendingImages.map(url => ({ type: 'image_url', image_url: { url: url } }))
                 ];
             }
+            const visionProvider = localStorage.getItem('marstaff_vision_provider') || 'qwen';
+            data.vision_provider = visionProvider;
+            data.plan_mode = planMode;
+            if (appMode === 'programming' && workspacePath) {
+                data.work_dir = workspacePath;
+            }
+            lastMessageWasPlanMode = planMode;
 
             const message = {
                 type: 'chat',
@@ -1068,9 +1689,6 @@
 
             // 立即显示等待反馈，给用户一点安慰
             showTypingIndicator();
-
-            // Wait longer for session to be created and saved
-            setTimeout(() => loadSessions(), 1500);
         }
 
         function regenerateResponse() {
@@ -1086,6 +1704,12 @@
             if (lastContentParts) {
                 data.content_parts = lastContentParts;
             }
+            data.vision_provider = localStorage.getItem('marstaff_vision_provider') || 'qwen';
+            data.plan_mode = planMode;
+            if (appMode === 'programming' && workspacePath) {
+                data.work_dir = workspacePath;
+            }
+            lastMessageWasPlanMode = planMode;
 
             const message = {
                 type: 'chat',
@@ -1122,11 +1746,27 @@
         }
         window.removePendingImage = removePendingImage;
 
-        function addPendingImage(dataUrl) {
-            if (pendingImages.length < 4) {
-                pendingImages.push(dataUrl);
-                renderImagePreview();
+        async function addPendingImageFromFile(file) {
+            if (pendingImages.length >= 4) return;
+            let url = null;
+            try {
+                const formData = new FormData();
+                formData.append('file', file, file.name || 'image.png');
+                const res = await fetch(`${API_BASE}/api/upload`, { method: 'POST', body: formData });
+                if (res.ok) {
+                    const data = await res.json();
+                    url = data.url;
+                }
+            } catch (e) { /* OSS not available or upload failed */ }
+            if (!url) {
+                url = await new Promise((resolve) => {
+                    const r = new FileReader();
+                    r.onload = () => resolve(r.result);
+                    r.readAsDataURL(file);
+                });
             }
+            pendingImages.push(url);
+            renderImagePreview();
         }
 
         sendBtn.addEventListener('click', sendMessage);
@@ -1137,9 +1777,7 @@
         document.getElementById('imageInput').addEventListener('change', (e) => {
             const file = e.target.files && e.target.files[0];
             if (file && file.type.startsWith('image/')) {
-                const r = new FileReader();
-                r.onload = () => addPendingImage(r.result);
-                r.readAsDataURL(file);
+                addPendingImageFromFile(file);
             }
             e.target.value = '';
         });
@@ -1147,10 +1785,8 @@
             const item = e.clipboardData && e.clipboardData.items && [...e.clipboardData.items].find(x => x.type.startsWith('image/'));
             if (item) {
                 e.preventDefault();
-                const blob = item.getAsFile();
-                const r = new FileReader();
-                r.onload = () => addPendingImage(r.result);
-                r.readAsDataURL(blob);
+                const file = item.getAsFile();
+                if (file) addPendingImageFromFile(file);
             }
         });
 

@@ -86,6 +86,22 @@ func run(cmd *cobra.Command, args []string) {
 		log.Fatal().Err(err).Msg("failed to create provider")
 	}
 
+	// Build vision providers map (qwen, zai with vision_model) for image recognition
+	visionProviders := make(map[string]provider.Provider)
+	for _, name := range []string{"qwen", "zai"} {
+		if provCfg := getProviderConfig(cfg, name); provCfg != nil {
+			if vm, ok := provCfg["vision_model"].(string); ok && vm != "" {
+				vp, err := provider.CreateProvider(name, provCfg)
+				if err != nil {
+					log.Warn().Err(err).Str("provider", name).Msg("failed to create vision provider")
+				} else {
+					visionProviders[name] = vp
+					log.Info().Str("provider", name).Str("model", vm).Msg("vision provider registered")
+				}
+			}
+		}
+	}
+
 	if err := prov.HealthCheck(context.Background()); err != nil {
 		log.Warn().Err(err).Msg("provider health check failed")
 	} else {
@@ -206,9 +222,12 @@ func run(cmd *cobra.Command, args []string) {
 			return nil
 		}
 
-		// Parse content and content_parts
+		// Parse content, content_parts, and settings (vision_provider, plan_mode, work_dir)
 		var content string
 		var contentParts []gateway.ContentPart
+		visionProviderChoice := "qwen" // default
+		planMode := false
+		var workDirFromMsg string
 		if c, ok := msg.Data.(string); ok {
 			content = c
 		} else if data, ok := msg.Data.(map[string]interface{}); ok {
@@ -242,6 +261,21 @@ func run(cmd *cobra.Command, args []string) {
 					}
 				}
 			}
+			if s, exists := data["vision_provider"]; exists {
+				if vp, ok := s.(string); ok && (vp == "qwen" || vp == "zai") {
+					visionProviderChoice = vp
+				}
+			}
+			if pm, exists := data["plan_mode"]; exists {
+				if b, ok := pm.(bool); ok {
+					planMode = b
+				}
+			}
+			if wd, exists := data["work_dir"]; exists {
+				if s, ok := wd.(string); ok {
+					workDirFromMsg = s
+				}
+			}
 		}
 
 		if content == "" && len(contentParts) == 0 {
@@ -259,27 +293,52 @@ func run(cmd *cobra.Command, args []string) {
 			}
 		}
 
-		// Create session if needed
+		// Create or ensure session exists (avoids FK constraint when client provides stale session_id)
+		originalSessionID := client.SessionID
 		sessionID := client.SessionID
-		if sessionID == "" && sessionAPI != nil {
+		if sessionID == "" {
 			sessionID = uuid.New().String()
 			client.SessionID = sessionID
 			activeSessions[client.ID] = sessionID
 			hub.AddClientToSession(client, sessionID)
+		}
+		isNewSession := originalSessionID == ""
 
+		if sessionID != "" && sessionAPI != nil {
 			ctx := context.Background()
-			_, err := sessionAPI.CreateSessionDirect(ctx, &api.CreateSessionRequest{
+			createReq := &api.CreateSessionRequest{
 				SessionID: sessionID,
 				UserID:    client.UserID,
 				Platform:  "web",
 				Title:     content[:min(50, len(content))],
 				Model:     "default",
-			})
-			if err != nil {
-				log.Error().Err(err).Msg("failed to create session")
-			} else {
-				log.Info().Str("session_id", sessionID).Msg("created new session")
 			}
+			if workDirFromMsg != "" {
+				createReq.WorkDir = workDirFromMsg
+			}
+			_, err := sessionAPI.GetOrCreateSessionDirect(ctx, createReq)
+			if err != nil {
+				log.Error().Err(err).Msg("failed to get or create session")
+			}
+		}
+
+		// Generate session title summary for new chats (async, non-blocking)
+		if isNewSession && sessionID != "" && sessionAPI != nil {
+			go func(sid string, userContent string, uid string) {
+				ctx := context.Background()
+				title := engine.GenerateSessionTitle(ctx, userContent)
+				if err := sessionAPI.UpdateSessionTitleDirect(ctx, sid, title); err != nil {
+					log.Warn().Err(err).Str("session_id", sid).Msg("failed to update session title")
+					return
+				}
+				hub.SendToUser(uid, &gateway.Message{
+					Type:      gateway.MessageTypeSessionTitle,
+					UserID:    uid,
+					SessionID: sid,
+					Data:      map[string]interface{}{"title": title},
+					Timestamp: time.Now().Unix(),
+				})
+			}(sessionID, content, client.UserID)
 		}
 
 		// Save user message
@@ -302,6 +361,7 @@ func run(cmd *cobra.Command, args []string) {
 		}
 
 		// Send typing indicator
+		log.Debug().Str("user_id", client.UserID).Str("session_id", client.SessionID).Msg("sending typing=true to client")
 		hub.SendToUser(client.UserID, &gateway.Message{
 			Type:      "typing",
 			UserID:    client.UserID,
@@ -313,6 +373,7 @@ func run(cmd *cobra.Command, args []string) {
 		// Call agent in-process (async)
 		go func() {
 			sendTypingDone := func() {
+				log.Debug().Str("user_id", client.UserID).Str("session_id", sessionID).Msg("sending typing=false to client")
 				hub.SendToUser(client.UserID, &gateway.Message{
 					Type:      "typing",
 					UserID:    client.UserID,
@@ -340,12 +401,59 @@ func run(cmd *cobra.Command, args []string) {
 				SessionID:   sessionID,
 				UserID:      client.UserID,
 				Messages:    []provider.Message{{Role: provider.RoleUser, Content: content, ContentParts: provParts}},
-				PlanMode:    false,
+				PlanMode:    planMode,
+			}
+			// When message has images, use vision provider + vision_model
+			hasImages := false
+			for _, p := range provParts {
+				if p.Type == "image_url" && p.ImageURL != nil {
+					hasImages = true
+					break
+				}
+			}
+			if hasImages {
+				if vp, ok := visionProviders[visionProviderChoice]; ok {
+					provCfg := getProviderConfig(cfg, visionProviderChoice)
+					if provCfg != nil {
+						if vm, ok := provCfg["vision_model"].(string); ok && vm != "" {
+							chatReq.ProviderOverride = vp
+							chatReq.Model = vm
+						}
+					}
+				}
+			}
+			// Z.ai 与 zhipu 均为智谱 GLM 平台，均支持 thinking
+			effectiveProv := prov
+			if chatReq.ProviderOverride != nil {
+				effectiveProv = chatReq.ProviderOverride
+			}
+			if effectiveProv.Name() == "zhipu" || effectiveProv.Name() == "zai" {
+				chatReq.Thinking = &provider.ThinkingParams{Type: "enabled"}
 			}
 
 			ctx := context.WithValue(context.Background(), "current_time", time.Now().Format("2006-01-02 15:04:05"))
 
-			resp, err := executor.ExecuteWithTools(ctx, chatReq)
+			onChunk := func(contentDelta, thinkingDelta string) {
+				if thinkingDelta != "" {
+					hub.SendToUser(client.UserID, &gateway.Message{
+						Type:      gateway.MessageTypeThinking,
+						UserID:    client.UserID,
+						SessionID: sessionID,
+						Data:      map[string]interface{}{"delta": thinkingDelta},
+						Timestamp: time.Now().Unix(),
+					})
+				}
+				if contentDelta != "" {
+					hub.SendToUser(client.UserID, &gateway.Message{
+						Type:      gateway.MessageTypeContent,
+						UserID:    client.UserID,
+						SessionID: sessionID,
+						Data:      map[string]interface{}{"delta": contentDelta},
+						Timestamp: time.Now().Unix(),
+					})
+				}
+			}
+			resp, err := executor.ExecuteWithToolsStream(ctx, chatReq, onChunk)
 			if err != nil {
 				log.Error().Err(err).Msg("failed to get agent response")
 				sendTypingDone()
@@ -421,11 +529,15 @@ func run(cmd *cobra.Command, args []string) {
 
 				sendTypingDone()
 
+				chatData := map[string]interface{}{"content": response}
+				if resp.Thinking != "" {
+					chatData["thinking"] = resp.Thinking
+				}
 				hub.SendToUser(client.UserID, &gateway.Message{
 					Type:      gateway.MessageTypeChat,
 					UserID:    client.UserID,
 					SessionID: sessionID,
-					Data:     map[string]interface{}{"content": response},
+					Data:     chatData,
 					Timestamp: time.Now().Unix(),
 				})
 			}
@@ -458,6 +570,9 @@ func run(cmd *cobra.Command, args []string) {
 	router.GET("/", func(c *gin.Context) {
 		c.File("./web/templates/chat.html")
 	})
+	router.GET("/settings", func(c *gin.Context) {
+		c.File("./web/templates/settings.html")
+	})
 	router.GET("/ws", server.ServeWebSocket)
 
 	// API routes
@@ -472,18 +587,32 @@ func run(cmd *cobra.Command, args []string) {
 			})
 		})
 
+		apiGroup.GET("/settings", func(c *gin.Context) {
+			providers := []string{}
+			for name := range visionProviders {
+				providers = append(providers, name)
+			}
+			if len(providers) == 0 {
+				providers = []string{"qwen", "zai"}
+			}
+			c.JSON(http.StatusOK, gin.H{
+				"vision_providers": providers,
+			})
+		})
+
 		// Chat API (for programmatic access)
 		apiGroup.POST("/chat", func(c *gin.Context) {
 			var req struct {
-				SessionID   string                   `json:"session_id"`
-				UserID      string                   `json:"user_id"`
-				Messages    []chatMessage            `json:"messages"`
-				Model       string                   `json:"model"`
-				Temperature float64                   `json:"temperature"`
-				Stream      bool                     `json:"stream"`
-				Tools       bool                     `json:"tools"`
-				PlanMode    bool                     `json:"plan_mode"`
-				Thinking    *provider.ThinkingParams `json:"thinking,omitempty"`
+				SessionID      string                   `json:"session_id"`
+				UserID         string                   `json:"user_id"`
+				Messages       []chatMessage            `json:"messages"`
+				Model          string                   `json:"model"`
+				Temperature    float64                  `json:"temperature"`
+				Stream         bool                     `json:"stream"`
+				Tools          bool                     `json:"tools"`
+				PlanMode       bool                     `json:"plan_mode"`
+				Thinking       *provider.ThinkingParams `json:"thinking,omitempty"`
+				VisionProvider string                   `json:"vision_provider"`
 			}
 
 			if err := c.ShouldBindJSON(&req); err != nil {
@@ -507,23 +636,40 @@ func run(cmd *cobra.Command, args []string) {
 				}
 			}
 
+			visionChoice := req.VisionProvider
+			if visionChoice != "qwen" && visionChoice != "zai" {
+				visionChoice = "qwen"
+			}
+
 			modelName := req.Model
+			var providerOverride provider.Provider
 			if hasImages && modelName == "" {
-				if provCfg := getProviderConfig(cfg, cfg.Provider.Default); provCfg != nil {
-					if vm, ok := provCfg["vision_model"].(string); ok && vm != "" {
-						modelName = vm
+				if vp, ok := visionProviders[visionChoice]; ok {
+					if provCfg := getProviderConfig(cfg, visionChoice); provCfg != nil {
+						if vm, ok := provCfg["vision_model"].(string); ok && vm != "" {
+							providerOverride = vp
+							modelName = vm
+						}
+					}
+				}
+				if modelName == "" {
+					if provCfg := getProviderConfig(cfg, cfg.Provider.Default); provCfg != nil {
+						if vm, ok := provCfg["vision_model"].(string); ok && vm != "" {
+							modelName = vm
+						}
 					}
 				}
 			}
 
 			chatReq := &agent.ChatRequest{
-				SessionID:   req.SessionID,
-				UserID:      req.UserID,
-				Messages:    provMessages,
-				Model:       modelName,
-				Temperature: req.Temperature,
-				PlanMode:    req.PlanMode,
-				Thinking:    req.Thinking,
+				SessionID:        req.SessionID,
+				UserID:           req.UserID,
+				Messages:         provMessages,
+				Model:            modelName,
+				Temperature:      req.Temperature,
+				PlanMode:         req.PlanMode,
+				Thinking:         req.Thinking,
+				ProviderOverride: providerOverride,
 			}
 
 			ctx := context.WithValue(c.Request.Context(), "current_time", time.Now().Format("2006-01-02 15:04:05"))
@@ -565,6 +711,10 @@ func run(cmd *cobra.Command, args []string) {
 			}
 			c.JSON(http.StatusOK, gin.H{"skills": result})
 		})
+
+		// Workspace API for programming mode (create new project)
+		workspaceAPI := api.NewWorkspaceAPI(cfg.Workspace.BasePath)
+		apiGroup.POST("/workspaces", workspaceAPI.CreateWorkspace)
 
 		sessions := apiGroup.Group("/sessions")
 		if sessionAPI != nil {

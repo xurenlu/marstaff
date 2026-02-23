@@ -19,20 +19,23 @@ const (
 	// Send pings to peer with this period. Must be less than pongWait.
 	pingPeriod = (pongWait * 9) / 10
 
-	// Maximum message size allowed from peer.
-	maxMessageSize = 1048576 // 1MB
+	// Maximum message size allowed from peer (screenshots as base64 can be large)
+	maxMessageSize = 16 * 1024 * 1024 // 16MB
 )
 
 // MessageType represents the type of WebSocket message
 type MessageType string
 
 const (
-	MessageTypeChat     MessageType = "chat"
-	MessageTypeError    MessageType = "error"
-	MessageTypeStatus   MessageType = "status"
-	MessageTypePong     MessageType = "pong"
-	MessageTypePing     MessageType = "ping"
-	MessageTypeOpenSearch MessageType = "open_search"
+	MessageTypeChat        MessageType = "chat"
+	MessageTypeContent     MessageType = "content"    // streaming content chunk
+	MessageTypeThinking    MessageType = "thinking"  // streaming thinking chunk
+	MessageTypeError       MessageType = "error"
+	MessageTypeStatus      MessageType = "status"
+	MessageTypePong        MessageType = "pong"
+	MessageTypePing        MessageType = "ping"
+	MessageTypeOpenSearch  MessageType = "open_search"
+	MessageTypeSessionTitle MessageType = "session_title" // session title/summary updated
 )
 
 // Message represents a WebSocket message

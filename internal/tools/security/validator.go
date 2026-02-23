@@ -11,7 +11,7 @@ import (
 
 	"github.com/rs/zerolog/log"
 
-	"github.com/rocky/marstaff/internal/agent"
+	"github.com/rocky/marstaff/internal/contextkeys"
 )
 
 // Validator performs security validation for file and command operations
@@ -119,7 +119,7 @@ func (v *Validator) ValidatePathInContext(ctx context.Context, path string, forW
 	}
 
 	// Edit mode: if session work_dir is in context, use it as the only allowed directory
-	if workDir := ctx.Value(agent.ContextKeySessionWorkDir); workDir != nil {
+	if workDir := ctx.Value(contextkeys.SessionWorkDir); workDir != nil {
 		if wd, ok := workDir.(string); ok && wd != "" {
 			absWorkDir, err := filepath.Abs(wd)
 			if err != nil {

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/rocky/marstaff/internal/agent"
+	"github.com/rocky/marstaff/internal/contextkeys"
 	"github.com/rocky/marstaff/internal/model"
 	"github.com/rocky/marstaff/internal/repository"
 )
@@ -79,7 +80,7 @@ func (e *TodoExecutor) RegisterBuiltInTools() {
 }
 
 func (e *TodoExecutor) getSessionID(ctx context.Context) (string, error) {
-	if v := ctx.Value(agent.ContextKeySessionID); v != nil {
+	if v := ctx.Value(contextkeys.SessionID); v != nil {
 		if s, ok := v.(string); ok && s != "" {
 			return s, nil
 		}

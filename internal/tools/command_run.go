@@ -9,7 +9,7 @@ import (
 
 	"github.com/rs/zerolog/log"
 
-	"github.com/rocky/marstaff/internal/agent"
+	"github.com/rocky/marstaff/internal/contextkeys"
 )
 
 // toolRunCommand executes a shell command with security validation
@@ -48,7 +48,7 @@ func (e *Executor) toolRunCommand(ctx context.Context, params map[string]interfa
 
 		// Set working directory: prefer session work_dir (edit mode), else first config dir
 		workingDir := ""
-		if wd := ctx.Value(agent.ContextKeySessionWorkDir); wd != nil {
+		if wd := ctx.Value(contextkeys.SessionWorkDir); wd != nil {
 			if s, ok := wd.(string); ok && s != "" {
 				abs, err := filepath.Abs(s)
 				if err == nil {

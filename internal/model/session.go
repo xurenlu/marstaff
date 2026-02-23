@@ -16,7 +16,7 @@ type Session struct {
 	Model        string         `gorm:"type:varchar(100);not null" json:"model"`
 	WorkDir      string         `gorm:"type:varchar(1024)" json:"work_dir,omitempty"` // edit mode: restrict file ops to this dir
 	SystemPrompt string         `gorm:"type:text" json:"system_prompt,omitempty"`
-	Metadata     string         `gorm:"type:json" json:"metadata,omitempty"`
+	Metadata     string         `gorm:"type:json;default:NULL" json:"metadata,omitempty"`
 	CreatedAt   time.Time      `json:"created_at"`
 	UpdatedAt   time.Time      `json:"updated_at"`
 	DeletedAt   gorm.DeletedAt `gorm:"index" json:"-"`
@@ -32,6 +32,10 @@ type Session struct {
 func (s *Session) BeforeCreate(tx *gorm.DB) error {
 	if s.ID == "" {
 		s.ID = uuid.New().String()
+	}
+	// Set empty metadata to NULL instead of empty string for JSON columns
+	if s.Metadata == "" {
+		tx.Statement.SetColumn("metadata", nil)
 	}
 	return nil
 }

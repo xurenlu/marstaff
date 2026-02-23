@@ -16,6 +16,7 @@ import (
 	"github.com/rocky/marstaff/internal/model"
 	"github.com/rocky/marstaff/internal/provider"
 	"github.com/rocky/marstaff/internal/repository"
+	"github.com/rocky/marstaff/internal/tools/security"
 )
 
 // SessionAPI handles session management
@@ -95,8 +96,16 @@ func (api *SessionAPI) CreateSession(c *gin.Context) {
 	}
 
 	if req.WorkDir != "" {
+		if err := security.ValidateWorkDir(req.WorkDir); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 		session.WorkDir = req.WorkDir
 	} else if req.WorkingDirectory != "" {
+		if err := security.ValidateWorkDir(req.WorkingDirectory); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 		session.WorkDir = req.WorkingDirectory
 	}
 
@@ -213,8 +222,8 @@ func (api *SessionAPI) ListSessions(c *gin.Context) {
 
 // UpdateSessionRequest is a request to update session metadata
 type UpdateSessionRequest struct {
-	Title   string `json:"title,omitempty"`
-	WorkDir string `json:"work_dir,omitempty"`
+	Title   string  `json:"title,omitempty"`
+	WorkDir *string `json:"work_dir,omitempty"` // nil = no change, "" = clear, "path" = set
 }
 
 // UpdateSession updates session metadata (title, work_dir)
@@ -237,8 +246,16 @@ func (api *SessionAPI) UpdateSession(c *gin.Context) {
 	if req.Title != "" {
 		session.Title = req.Title
 	}
-	if req.WorkDir != "" {
-		session.WorkDir = req.WorkDir
+	if req.WorkDir != nil {
+		if *req.WorkDir == "" {
+			session.WorkDir = ""
+		} else {
+			if err := security.ValidateWorkDir(*req.WorkDir); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+			session.WorkDir = *req.WorkDir
+		}
 	}
 
 	if err := api.sessionRepo.Update(ctx, session); err != nil {
@@ -455,6 +472,36 @@ func (api *SessionAPI) GetMemory(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"memories": memories})
 }
 
+// GetOrCreateSessionDirect ensures session exists in DB; creates it if missing (avoids FK constraint on messages)
+func (api *SessionAPI) GetOrCreateSessionDirect(ctx context.Context, req *CreateSessionRequest) (*CreateSessionResponse, error) {
+	sessionID := req.SessionID
+	if sessionID == "" {
+		sessionID = uuid.New().String()
+		req.SessionID = sessionID
+		return api.CreateSessionDirect(ctx, req)
+	}
+	// Session ID provided: check if exists
+	existing, err := api.sessionRepo.GetByID(ctx, sessionID)
+	if err == nil && existing != nil {
+		return &CreateSessionResponse{
+			SessionID: existing.ID,
+			UserID:    existing.UserID,
+			Title:     existing.Title,
+			Model:     existing.Model,
+			WorkDir:   existing.WorkDir,
+			CreatedAt: existing.CreatedAt.Format(time.RFC3339),
+		}, nil
+	}
+	// Not found or error: create with the given ID
+	req.SessionID = sessionID
+	return api.CreateSessionDirect(ctx, req)
+}
+
+// UpdateSessionTitleDirect updates session title by ID (for programmatic use, no gin context)
+func (api *SessionAPI) UpdateSessionTitleDirect(ctx context.Context, sessionID, title string) error {
+	return api.sessionRepo.UpdateTitle(ctx, sessionID, title)
+}
+
 // CreateSessionDirect creates a new session directly (helper method)
 func (api *SessionAPI) CreateSessionDirect(ctx context.Context, req *CreateSessionRequest) (*CreateSessionResponse, error) {
 	// Get or create user
@@ -480,8 +527,14 @@ func (api *SessionAPI) CreateSessionDirect(ctx context.Context, req *CreateSessi
 	}
 
 	if req.WorkDir != "" {
+		if err := security.ValidateWorkDir(req.WorkDir); err != nil {
+			return nil, fmt.Errorf("invalid work_dir: %w", err)
+		}
 		session.WorkDir = req.WorkDir
 	} else if req.WorkingDirectory != "" {
+		if err := security.ValidateWorkDir(req.WorkingDirectory); err != nil {
+			return nil, fmt.Errorf("invalid work_dir: %w", err)
+		}
 		session.WorkDir = req.WorkingDirectory
 	}
 

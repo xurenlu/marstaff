@@ -64,7 +64,7 @@ type Message struct {
 	Content    string      `gorm:"type:text;not null" json:"content"`
 	ToolCalls  ToolCalls   `gorm:"type:json" json:"tool_calls,omitempty"`
 	ToolCallID string      `gorm:"type:varchar(100)" json:"tool_call_id,omitempty"`
-	Metadata   string      `gorm:"type:json" json:"metadata,omitempty"`
+	Metadata   string      `gorm:"type:json;default:NULL" json:"metadata,omitempty"`
 	CreatedAt  time.Time   `json:"created_at"`
 
 	// Usage statistics
@@ -79,6 +79,10 @@ type Message struct {
 func (m *Message) BeforeCreate(tx *gorm.DB) error {
 	if m.ID == "" {
 		m.ID = uuid.New().String()
+	}
+	// Set empty metadata to NULL instead of empty string for JSON columns
+	if m.Metadata == "" {
+		tx.Statement.SetColumn("metadata", nil)
 	}
 	return nil
 }
