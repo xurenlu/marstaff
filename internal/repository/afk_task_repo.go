@@ -132,3 +132,31 @@ func (r *AFKTaskRepository) GetOrCreateNotificationSettings(ctx context.Context,
 func (r *AFKTaskRepository) UpdateNotificationSettings(ctx context.Context, settings *model.UserNotificationSettings) error {
 	return r.db.WithContext(ctx).Save(settings).Error
 }
+
+// GetByTypeAndStatus retrieves tasks by type and status
+func (r *AFKTaskRepository) GetByTypeAndStatus(ctx context.Context, taskType model.AFKTaskType, status model.AFKTaskStatus) ([]*model.AFKTask, error) {
+	var tasks []*model.AFKTask
+	err := r.db.WithContext(ctx).
+		Where("task_type = ? AND status = ?", taskType, status).
+		Find(&tasks).Error
+	return tasks, err
+}
+
+// GetBySessionID retrieves tasks for a specific session
+func (r *AFKTaskRepository) GetBySessionID(ctx context.Context, sessionID string) ([]*model.AFKTask, error) {
+	var tasks []*model.AFKTask
+	err := r.db.WithContext(ctx).
+		Where("session_id = ?", sessionID).
+		Order("created_at DESC").
+		Find(&tasks).Error
+	return tasks, err
+}
+
+// GetPendingAsyncTasks retrieves all pending async tasks for a session
+func (r *AFKTaskRepository) GetPendingAsyncTasks(ctx context.Context, sessionID string) ([]*model.AFKTask, error) {
+	var tasks []*model.AFKTask
+	err := r.db.WithContext(ctx).
+		Where("session_id = ? AND task_type = ? AND status = ?", sessionID, model.AFKTaskTypeAsync, model.AFKTaskStatusPending).
+		Find(&tasks).Error
+	return tasks, err
+}

@@ -18,9 +18,12 @@ type Session struct {
 	SystemPrompt string         `gorm:"type:text" json:"system_prompt,omitempty"`
 	Summary      string         `gorm:"type:text" json:"summary,omitempty"` // Compressed conversation summary
 	Metadata     string         `gorm:"type:json;default:NULL" json:"metadata,omitempty"`
-	CreatedAt   time.Time      `json:"created_at"`
-	UpdatedAt   time.Time      `json:"updated_at"`
-	DeletedAt   gorm.DeletedAt `gorm:"index" json:"-"`
+	IsAFKMode    bool           `gorm:"default:false" json:"is_afk_mode"`       // Whether session is in AFK mode
+	AFKSince     *time.Time     `json:"afk_since,omitempty"`                   // When AFK mode started
+	PendingTasks int            `gorm:"default:0" json:"pending_tasks"`         // Number of pending async tasks
+	CreatedAt    time.Time      `json:"created_at"`
+	UpdatedAt    time.Time      `json:"updated_at"`
+	DeletedAt    gorm.DeletedAt `gorm:"index" json:"-"`
 
 	// Relationships
 	User      *User      `gorm:"foreignKey:UserID" json:"-"`
@@ -41,4 +44,32 @@ func (s *Session) BeforeCreate(tx *gorm.DB) error {
 		tx.Statement.SetColumn("metadata", nil)
 	}
 	return nil
+}
+
+// EnterAFKMode enters AFK (idle) mode for this session
+func (s *Session) EnterAFKMode() error {
+	s.IsAFKMode = true
+	now := time.Now()
+	s.AFKSince = &now
+	s.PendingTasks++
+	return nil
+}
+
+// ExitAFKMode exits AFK mode for this session
+func (s *Session) ExitAFKMode() error {
+	s.IsAFKMode = false
+	s.AFKSince = nil
+	s.PendingTasks = 0
+	return nil
+}
+
+// OnTaskComplete is called when an async task completes
+// Returns true if all tasks are complete and AFK mode should be exited
+func (s *Session) OnTaskComplete() bool {
+	s.PendingTasks--
+	if s.PendingTasks <= 0 {
+		s.ExitAFKMode()
+		return true
+	}
+	return false
 }

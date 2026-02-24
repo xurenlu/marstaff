@@ -12,26 +12,34 @@ import (
 
 // Scheduler manages AFK task scheduling and execution
 type Scheduler struct {
-	taskRepo *repository.AFKTaskRepository
-	executor *TaskExecutor
-	notifier *NotificationService
-	ticker   *time.Ticker
-	running  bool
-	stopChan chan struct{}
+	taskRepo    *repository.AFKTaskRepository
+	sessionRepo *repository.SessionRepository
+	executor    *TaskExecutor
+	notifier    *NotificationService
+	ticker      *time.Ticker
+	running     bool
+	stopChan    chan struct{}
 }
 
 // NewScheduler creates a new AFK task scheduler
 func NewScheduler(
 	taskRepo *repository.AFKTaskRepository,
+	sessionRepo *repository.SessionRepository,
 	executor *TaskExecutor,
 	notifier *NotificationService,
 ) *Scheduler {
 	return &Scheduler{
-		taskRepo: taskRepo,
-		executor: executor,
-		notifier: notifier,
-		stopChan: make(chan struct{}),
+		taskRepo:    taskRepo,
+		sessionRepo: sessionRepo,
+		executor:    executor,
+		notifier:    notifier,
+		stopChan:    make(chan struct{}),
 	}
+}
+
+// SetAsyncNotifier sets the WebSocket async task notifier on the executor
+func (s *Scheduler) SetAsyncNotifier(notifier AsyncTaskNotifier) {
+	s.executor.SetNotifier(notifier)
 }
 
 // Start begins the scheduler with the given check interval
@@ -70,6 +78,9 @@ func (s *Scheduler) IsRunning() bool {
 
 // checkAndExecuteTasks checks for pending tasks and executes them
 func (s *Scheduler) checkAndExecuteTasks(ctx context.Context) {
+	// Check async tasks (video generation, etc.)
+	s.checkAsyncTasks(ctx)
+
 	now := time.Now()
 
 	// Get tasks scheduled for execution
@@ -89,6 +100,143 @@ func (s *Scheduler) checkAndExecuteTasks(ctx context.Context) {
 		// Execute in background to avoid blocking
 		go s.executeTask(ctx, task)
 	}
+}
+
+// checkAsyncTasks checks the status of async tasks (video generation, etc.)
+func (s *Scheduler) checkAsyncTasks(ctx context.Context) {
+	tasks, err := s.taskRepo.GetByTypeAndStatus(ctx, model.AFKTaskTypeAsync, model.AFKTaskStatusPending)
+	if err != nil {
+		log.Error().Err(err).Msg("failed to get pending async tasks")
+		return
+	}
+
+	for _, task := range tasks {
+		// Check if we should poll this task
+		if s.shouldPollAsyncTask(task) {
+			go s.checkAsyncTaskStatus(ctx, task)
+		}
+	}
+}
+
+// shouldPollAsyncTask determines if an async task should be polled based on its last execution time
+func (s *Scheduler) shouldPollAsyncTask(task *model.AFKTask) bool {
+	config := task.TriggerConfig.AsyncTaskConfig
+	if config == nil {
+		return false
+	}
+
+	// Never polled before - poll now
+	if task.LastExecutionTime == nil {
+		return true
+	}
+
+	// Check if enough time has passed since last poll
+	elapsed := time.Since(*task.LastExecutionTime).Seconds()
+	pollInterval := float64(config.PollInterval)
+	if pollInterval < 10 {
+		pollInterval = 30 // Default to 30 seconds if not set
+	}
+
+	return elapsed >= pollInterval
+}
+
+// checkAsyncTaskStatus checks the status of an async task and updates it
+func (s *Scheduler) checkAsyncTaskStatus(ctx context.Context, task *model.AFKTask) {
+	config := task.TriggerConfig.AsyncTaskConfig
+	if config == nil {
+		return
+	}
+
+	log.Debug().
+		Str("task_id", task.ID).
+		Str("provider", config.Provider).
+		Msg("checking async task status")
+
+	// Check status with provider
+	status, resultURL, err := s.executor.CheckAsyncTask(ctx, task)
+
+	// Update execution time
+	now := time.Now()
+	task.LastExecutionTime = &now
+	task.ExecutionCount++
+
+	if err != nil {
+		// Task failed
+		task.Status = model.AFKTaskStatusFailed
+		task.ErrorMessage = err.Error()
+		log.Error().
+			Err(err).
+			Str("task_id", task.ID).
+			Msg("async task failed")
+
+		// Update session and notify
+		s.handleAsyncTaskComplete(ctx, task, false)
+	} else if status == "succeeded" {
+		// Task succeeded
+		task.Status = model.AFKTaskStatusCompleted
+		task.ResultURL = resultURL
+		log.Info().
+			Str("task_id", task.ID).
+			Str("result_url", resultURL).
+			Msg("async task completed")
+
+		// Update session and notify
+		s.handleAsyncTaskComplete(ctx, task, true)
+	}
+
+	// Save task updates
+	if err := s.taskRepo.Update(ctx, task); err != nil {
+		log.Error().Err(err).Str("task_id", task.ID).Msg("failed to update async task")
+	}
+}
+
+// handleAsyncTaskComplete handles the completion of an async task (success or failure)
+func (s *Scheduler) handleAsyncTaskComplete(ctx context.Context, task *model.AFKTask, success bool) {
+	if task.SessionID == nil || s.sessionRepo == nil {
+		return
+	}
+
+	session, err := s.sessionRepo.GetByID(ctx, *task.SessionID)
+	if err != nil {
+		log.Error().Err(err).Str("session_id", *task.SessionID).Msg("failed to get session")
+		return
+	}
+
+	// Update session pending tasks count
+	allComplete := session.OnTaskComplete()
+
+	// Send notification
+	if s.executor != nil {
+		if success {
+			s.executor.NotifyAsyncTaskCompleted(*task.SessionID, task, task.ResultURL)
+		} else {
+			s.executor.NotifyAsyncTaskFailed(*task.SessionID, task, task.ErrorMessage)
+		}
+	}
+
+	// Update session in database
+	if err := s.sessionRepo.Update(ctx, session); err != nil {
+		log.Error().Err(err).Str("session_id", session.ID).Msg("failed to update session")
+		return
+	}
+
+	// If all tasks complete, send AFK status changed notification
+	if allComplete && s.executor != nil {
+		s.executor.NotifyAFKStatusChanged(session.ID, false, 0, nil)
+	} else if !allComplete && s.executor != nil {
+		// Get pending tasks count
+		pendingTasks := s.getPendingTasksForSession(ctx, session.ID)
+		s.executor.NotifyAFKStatusChanged(session.ID, true, session.PendingTasks, pendingTasks)
+	}
+}
+
+// getPendingTasksForSession retrieves pending async tasks for a session
+func (s *Scheduler) getPendingTasksForSession(ctx context.Context, sessionID string) []*model.AFKTask {
+	tasks, err := s.taskRepo.GetPendingAsyncTasks(ctx, sessionID)
+	if err != nil {
+		return nil
+	}
+	return tasks
 }
 
 // executeTask executes a single task

@@ -79,7 +79,7 @@ func run(cmd *cobra.Command, args []string) {
 		db = nil
 	} else {
 		log.Info().Msg("connected to database")
-		if err := db.AutoMigrate(&model.User{}, &model.Session{}, &model.Message{}, &model.Skill{}, &model.Memory{}, &model.TodoItem{}, &model.Project{}, &model.Rule{}, &model.MCPServer{}, &model.MCPTool{}); err != nil {
+		if err := db.AutoMigrate(&model.User{}, &model.Session{}, &model.Message{}, &model.Skill{}, &model.Memory{}, &model.TodoItem{}, &model.Project{}, &model.Rule{}, &model.MCPServer{}, &model.MCPTool{}, &model.AFKTask{}, &model.AFKTaskExecution{}); err != nil {
 			log.Warn().Err(err).Msg("failed to auto migrate tables")
 		}
 	}
@@ -130,6 +130,18 @@ func run(cmd *cobra.Command, args []string) {
 	var todoRepo *repository.TodoRepository
 	if db != nil {
 		todoRepo = repository.NewTodoRepository(db)
+	}
+
+	// Create session repository (needed for AFK async tasks)
+	var sessionRepo *repository.SessionRepository
+	if db != nil {
+		sessionRepo = repository.NewSessionRepository(db)
+	}
+
+	// Create AFK task repository (needed for async video tasks)
+	var afkTaskRepo *repository.AFKTaskRepository
+	if db != nil {
+		afkTaskRepo = repository.NewAFKTaskRepository(db)
 	}
 
 	// Create agent engine
@@ -191,6 +203,12 @@ func run(cmd *cobra.Command, args []string) {
 
 				toolsExecutor.RegisterMediaTools()
 				log.Info().Str("provider", mediaProv.Name()).Msg("media generation tools registered")
+
+				// Wire up repositories for async video task creation
+				if afkTaskRepo != nil && sessionRepo != nil {
+					toolsExecutor.SetRepositories(afkTaskRepo, sessionRepo)
+					log.Info().Msg("AFK repositories wired to media tools for async task handling")
+				}
 			}
 		}
 	}
@@ -230,8 +248,7 @@ func run(cmd *cobra.Command, args []string) {
 
 	// Create AFK task scheduler and services
 	var afkScheduler *afkpkg.Scheduler
-	if db != nil {
-		afkTaskRepo := repository.NewAFKTaskRepository(db)
+	if db != nil && afkTaskRepo != nil && sessionRepo != nil {
 		afkTaskAPI := api.NewAFKTaskAPI(db)
 
 		// Create AFK services
@@ -247,8 +264,8 @@ func run(cmd *cobra.Command, args []string) {
 			notificationService.SetResendConfig(resendAPIKey, fromEmail)
 		}
 
-		// Create and start scheduler
-		afkScheduler = afkpkg.NewScheduler(afkTaskRepo, taskExecutor, notificationService)
+		// Create and start scheduler with sessionRepo for async task handling
+		afkScheduler = afkpkg.NewScheduler(afkTaskRepo, sessionRepo, taskExecutor, notificationService)
 		afkScheduler.Start(60 * time.Second) // Check every minute
 		log.Info().Msg("AFK task scheduler started")
 
@@ -291,7 +308,6 @@ func run(cmd *cobra.Command, args []string) {
 		}
 
 		messageRepo := repository.NewMessageRepository(db)
-		sessionRepo := repository.NewSessionRepository(db)
 		memoryRepo := repository.NewMemoryRepository(db)
 
 		// Create summary service
@@ -320,6 +336,16 @@ func run(cmd *cobra.Command, args []string) {
 	hub := gateway.NewHub()
 	go hub.Run()
 	server := gateway.NewServer(hub)
+
+	// Create async task notifier for WebSocket notifications
+	asyncTaskNotifier := gateway.NewAsyncTaskNotifier(hub)
+	log.Info().Msg("Async task notifier initialized")
+
+	// Wire the notifier to the AFK scheduler for async task notifications
+	if afkScheduler != nil {
+		afkScheduler.SetAsyncNotifier(asyncTaskNotifier)
+		log.Info().Msg("Async task notifier wired to AFK scheduler")
+	}
 
 	// Set up user repository for WebSocket server (to resolve platform_user_id to real user ID)
 	if db != nil {
@@ -581,6 +607,8 @@ func run(cmd *cobra.Command, args []string) {
 			}
 
 			ctx := context.WithValue(context.Background(), "current_time", time.Now().Format("2006-01-02 15:04:05"))
+			ctx = context.WithValue(ctx, "user_id", client.UserID)
+			ctx = context.WithValue(ctx, "session_id", sessionID)
 
 			// Inject summary and memories into chat context (if available)
 			if summaryService != nil || memoryService != nil {

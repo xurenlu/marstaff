@@ -38,7 +38,9 @@
       "Bash(grep:*)",
       "Bash(xxd:*)",
       "Bash(ruby:*)",
-      "Bash(git restore:*)"
+      "Bash(git restore:*)",
+      "Bash(QWEN_API_KEY=\"YOUR_QWEN_API_KEY\" go test:*)",
+      "Bash(./bin/migrate:*)"
     ],
     "deny": [],
     "ask": []
