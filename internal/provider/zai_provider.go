@@ -229,6 +229,7 @@ func (p *ZAIProvider) HealthCheck(ctx context.Context) error {
 
 func (p *ZAIProvider) SupportedModels() []string {
 	return []string{
+		"glm-5",
 		"glm-4-flash",
 		"glm-4.7",
 		"glm-4.6",

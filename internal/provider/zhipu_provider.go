@@ -310,6 +310,7 @@ func (p *ZhipuProvider) HealthCheck(ctx context.Context) error {
 
 func (p *ZhipuProvider) SupportedModels() []string {
 	return []string{
+		"glm-5",
 		"glm-4-flash",
 		"glm-4",
 		"glm-4-plus",
