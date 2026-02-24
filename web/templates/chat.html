@@ -4,17 +4,17 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Marstaff - AI Assistant</title>
-    <!-- Markdown parsing -->
-    <script src="https://cdnproxy.some.im/cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <!-- KaTeX for math formulas -->
-    <link rel="stylesheet" href="https://cdnproxy.some.im/cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
-    <script src="https://cdnproxy.some.im/cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
-    <script src="https://cdnproxy.some.im/cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
-    <!-- Mermaid for diagrams -->
-    <script src="https://cdnproxy.some.im/cdn.jsdelivr.net/npm/mermaid@10.9.0/dist/mermaid.min.js"></script>
-    <!-- Highlight.js for code syntax -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <!-- Markdown parsing (local vendor) -->
+    <script src="/static/vendor/marked.min.js"></script>
+    <!-- KaTeX for math formulas (local vendor) -->
+    <link rel="stylesheet" href="/static/vendor/katex/katex.min.css">
+    <script src="/static/vendor/katex/katex.min.js"></script>
+    <script src="/static/vendor/katex/contrib/auto-render.min.js"></script>
+    <!-- Mermaid for diagrams (local vendor) -->
+    <script src="/static/vendor/mermaid.min.js"></script>
+    <!-- Highlight.js for code syntax (local vendor) -->
+    <link rel="stylesheet" href="/static/vendor/highlight/github-dark.min.css">
+    <script src="/static/vendor/highlight/highlight.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -976,7 +976,7 @@
         let sessionId = null;
         let userId = null;
         let sessions = [];
-        let pendingImages = [];  // OSS URLs or base64 data URLs (fallback when OSS unavailable)
+        let pendingImages = [];  // OSS URLs only (images must be uploaded before sending)
         let lastUserMessage = null;  // Store last user message for regeneration
         let lastContentParts = null;  // Store last content parts for regeneration
         let appMode = 'chat';  // 'chat' | 'programming' | 'afk'
@@ -1654,12 +1654,21 @@
             let innerHTML = `<div class="message-avatar">${getAvatar(role)}</div>`;
             innerHTML += `<div class="message-wrapper">`;
 
-            // Add header with regenerate button for assistant messages
+            // Add header with regenerate/resend button
             if (role === 'assistant') {
                 innerHTML += `
                     <div class="message-header">
                         <span class="message-role">Assistant</span>
                         <button class="regenerate-btn" onclick="regenerateResponse()" title="Regenerate response">🔄</button>
+                    </div>
+                `;
+            } else if (role === 'user') {
+                // Store message data for resend functionality
+                const contentData = encodeURIComponent(JSON.stringify({ content, imageUrls: imageUrls || [] }));
+                innerHTML += `
+                    <div class="message-header">
+                        <span class="message-role">You</span>
+                        <button class="regenerate-btn" onclick="resendUserMessage(this)" data-content="${contentData}" title="Resend message">🔄</button>
                     </div>
                 `;
             }
@@ -1922,6 +1931,83 @@
         }
         window.regenerateResponse = regenerateResponse;
 
+        // Resend a user message (removes all messages after it)
+        function resendUserMessage(button) {
+            if (!ws || ws.readyState !== WebSocket.OPEN) return;
+
+            // Get the message data from the button
+            const contentDataRaw = button.getAttribute('data-content');
+            if (!contentDataRaw) return;
+
+            let contentData;
+            try {
+                contentData = JSON.parse(decodeURIComponent(contentDataRaw));
+            } catch (e) {
+                console.error('Failed to parse message data:', e);
+                return;
+            }
+
+            const content = contentData.content || '';
+            const imageUrls = contentData.imageUrls || [];
+
+            // Find the user message element
+            const userMsgDiv = button.closest('.message.user');
+            if (!userMsgDiv) return;
+
+            // Remove all messages after this user message
+            let currentMsg = userMsgDiv.nextElementSibling;
+            while (currentMsg) {
+                const nextMsg = currentMsg.nextElementSibling;
+                currentMsg.remove();
+                currentMsg = nextMsg;
+            }
+
+            // Disable all regenerate buttons during resend
+            const regenBtns = document.querySelectorAll('.regenerate-btn');
+            regenBtns.forEach(btn => btn.disabled = true);
+
+            showTypingIndicator('Resending...');
+
+            // Prepare message data
+            const data = { content: content || '' };
+            if (imageUrls && imageUrls.length > 0) {
+                data.content_parts = [
+                    ...(content ? [{ type: 'text', text: content }] : []),
+                    ...imageUrls.map(url => ({ type: 'image_url', image_url: { url: url } }))
+                ];
+            }
+            data.vision_provider = localStorage.getItem('marstaff_vision_provider') || 'qwen';
+            const chatProvider = localStorage.getItem('marstaff_chat_provider') || 'zai';
+            data.provider = chatProvider;
+            data.plan_mode = planMode;
+            if (appMode === 'programming' && workspacePath) {
+                data.work_dir = workspacePath;
+            }
+            lastMessageWasPlanMode = planMode;
+
+            // Update lastUserMessage and lastContentParts for potential future regenerate
+            lastUserMessage = content;
+            lastContentParts = imageUrls && imageUrls.length > 0 ? data.content_parts : null;
+
+            const message = {
+                type: 'chat',
+                user_id: userId,
+                data: data
+            };
+
+            if (sessionId) {
+                message.session_id = sessionId;
+            }
+
+            ws.send(JSON.stringify(message));
+
+            // Re-enable buttons after a delay
+            setTimeout(() => {
+                regenBtns.forEach(btn => btn.disabled = false);
+            }, 3000);
+        }
+        window.resendUserMessage = resendUserMessage;
+
         function renderImagePreview() {
             const el = document.getElementById('imagePreview');
             el.innerHTML = pendingImages.map((url, i) => `
@@ -1940,25 +2026,23 @@
 
         async function addPendingImageFromFile(file) {
             if (pendingImages.length >= 4) return;
-            let url = null;
             try {
                 const formData = new FormData();
                 formData.append('file', file, file.name || 'image.png');
                 const res = await fetch(`${API_BASE}/api/upload`, { method: 'POST', body: formData });
                 if (res.ok) {
                     const data = await res.json();
-                    url = data.url;
+                    if (data.url) {
+                        pendingImages.push(data.url);
+                        renderImagePreview();
+                        return;
+                    }
                 }
-            } catch (e) { /* OSS not available or upload failed */ }
-            if (!url) {
-                url = await new Promise((resolve) => {
-                    const r = new FileReader();
-                    r.onload = () => resolve(r.result);
-                    r.readAsDataURL(file);
-                });
+                const errData = await res.json().catch(() => ({}));
+                alert(errData.error || '图片上传失败，请检查 OSS 配置');
+            } catch (e) {
+                alert('图片上传失败：' + (e.message || '网络错误'));
             }
-            pendingImages.push(url);
-            renderImagePreview();
         }
 
         sendBtn.addEventListener('click', sendMessage);
