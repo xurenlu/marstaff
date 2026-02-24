@@ -256,7 +256,7 @@ func (p *Wanxiang26Provider) GenerateVideo(ctx context.Context, req VideoGenerat
 
 	// Build request
 	wanxiangReq := Wanxiang26VideoRequest{
-		Model: "wanx-v2", // Wanxiang 2.6 model
+		Model: "wanxiang-v2", // Wanxiang 2.6 model
 		Input: Wanxiang26Input{
 			Prompt: req.Prompt,
 		},
@@ -397,7 +397,7 @@ func (p *Wanxiang26Provider) ImageToVideo(ctx context.Context, imageURL, prompt 
 	}
 
 	wanxiangReq := Wanxiang26VideoRequest{
-		Model: "wanx-v2",
+		Model: "wanxiang-v2",
 		Input: Wanxiang26Input{
 			Prompt:   prompt,
 			ImageURL: imageURL,
