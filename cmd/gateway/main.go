@@ -619,6 +619,17 @@ func run(cmd *cobra.Command, args []string) {
 			resp, err := executor.ExecuteWithToolsStream(ctx, chatReq, onChunk)
 			if err != nil {
 				log.Error().Err(err).Msg("failed to get agent response")
+
+				// Save error message to chat history
+				errorMsg := fmt.Sprintf("抱歉，处理您的请求时出错了：\n\n%s", err.Error())
+				if sessionID != "" && sessionAPI != nil {
+					ctx := context.Background()
+					_ = sessionAPI.AddMessageToSession(ctx, sessionID, &api.AddMessageRequest{
+						Role:    "assistant",
+						Content: errorMsg,
+					})
+				}
+
 				sendTypingDone()
 				hub.SendToUser(client.UserID, &gateway.Message{
 					Type:      gateway.MessageTypeError,
