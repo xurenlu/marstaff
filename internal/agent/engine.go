@@ -486,6 +486,11 @@ func (e *Engine) GetSkillRegistry() skill.Registry {
 	return e.skillRegistry
 }
 
+// GetToolCount returns the number of registered tools in the engine
+func (e *Engine) GetToolCount() int {
+	return len(e.tools)
+}
+
 // SetProvider sets the AI provider
 func (e *Engine) SetProvider(p provider.Provider) {
 	e.provider = p

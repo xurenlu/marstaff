@@ -258,7 +258,7 @@ func run(cmd *cobra.Command, args []string) {
 	}
 
 	registry := engine.GetSkillRegistry()
-	log.Info().Int("skills", len(registry.List())).Int("tools", len(registry.GetTools())).Msg("agent initialized")
+	log.Info().Int("skills", len(registry.List())).Int("tools", engine.GetToolCount()).Msg("agent initialized")
 
 	// Create session API
 	var sessionAPI *api.SessionAPI
