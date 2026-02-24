@@ -60,7 +60,7 @@ type ProviderConfig struct {
 // MediaConfig holds media generation provider configuration
 type MediaConfig struct {
 	Default      string                 `mapstructure:"default"`
-	Wanxiang26   map[string]interface{} `mapstructure:"wanxiang_2.6"`
+	Wanxiang26   map[string]interface{} `mapstructure:"wanxiang_2_6"` // Use underscore for YAML compatibility
 	QWenWanxiang map[string]interface{} `mapstructure:"qwen_wanxiang"` // Deprecated, use Wanxiang26
 }
 

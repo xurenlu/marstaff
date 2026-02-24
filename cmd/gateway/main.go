@@ -161,6 +161,7 @@ func run(cmd *cobra.Command, args []string) {
 
 		// Create and register media generation provider
 		mediaConfig := getMediaProviderConfig(cfg)
+		log.Debug().Int("config_size", len(mediaConfig)).Interface("config", mediaConfig).Msg("media config loaded")
 		if len(mediaConfig) > 0 {
 			mediaProv, err := media.CreateProvider(cfg.Media.Default, mediaConfig)
 			if err != nil {
@@ -1121,15 +1122,21 @@ func getProviderConfig(cfg *config.Config, name string) map[string]interface{} {
 }
 
 func getMediaProviderConfig(cfg *config.Config) map[string]interface{} {
+	log.Debug().Str("default", cfg.Media.Default).Msg("getting media provider config")
+
 	switch cfg.Media.Default {
 	case "wanxiang_2.6":
+		log.Debug().Interface("config", cfg.Media.Wanxiang26).Msg("using wanxiang_2.6 config")
 		return cfg.Media.Wanxiang26
 	case "qwen_wanxiang": // Backward compatibility
 		if cfg.Media.Wanxiang26 != nil {
+			log.Debug().Msg("using wanxiang_2.6 config for qwen_wanxiang")
 			return cfg.Media.Wanxiang26
 		}
+		log.Debug().Interface("config", cfg.Media.QWenWanxiang).Msg("using qwen_wanxiang config")
 		return cfg.Media.QWenWanxiang
 	default:
+		log.Warn().Str("default", cfg.Media.Default).Msg("unknown media provider default")
 		return nil
 	}
 }
