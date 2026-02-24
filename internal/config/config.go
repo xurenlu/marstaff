@@ -58,8 +58,9 @@ type ProviderConfig struct {
 
 // MediaConfig holds media generation provider configuration
 type MediaConfig struct {
-	Default    string                 `mapstructure:"default"`
-	QWenWanxiang map[string]interface{} `mapstructure:"qwen_wanxiang"`
+	Default      string                 `mapstructure:"default"`
+	Wanxiang26   map[string]interface{} `mapstructure:"wanxiang_2.6"`
+	QWenWanxiang map[string]interface{} `mapstructure:"qwen_wanxiang"` // Deprecated, use Wanxiang26
 }
 
 // OSSConfig holds Aliyun OSS configuration
