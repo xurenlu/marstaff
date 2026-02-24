@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -270,6 +271,25 @@ func run(cmd *cobra.Command, args []string) {
 	var summaryService *agent.SummaryService
 	var memoryService *agent.MemoryService
 	if db != nil {
+		// Ensure default user exists for single-user mode
+		userRepo := repository.NewUserRepository(db)
+		const defaultUserID = "default"
+		const platformWeb = "web"
+		defaultUser, err := userRepo.GetByPlatformID(context.Background(), platformWeb, defaultUserID)
+		if err != nil && errors.Is(err, gorm.ErrRecordNotFound) {
+			defaultUser = &model.User{
+				Platform:       platformWeb,
+				PlatformUserID: defaultUserID,
+				Username:       defaultUserID,
+				Email:          "default@marstaff.local",
+			}
+			if err := userRepo.Create(context.Background(), defaultUser); err != nil {
+				log.Warn().Err(err).Msg("failed to create default user")
+			} else {
+				log.Info().Str("user_id", defaultUser.ID).Msg("created default user")
+			}
+		}
+
 		messageRepo := repository.NewMessageRepository(db)
 		sessionRepo := repository.NewSessionRepository(db)
 		memoryRepo := repository.NewMemoryRepository(db)
