@@ -265,6 +265,25 @@ func (e *Executor) RegisterMediaTools() {
 		})
 }
 
+// RegisterFFmpegTools registers all FFmpeg-based video processing tools
+func (e *Executor) RegisterFFmpegTools() {
+	ffmpegExecutor := NewFFmpegExecutor(e.engine, e.validator)
+	ffmpegExecutor.RegisterBuiltInTools()
+}
+
+// RegisterAudioTools registers all audio generation and processing tools
+func (e *Executor) RegisterAudioTools(qwenAPIKey, aliyunAPIKey string) {
+	audioExecutor := NewAudioExecutor(e.engine, e.validator)
+	audioExecutor.SetAPIKeys(qwenAPIKey, aliyunAPIKey)
+	audioExecutor.RegisterBuiltInTools()
+}
+
+// RegisterVideoAnalysisTools registers all video analysis tools (see_video, hear_video, etc.)
+func (e *Executor) RegisterVideoAnalysisTools(qwenAPIKey, zaiAPIKey string) {
+	videoAnalysisExecutor := NewVideoAnalysisExecutor(e.engine, e.validator, qwenAPIKey, zaiAPIKey)
+	videoAnalysisExecutor.RegisterTools()
+}
+
 // Helper functions for parameter extraction
 
 func getString(params map[string]interface{}, key string, required bool) (string, error) {
