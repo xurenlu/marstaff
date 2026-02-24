@@ -107,7 +107,7 @@ func NewZhipuProvider(config map[string]interface{}) (Provider, error) {
 
 	model, _ := config["model"].(string)
 	if model == "" {
-		model = "glm-5"
+		model = "glm-4-flash"
 	}
 
 	return &ZhipuProvider{
@@ -310,11 +310,10 @@ func (p *ZhipuProvider) HealthCheck(ctx context.Context) error {
 
 func (p *ZhipuProvider) SupportedModels() []string {
 	return []string{
-		"glm-5",
+		"glm-4-flash",
 		"glm-4",
 		"glm-4-plus",
 		"glm-4-air",
-		"glm-4-flash",
 		"glm-4-flashx",
 		"glm-4-long",
 	}

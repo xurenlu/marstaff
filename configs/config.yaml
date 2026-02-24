@@ -23,7 +23,7 @@ provider:
   zai:
     api_key: "${ZHIPU_API_KEY}"
     base_url: "https://api.z.ai/api/paas/v4"
-    model: "glm-5"
+    model: "glm-4-flash"
     vision_model: "glm-4v-plus"  # 当消息含图片时使用视觉模型
   qwen:
     api_key: "${QWEN_API_KEY}"
@@ -50,7 +50,7 @@ provider:
   zhipu:
     api_key: "${ZHIPU_API_KEY}"
     base_url: "https://open.bigmodel.cn/api/paas/v4"
-    model: "glm-5"
+    model: "glm-4-flash"
   fallback:
     - "qwen"
 
