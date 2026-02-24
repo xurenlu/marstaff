@@ -375,7 +375,7 @@ func (e *Engine) summarizeConversation(ctx context.Context, sessionID string) st
 
 	// Call LLM to generate summary
 	req := provider.ChatCompletionRequest{
-		Model:       "default",
+		Model:       "", // Use provider's default model
 		Messages: []provider.Message{
 			{Role: provider.RoleSystem, Content: "你是一个专业的对话总结助手。"},
 			{Role: provider.RoleUser, Content: summaryPrompt.String()},
