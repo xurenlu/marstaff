@@ -1102,7 +1102,12 @@ func getProviderConfig(cfg *config.Config, name string) map[string]interface{} {
 
 func getMediaProviderConfig(cfg *config.Config) map[string]interface{} {
 	switch cfg.Media.Default {
-	case "qwen_wanxiang":
+	case "wanxiang_2.6":
+		return cfg.Media.Wanxiang26
+	case "qwen_wanxiang": // Backward compatibility
+		if cfg.Media.Wanxiang26 != nil {
+			return cfg.Media.Wanxiang26
+		}
 		return cfg.Media.QWenWanxiang
 	default:
 		return nil
