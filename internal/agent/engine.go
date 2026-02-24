@@ -167,10 +167,10 @@ func (e *Engine) GenerateSessionTitle(ctx context.Context, userContent string) s
 	if userContent == "" {
 		return "新对话"
 	}
-	// Truncate for prompt to avoid token waste
+	// Truncate for prompt to avoid token waste (use rune count for UTF-8 safety)
 	truncated := userContent
-	if len(truncated) > 200 {
-		truncated = truncated[:200] + "..."
+	if len([]rune(truncated)) > 200 {
+		truncated = string([]rune(truncated)[:200]) + "..."
 	}
 	messages := []provider.Message{
 		{Role: provider.RoleSystem, Content: "请用一句话概括以下用户消息的核心意图，作为会话标题。只输出标题本身，不超过15个字，不要加引号或标点。"},
@@ -184,11 +184,13 @@ func (e *Engine) GenerateSessionTitle(ctx context.Context, userContent string) s
 	}
 	completion, err := e.provider.CreateChatCompletion(ctx, providerReq)
 	if err != nil {
+		// Use rune-based truncation for logging
 		n := 50
-		if len(truncated) < n {
-			n = len(truncated)
+		r := []rune(truncated)
+		if len(r) < n {
+			n = len(r)
 		}
-		log.Warn().Err(err).Str("content", truncated[:n]).Msg("failed to generate session title")
+		log.Warn().Err(err).Str("content", string(r[:n])).Msg("failed to generate session title")
 		return truncateForTitle(userContent)
 	}
 	title := strings.TrimSpace(completion.Choices[0].Message.Content)
