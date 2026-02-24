@@ -1,0 +1,3 @@
+-- Down migration for charset fix
+-- Note: This is a no-op since reverting charset would cause data loss
+-- If you need to rollback, you would need to specify a target charset
