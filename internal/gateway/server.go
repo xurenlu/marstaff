@@ -25,6 +25,19 @@ var upgrader = websocket.Upgrader{
 type Server struct {
 	hub        *Hub
 	messageHandler MessageHandler
+	userRepo   UserRepository // For looking up real user ID
+}
+
+// UserRepository is a minimal interface for user lookup
+type UserRepository interface {
+	GetByPlatformID(ctx context.Context, platform, platformUserID string) (*User, error)
+}
+
+// User represents a minimal user model
+type User struct {
+	ID       string
+	Platform string
+	PlatformUserID string
 }
 
 // MessageHandler handles incoming messages from clients
@@ -42,6 +55,11 @@ func (s *Server) SetMessageHandler(handler MessageHandler) {
 	s.messageHandler = handler
 }
 
+// SetUserRepository sets the user repository
+func (s *Server) SetUserRepository(repo UserRepository) {
+	s.userRepo = repo
+}
+
 // ServeWebSocket handles WebSocket connection requests
 func (s *Server) ServeWebSocket(c *gin.Context) {
 	// Get query parameters
@@ -51,6 +69,17 @@ func (s *Server) ServeWebSocket(c *gin.Context) {
 	// Single-user mode: use fixed user ID when not provided
 	if userID == "" {
 		userID = "default"
+	}
+
+	// Resolve to real user ID if repository is available
+	realUserID := userID // default to the value from query
+	if s.userRepo != nil {
+		if user, err := s.userRepo.GetByPlatformID(context.Background(), "web", userID); err == nil && user != nil {
+			realUserID = user.ID
+			log.Debug().Str("platform_user_id", userID).Str("real_user_id", realUserID).Msg("resolved user ID")
+		} else {
+			log.Debug().Str("platform_user_id", userID).Msg("user not found in repository, using provided ID")
+		}
 	}
 
 	// Upgrade HTTP connection to WebSocket
@@ -66,7 +95,7 @@ func (s *Server) ServeWebSocket(c *gin.Context) {
 	// Create client
 	client := &Client{
 		ID:        clientID,
-		UserID:    userID,
+		UserID:    realUserID,
 		SessionID: sessionID,
 		Conn:      conn,
 		Send:      make(chan []byte, 256),
@@ -79,14 +108,14 @@ func (s *Server) ServeWebSocket(c *gin.Context) {
 	// Log connection
 	log.Info().
 		Str("client_id", clientID).
-		Str("user_id", userID).
+		Str("user_id", realUserID).
 		Str("session_id", sessionID).
 		Msg("websocket client connected")
 
 	// Send welcome message
 	welcomeMsg := &Message{
 		Type:      MessageTypeStatus,
-		UserID:    userID,
+		UserID:    realUserID,
 		SessionID: sessionID,
 		Data: map[string]interface{}{
 			"client_id": clientID,
