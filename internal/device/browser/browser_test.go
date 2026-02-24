@@ -9,6 +9,9 @@ import (
 
 // TestBrowserConnectAndNavigate 测试浏览器连接和导航功能
 func TestBrowserConnectAndNavigate(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping browser test in short mode (requires real browser)")
+	}
 	// 创建浏览器设备 (headless 模式)
 	device := NewDevice("", true)
 
@@ -124,6 +127,9 @@ func TestBrowserConnectAndNavigate(t *testing.T) {
 
 // TestExampleDomain 测试访问 example.com 页面
 func TestExampleDomain(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping browser test in short mode (requires real browser)")
+	}
 	device := NewDevice("", true)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -184,6 +190,9 @@ func TestExampleDomain(t *testing.T) {
 
 // TestBrowserHealthCheck 测试健康检查
 func TestBrowserHealthCheck(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping browser test in short mode (requires real browser)")
+	}
 	device := NewDevice("", true)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -202,6 +211,9 @@ func TestBrowserHealthCheck(t *testing.T) {
 
 // BenchmarkExampleNavigation 性能基准测试
 func BenchmarkExampleNavigation(b *testing.B) {
+	if testing.Short() {
+		b.Skip("Skipping browser benchmark in short mode (requires real browser)")
+	}
 	device := NewDevice("", true)
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
 	defer cancel()

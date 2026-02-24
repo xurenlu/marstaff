@@ -80,9 +80,17 @@ func (m *Message) BeforeCreate(tx *gorm.DB) error {
 	if m.ID == "" {
 		m.ID = uuid.New().String()
 	}
-	// Set empty metadata to NULL instead of empty string for JSON columns
+	// MySQL JSON column rejects empty string; use "{}" (SetColumn in hooks is unreliable per go-gorm/gorm#4990)
 	if m.Metadata == "" {
-		tx.Statement.SetColumn("metadata", nil)
+		m.Metadata = "{}"
+	}
+	return nil
+}
+
+// BeforeSave normalizes metadata before create/update
+func (m *Message) BeforeSave(tx *gorm.DB) error {
+	if m.Metadata == "" {
+		m.Metadata = "{}"
 	}
 	return nil
 }

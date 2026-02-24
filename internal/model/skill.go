@@ -31,6 +31,18 @@ func (s *Skill) BeforeCreate(tx *gorm.DB) error {
 	if s.ID == "" {
 		s.ID = uuid.New().String()
 	}
+	return s.normalizeJSONColumns()
+}
+
+// BeforeSave normalizes JSON columns before create/update (MySQL JSON rejects empty string)
+func (s *Skill) BeforeSave(tx *gorm.DB) error {
+	return s.normalizeJSONColumns()
+}
+
+func (s *Skill) normalizeJSONColumns() error {
+	if s.Metadata == "" {
+		s.Metadata = "{}"
+	}
 	return nil
 }
 
@@ -53,6 +65,19 @@ type Tool struct {
 func (t *Tool) BeforeCreate(tx *gorm.DB) error {
 	if t.ID == "" {
 		t.ID = uuid.New().String()
+	}
+	return t.normalizeJSONColumns()
+}
+
+// BeforeSave normalizes JSON columns before create/update (MySQL JSON rejects empty string)
+func (t *Tool) BeforeSave(tx *gorm.DB) error {
+	return t.normalizeJSONColumns()
+}
+
+func (t *Tool) normalizeJSONColumns() error {
+	// Parameters is JSON schema; empty string is invalid
+	if t.Parameters == "" {
+		t.Parameters = "{}"
 	}
 	return nil
 }

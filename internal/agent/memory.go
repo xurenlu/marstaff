@@ -63,8 +63,9 @@ type ExtractedMemory struct {
 	Metadata  map[string]interface{}
 }
 
-// ExtractMemories uses AI to extract important information from conversation
-func (s *MemoryService) ExtractMemories(ctx context.Context, sessionID string) ([]*ExtractedMemory, error) {
+// ExtractMemories uses AI to extract important information from conversation.
+// If providerOverride is non-nil, it will be used instead of the default provider (respects user's chat_provider setting).
+func (s *MemoryService) ExtractMemories(ctx context.Context, sessionID string, providerOverride provider.Provider) ([]*ExtractedMemory, error) {
 	// Get recent messages
 	messages, err := s.messageRepo.GetLastNBySessionID(ctx, sessionID, 20)
 	if err != nil {
@@ -118,10 +119,18 @@ func (s *MemoryService) ExtractMemories(ctx context.Context, sessionID string) (
 		MaxTokens:   1000,
 	}
 
-	completion, err := s.provider.CreateChatCompletion(ctx, req)
+	p := s.provider
+	if providerOverride != nil {
+		p = providerOverride
+	}
+	completion, err := p.CreateChatCompletion(ctx, req)
 	if err != nil {
 		log.Error().Err(err).Str("session_id", sessionID).Msg("failed to extract memories")
 		return nil, fmt.Errorf("failed to extract memories: %w", err)
+	}
+	if len(completion.Choices) == 0 {
+		log.Warn().Str("session_id", sessionID).Msg("no choices in completion response")
+		return nil, nil
 	}
 
 	// Parse AI response
@@ -129,8 +138,8 @@ func (s *MemoryService) ExtractMemories(ctx context.Context, sessionID string) (
 		Memories []struct {
 			Key       string  `json:"key"`
 			Value     string  `json:"value"`
-		Category   string  `json:"category"`
-		Importance float64 `json:"importance"`
+			Category  string  `json:"category"`
+			Importance float64 `json:"importance"`
 		} `json:"memories"`
 	}
 
@@ -284,9 +293,10 @@ func (s *MemoryService) FormatMemoriesForPrompt(memories []*model.Memory) string
 	return result.String()
 }
 
-// ExtractAndSave extracts memories from conversation and saves them
-func (s *MemoryService) ExtractAndSave(ctx context.Context, userID, sessionID string) error {
-	memories, err := s.ExtractMemories(ctx, sessionID)
+// ExtractAndSave extracts memories from conversation and saves them.
+// providerOverride: when non-nil, uses this provider (e.g. user's selected chat_provider) instead of config default.
+func (s *MemoryService) ExtractAndSave(ctx context.Context, userID, sessionID string, providerOverride provider.Provider) error {
+	memories, err := s.ExtractMemories(ctx, sessionID, providerOverride)
 	if err != nil {
 		return err
 	}

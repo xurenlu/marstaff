@@ -39,9 +39,18 @@ func (s *Session) BeforeCreate(tx *gorm.DB) error {
 	if s.ID == "" {
 		s.ID = uuid.New().String()
 	}
-	// Set empty metadata to NULL instead of empty string for JSON columns
+	return s.normalizeMetadata(tx)
+}
+
+// BeforeSave normalizes metadata before create/update (JSON column cannot store empty string)
+func (s *Session) BeforeSave(tx *gorm.DB) error {
+	return s.normalizeMetadata(tx)
+}
+
+func (s *Session) normalizeMetadata(tx *gorm.DB) error {
+	// MySQL JSON column rejects empty string; use "{}" (SetColumn in hooks is unreliable per go-gorm/gorm#4990)
 	if s.Metadata == "" {
-		tx.Statement.SetColumn("metadata", nil)
+		s.Metadata = "{}"
 	}
 	return nil
 }

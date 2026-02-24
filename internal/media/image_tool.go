@@ -4,12 +4,20 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/rs/zerolog/log"
 )
+
+// ImageUploader uploads image bytes to OSS and returns the public URL.
+// When providers return base64, we upload to OSS instead of passing base64.
+type ImageUploader interface {
+	UploadImage(data []byte, filename, contentType string) (url string, err error)
+}
 
 // GenerateImageTool generates images from text prompts
 // Parameters:
@@ -21,9 +29,10 @@ import (
 //   - save_path (string, optional): Directory to save downloaded images
 //   - seed (int, optional): Seed for reproducible results
 //
-// Returns: JSON formatted response with image URLs and/or saved file paths
+// Returns: JSON formatted response with image URLs (uploaded to OSS when provider returns base64)
 type GenerateImageTool struct {
-	provider MediaProvider
+	provider     MediaProvider
+	imageUploader ImageUploader
 }
 
 // NewGenerateImageTool creates a new image generation tool
@@ -31,6 +40,11 @@ func NewGenerateImageTool(provider MediaProvider) *GenerateImageTool {
 	return &GenerateImageTool{
 		provider: provider,
 	}
+}
+
+// SetImageUploader sets the OSS uploader for base64 images. Required to convert base64 to URL.
+func (t *GenerateImageTool) SetImageUploader(u ImageUploader) {
+	t.imageUploader = u
 }
 
 // Execute executes the image generation tool
@@ -93,22 +107,39 @@ func (t *GenerateImageTool) Execute(ctx context.Context, params map[string]inter
 	for i, img := range resp.Images {
 		result += fmt.Sprintf("\n[Image %d]\n", i+1)
 
+		// When provider returns base64, upload to OSS and use URL (never pass base64 to user)
+		imgURL := img.URL
+		if imgURL == "" && img.Base64Data != "" && t.imageUploader != nil {
+			data, err := base64.StdEncoding.DecodeString(img.Base64Data)
+			if err != nil {
+				result += fmt.Sprintf("  Error: failed to decode base64: %v\n", err)
+				continue
+			}
+			filename := fmt.Sprintf("generated_%d_%d.png", time.Now().Unix(), i)
+			imgURL, err = t.imageUploader.UploadImage(data, filename, "image/png")
+			if err != nil {
+				result += fmt.Sprintf("  Error: OSS upload failed: %v\n", err)
+				continue
+			}
+			log.Info().Str("url", imgURL).Msg("generated image uploaded to OSS")
+		} else if imgURL == "" && img.Base64Data != "" {
+			result += "  Error: OSS 未配置，无法上传生成的图片。请在配置中设置 OSS。\n"
+			continue
+		}
+
 		// Save to disk if save_path is provided
-		if savePath != "" && (img.URL != "" || img.Base64Data != "") {
-			savedPath, err := t.saveImage(ctx, img, savePath, i)
+		if savePath != "" && imgURL != "" {
+			savedPath, err := t.saveImage(ctx, GeneratedImage{URL: imgURL}, savePath, i)
 			if err != nil {
 				log.Warn().Err(err).Msg("failed to save image")
-				result += fmt.Sprintf("  URL: %s (save failed: %v)\n", img.URL, err)
+				result += fmt.Sprintf("  URL: %s (save failed: %v)\n", imgURL, err)
 			} else {
 				result += fmt.Sprintf("  Saved to: %s\n", savedPath)
 			}
 		}
 
-		if img.URL != "" {
-			result += fmt.Sprintf("  URL: %s\n", img.URL)
-		}
-		if img.Base64Data != "" {
-			result += fmt.Sprintf("  Base64 length: %d bytes\n", len(img.Base64Data))
+		if imgURL != "" {
+			result += fmt.Sprintf("  URL: %s\n", imgURL)
 		}
 		if img.RevisedPrompt != "" {
 			result += fmt.Sprintf("  Revised prompt: %s\n", img.RevisedPrompt)
@@ -166,9 +197,19 @@ func (t *GenerateImageTool) saveImage(ctx context.Context, img GeneratedImage, s
 
 // downloadImage downloads an image from URL
 func (t *GenerateImageTool) downloadImage(ctx context.Context, url string) ([]byte, error) {
-	// TODO: Implement HTTP download
-	// For now, return error
-	return nil, fmt.Errorf("URL download not yet implemented")
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("download failed: status %d", resp.StatusCode)
+	}
+	return io.ReadAll(resp.Body)
 }
 
 // Helper functions for parameter extraction

@@ -47,6 +47,25 @@ func (r *AFKTaskRepository) GetByUserID(ctx context.Context, userID string, limi
 	return tasks, err
 }
 
+// GetByUserIDs retrieves tasks for multiple user IDs (e.g. "default" + resolved UUID in single-user mode)
+func (r *AFKTaskRepository) GetByUserIDs(ctx context.Context, userIDs []string, limit int) ([]*model.AFKTask, error) {
+	if len(userIDs) == 0 {
+		return nil, nil
+	}
+	if len(userIDs) == 1 {
+		return r.GetByUserID(ctx, userIDs[0], limit)
+	}
+	var tasks []*model.AFKTask
+	query := r.db.WithContext(ctx).
+		Where("user_id IN ?", userIDs).
+		Order("created_at DESC")
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+	err := query.Find(&tasks).Error
+	return tasks, err
+}
+
 // GetActiveTasks retrieves all active tasks
 func (r *AFKTaskRepository) GetActiveTasks(ctx context.Context) ([]*model.AFKTask, error) {
 	var tasks []*model.AFKTask

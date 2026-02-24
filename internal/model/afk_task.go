@@ -200,9 +200,22 @@ func (t *AFKTask) BeforeCreate(tx *gorm.DB) error {
 	if t.ID == "" {
 		t.ID = uuid.New().String()
 	}
-	// Handle JSON NULL values
+	return t.normalizeJSONColumns()
+}
+
+// BeforeSave normalizes JSON columns before create/update (MySQL JSON rejects empty string)
+func (t *AFKTask) BeforeSave(tx *gorm.DB) error {
+	return t.normalizeJSONColumns()
+}
+
+func (t *AFKTask) normalizeJSONColumns() error {
+	// MySQL JSON column rejects empty string; use "{}" (SetColumn in hooks is unreliable per go-gorm/gorm#4990)
+	if t.Metadata == "" {
+		t.Metadata = "{}"
+	}
+	// Ensure NotificationConfig marshals to valid JSON (nil Channels -> empty map)
 	if t.NotificationConfig.Channels == nil {
-		tx.Statement.SetColumn("notification_config", nil)
+		t.NotificationConfig.Channels = make(map[string]ChannelConfig)
 	}
 	return nil
 }
@@ -270,6 +283,19 @@ type UserNotificationSettings struct {
 func (ns *UserNotificationSettings) BeforeCreate(tx *gorm.DB) error {
 	if ns.ID == "" {
 		ns.ID = uuid.New().String()
+	}
+	return ns.normalizeMetadata()
+}
+
+// BeforeSave normalizes metadata before create/update (JSON column cannot store empty string)
+func (ns *UserNotificationSettings) BeforeSave(tx *gorm.DB) error {
+	return ns.normalizeMetadata()
+}
+
+func (ns *UserNotificationSettings) normalizeMetadata() error {
+	// MySQL JSON column rejects empty string; use "{}" (SetColumn in hooks is unreliable per go-gorm/gorm#4990)
+	if ns.Metadata == "" {
+		ns.Metadata = "{}"
 	}
 	return nil
 }

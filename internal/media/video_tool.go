@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/rs/zerolog/log"
+
+	"github.com/rocky/marstaff/internal/contextkeys"
 )
 
 // VideoUploader is an interface for uploading videos to cloud storage
@@ -75,10 +77,10 @@ func (t *GenerateVideoTool) SetAsyncTaskCallback(callback AsyncTaskCreatedCallba
 // Execute executes the video generation tool
 func (t *GenerateVideoTool) Execute(ctx context.Context, params map[string]interface{}) (string, error) {
 	// Extract user_id and session_id from context for async task creation
-	if userID, ok := ctx.Value("user_id").(string); ok {
+	if userID, ok := ctx.Value(contextkeys.UserID).(string); ok && userID != "" {
 		t.currentUserID = userID
 	}
-	if sessionID, ok := ctx.Value("session_id").(string); ok {
+	if sessionID, ok := ctx.Value(contextkeys.SessionID).(string); ok && sessionID != "" {
 		t.currentSessionID = sessionID
 	}
 

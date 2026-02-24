@@ -31,12 +31,21 @@ func (p *Project) BeforeCreate(tx *gorm.DB) error {
 	if p.ID == "" {
 		p.ID = uuid.New().String()
 	}
-	// Set empty metadata to NULL instead of empty string for JSON columns
+	return p.normalizeJSONColumns()
+}
+
+// BeforeSave normalizes JSON columns before create/update (MySQL JSON rejects empty string)
+func (p *Project) BeforeSave(tx *gorm.DB) error {
+	return p.normalizeJSONColumns()
+}
+
+func (p *Project) normalizeJSONColumns() error {
+	// MySQL JSON column rejects empty string; use "{}"/"[]" (SetColumn in hooks is unreliable per go-gorm/gorm#4990)
 	if p.Metadata == "" {
-		tx.Statement.SetColumn("metadata", nil)
+		p.Metadata = "{}"
 	}
 	if p.TechStack == "" {
-		tx.Statement.SetColumn("tech_stack", nil)
+		p.TechStack = "[]"
 	}
 	return nil
 }

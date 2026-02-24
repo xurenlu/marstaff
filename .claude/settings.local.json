@@ -40,7 +40,10 @@
       "Bash(ruby:*)",
       "Bash(git restore:*)",
       "Bash(QWEN_API_KEY=\"sk-d0faa67c76e04949aa390c3c934b8b0d\" go test:*)",
-      "Bash(./bin/migrate:*)"
+      "Bash(./bin/migrate:*)",
+      "Bash(git push)",
+      "Bash(git remote add:*)",
+      "Bash(git push:*)"
     ],
     "deny": [],
     "ask": []

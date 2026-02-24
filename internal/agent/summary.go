@@ -60,8 +60,9 @@ func (s *SummaryService) ShouldSummarize(ctx context.Context, sessionID string) 
 	return int(count) >= s.config.MessageThreshold, nil
 }
 
-// GenerateSummary generates a summary of the conversation
-func (s *SummaryService) GenerateSummary(ctx context.Context, sessionID string) (string, error) {
+// GenerateSummary generates a summary of the conversation.
+// If providerOverride is non-nil, it will be used instead of the default provider (respects user's chat_provider setting).
+func (s *SummaryService) GenerateSummary(ctx context.Context, sessionID string, providerOverride provider.Provider) (string, error) {
 	// Get all messages for the session
 	messages, err := s.messageRepo.GetAllBySessionID(ctx, sessionID)
 	if err != nil {
@@ -112,10 +113,17 @@ func (s *SummaryService) GenerateSummary(ctx context.Context, sessionID string) 
 		MaxTokens:   500,
 	}
 
-	completion, err := s.provider.CreateChatCompletion(ctx, req)
+	p := s.provider
+	if providerOverride != nil {
+		p = providerOverride
+	}
+	completion, err := p.CreateChatCompletion(ctx, req)
 	if err != nil {
 		log.Error().Err(err).Str("session_id", sessionID).Msg("failed to generate summary")
 		return "", fmt.Errorf("failed to generate summary: %w", err)
+	}
+	if len(completion.Choices) == 0 {
+		return "", fmt.Errorf("provider returned empty choices")
 	}
 
 	summary := strings.TrimSpace(completion.Choices[0].Message.Content)
@@ -126,8 +134,9 @@ func (s *SummaryService) GenerateSummary(ctx context.Context, sessionID string) 
 	return summary, nil
 }
 
-// SummarizeAndArchive generates a summary and archives old messages
-func (s *SummaryService) SummarizeAndArchive(ctx context.Context, sessionID string) error {
+// SummarizeAndArchive generates a summary and archives old messages.
+// providerOverride: when non-nil, uses this provider (e.g. user's selected chat_provider) instead of config default.
+func (s *SummaryService) SummarizeAndArchive(ctx context.Context, sessionID string, providerOverride provider.Provider) error {
 	// Get session
 	session, err := s.sessionRepo.GetByID(ctx, sessionID)
 	if err != nil {
@@ -135,7 +144,7 @@ func (s *SummaryService) SummarizeAndArchive(ctx context.Context, sessionID stri
 	}
 
 	// Generate summary
-	summary, err := s.GenerateSummary(ctx, sessionID)
+	summary, err := s.GenerateSummary(ctx, sessionID, providerOverride)
 	if err != nil {
 		return err
 	}

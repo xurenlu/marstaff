@@ -8,4 +8,6 @@ const (
 	SessionWorkDir Key = "session_work_dir"
 	// SessionID is the context key for session ID
 	SessionID Key = "session_id"
+	// UserID is the context key for user ID (used by tools like video generation for AFK task creation)
+	UserID Key = "user_id"
 )
