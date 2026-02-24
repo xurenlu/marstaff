@@ -506,7 +506,36 @@ func (api *SessionAPI) GetOrCreateSessionDirect(ctx context.Context, req *Create
 	}
 	// Not found or error: create with the given ID
 	req.SessionID = sessionID
-	return api.CreateSessionDirect(ctx, req)
+	resp, createErr := api.CreateSessionDirect(ctx, req)
+	if createErr == nil {
+		return resp, nil
+	}
+	// If duplicate key (session exists but soft-deleted), restore and return
+	if isDuplicateKeyError(createErr) {
+		if restoreErr := api.sessionRepo.Restore(ctx, sessionID); restoreErr == nil {
+			restored, _ := api.sessionRepo.GetByID(ctx, sessionID)
+			if restored != nil {
+				return &CreateSessionResponse{
+					SessionID: restored.ID,
+					UserID:    restored.UserID,
+					Title:     restored.Title,
+					Model:     restored.Model,
+					WorkDir:   restored.WorkDir,
+					ProjectID: restored.ProjectID,
+					CreatedAt: restored.CreatedAt.Format(time.RFC3339),
+				}, nil
+			}
+		}
+	}
+	return nil, createErr
+}
+
+// isDuplicateKeyError returns true if the error is a MySQL duplicate key (1062)
+func isDuplicateKeyError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), "Duplicate") || strings.Contains(err.Error(), "1062")
 }
 
 // UpdateSessionTitleDirect updates session title by ID (for programmatic use, no gin context)
