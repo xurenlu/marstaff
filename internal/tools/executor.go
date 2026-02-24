@@ -174,6 +174,13 @@ func (e *Executor) SetMediaProvider(provider media.MediaProvider) {
 	e.videoTool = media.NewGenerateVideoTool(provider)
 }
 
+// SetMediaUploader sets the media uploader (OSS) for storing generated content
+func (e *Executor) SetMediaUploader(uploader media.VideoUploader) {
+	if e.videoTool != nil {
+		e.videoTool.SetUploader(uploader)
+	}
+}
+
 // RegisterMediaTools registers image and video generation tools
 func (e *Executor) RegisterMediaTools() {
 	if e.mediaProvider == nil {

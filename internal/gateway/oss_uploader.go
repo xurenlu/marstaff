@@ -170,3 +170,55 @@ func generateRandomStr(length int) string {
 	}
 	return string(b)
 }
+
+// UploadBytes uploads byte data to OSS
+func (u *OSSUploader) UploadBytes(data []byte, filename, contentType string) (*UploadResponse, error) {
+	// Add path prefix and timestamp
+	timestamp := time.Now().Format("20060102")
+	fullPath := fmt.Sprintf("%s%s/%s", u.pathPrefix, timestamp, filename)
+
+	// Detect content type if not provided
+	if contentType == "" {
+		ext := ""
+		if parts := strings.Split(filename, "."); len(parts) > 1 {
+			ext = "." + parts[len(parts)-1]
+		}
+		contentType = detectContentType(ext)
+	}
+
+	// Upload to OSS
+	options := []oss.Option{
+		oss.ContentType(contentType),
+		oss.ObjectACL(oss.ACLPublicRead),
+	}
+
+	err := u.bucket.PutObject(fullPath, bytes.NewReader(data), options...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to upload to OSS: %w", err)
+	}
+
+	log.Info().
+		Str("filename", fullPath).
+		Int("size", len(data)).
+		Str("content_type", contentType).
+		Msg("bytes uploaded to OSS")
+
+	// Build public URL
+	publicURL := fmt.Sprintf("%s/%s", strings.TrimSuffix(u.domain, "/"), fullPath)
+
+	return &UploadResponse{
+		URL:      publicURL,
+		Filename: fullPath,
+		Size:     int64(len(data)),
+	}, nil
+}
+
+// UploadVideoFile uploads a video file to OSS
+func (u *OSSUploader) UploadVideoFile(data []byte, filename string) (*UploadResponse, error) {
+	return u.UploadBytes(data, filename, "video/mp4")
+}
+
+// UploadImageFile uploads an image file to OSS
+func (u *OSSUploader) UploadImageFile(data []byte, filename string) (*UploadResponse, error) {
+	return u.UploadBytes(data, filename, "image/jpeg")
+}
