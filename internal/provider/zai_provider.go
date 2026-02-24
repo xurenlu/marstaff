@@ -33,7 +33,7 @@ func NewZAIProvider(config map[string]interface{}) (Provider, error) {
 
 	model, _ := config["model"].(string)
 	if model == "" {
-		model = "glm-5"
+		model = "glm-4-flash"
 	}
 
 	return &ZAIProvider{
@@ -229,7 +229,7 @@ func (p *ZAIProvider) HealthCheck(ctx context.Context) error {
 
 func (p *ZAIProvider) SupportedModels() []string {
 	return []string{
-		"glm-5",
+		"glm-4-flash",
 		"glm-4.7",
 		"glm-4.6",
 		"glm-4.5",
