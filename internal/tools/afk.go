@@ -10,6 +10,7 @@ import (
 
 	"github.com/rocky/marstaff/internal/agent"
 	"github.com/rocky/marstaff/internal/api"
+	"github.com/rocky/marstaff/internal/contextkeys"
 	"github.com/rocky/marstaff/internal/model"
 	"github.com/rocky/marstaff/internal/repository"
 )
@@ -286,9 +287,15 @@ func (e *AFKExecutor) toolCreateTask(ctx context.Context, params map[string]inte
 	actionConfig.NotifyAction.Channels = notifyChannels
 	actionConfig.NotifyAction.Conditions = "on_trigger"
 
+	// Resolve user_id from context (chat session) or fallback to "default"
+	userID := "default"
+	if uid, ok := ctx.Value(contextkeys.UserID).(string); ok && uid != "" {
+		userID = uid
+	}
+
 	// Create task using repository directly
 	task := &model.AFKTask{
-		UserID:         "default", // TODO: Get from context
+		UserID:         userID,
 		Name:           name,
 		Description:    description,
 		TaskType:       model.AFKTaskType(taskType),
@@ -323,7 +330,12 @@ func (e *AFKExecutor) toolListTasks(ctx context.Context, params map[string]inter
 		limit = int(l)
 	}
 
-	tasks, err := e.taskRepo.GetByUserID(ctx, "default", limit)
+	userID := "default"
+	if uid, ok := ctx.Value(contextkeys.UserID).(string); ok && uid != "" {
+		userID = uid
+	}
+
+	tasks, err := e.taskRepo.GetByUserID(ctx, userID, limit)
 	if err != nil {
 		return "", fmt.Errorf("failed to list tasks: %w", err)
 	}

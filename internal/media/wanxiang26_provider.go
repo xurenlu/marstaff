@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -77,42 +78,57 @@ type Wanxiang26AsyncResponse struct {
 	RequestID string `json:"request_id"`
 }
 
-// Wanxiang26ImageRequest is the request format for Wanxiang 2.6 image generation
+// Wanxiang26ImageRequest is the request format for Wanxiang 2.6 image generation (multimodal-generation API)
 type Wanxiang26ImageRequest struct {
-	Model          string `json:"model"`                     // Model: "wanxiang-2.6"
-	Input          Wanxiang26ImageInput `json:"input"`
-	Parameters     Wanxiang26ImageParameters `json:"parameters"`
+	Model      string                   `json:"model"`      // Model: "wan2.6-t2i"
+	Input      Wanxiang26ImageInput     `json:"input"`      // messages format
+	Parameters Wanxiang26ImageParameters `json:"parameters"`
 }
 
-// Wanxiang26ImageInput contains the input for image generation
+// Wanxiang26ImageInput contains the input for image generation (messages format)
 type Wanxiang26ImageInput struct {
-	Prompt         string `json:"prompt"`                    // Required: text description
-	NegativePrompt string `json:"negative_prompt,omitempty"`  // Things to avoid
+	Messages []Wanxiang26ImageMessage `json:"messages"`
+}
+
+// Wanxiang26ImageMessage is a single message in the input
+type Wanxiang26ImageMessage struct {
+	Role    string                      `json:"role"`
+	Content []Wanxiang26ImageContentPart `json:"content"`
+}
+
+// Wanxiang26ImageContentPart is a content part (text only for t2i)
+type Wanxiang26ImageContentPart struct {
+	Text string `json:"text"`
 }
 
 // Wanxiang26ImageParameters contains image generation parameters
 type Wanxiang26ImageParameters struct {
-	Size           string `json:"size,omitempty"`            // Image size: "1024*1024", "720*1280", etc.
+	Size           string `json:"size,omitempty"`            // Image size: "1280*1280", "960*1696", etc. (must be 1280*1280~1440*1440)
 	N              int    `json:"n,omitempty"`               // Number of images (1-4)
-	Seed           int64  `json:"seed,omitempty"`            // Random seed
-	Style          string `json:"style,omitempty"`           // Style preset
+	NegativePrompt string `json:"negative_prompt,omitempty"` // Things to avoid
+	PromptExtend   bool   `json:"prompt_extend,omitempty"`   // Enable prompt rewriting
+	Watermark      bool   `json:"watermark,omitempty"`       // Add watermark
+	Seed           int64  `json:"seed,omitempty"`            // Random seed [0, 2147483647]
 }
 
-// Wanxiang26ImageResponse is the response from image generation API
+// Wanxiang26ImageResponse is the response from multimodal-generation API
 type Wanxiang26ImageResponse struct {
 	Output struct {
-		Results []Wanxiang26ImageResult `json:"results"`
+		Choices []struct {
+			Message struct {
+				Content []struct {
+					Type  string `json:"type"`
+					Image string `json:"image,omitempty"`
+				} `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+		Finished bool `json:"finished"`
 	} `json:"output"`
-	Usage Wanxiang26Usage `json:"usage"`
+	Usage struct {
+		ImageCount int    `json:"image_count"`
+		Size       string `json:"size"`
+	} `json:"usage"`
 	RequestID string `json:"request_id"`
-}
-
-// Wanxiang26ImageResult represents a generated image result
-type Wanxiang26ImageResult struct {
-	URL       string `json:"url,omitempty"`
-	Base64    string `json:"b64_image,omitempty"`
-	ErrorCode string `json:"error_code,omitempty"`
-	ErrorMsg  string `json:"error_message,omitempty"`
 }
 
 // NewWanxiang26Provider creates a new Wanxiang 2.6 provider
@@ -140,7 +156,7 @@ func (p *Wanxiang26Provider) Name() string {
 	return "wanxiang_2.6"
 }
 
-// GenerateImage generates images using Wanxiang 2.6
+// GenerateImage generates images using Wanxiang 2.6 (multimodal-generation API)
 func (p *Wanxiang26Provider) GenerateImage(ctx context.Context, req ImageGenerationRequest) (*ImageGenerationResponse, error) {
 	// Set defaults
 	if req.N == 0 {
@@ -149,21 +165,37 @@ func (p *Wanxiang26Provider) GenerateImage(ctx context.Context, req ImageGenerat
 	if req.N > 4 {
 		req.N = 4 // Max 4 images
 	}
-	if req.Size == "" {
-		req.Size = "1024*1024"
+	// wan2.6-t2i requires size 1280*1280 ~ 1440*1440, default 1280*1280
+	size := req.Size
+	if size == "" {
+		size = "1280*1280"
+	}
+	// Convert "1024x1024" to "1024*1024" (API expects asterisk)
+	size = strings.ReplaceAll(size, "x", "*")
+	// wan2.6-t2i minimum is 1280*1280
+	if size == "1024*1024" {
+		size = "1280*1280"
 	}
 
-	// Build request
+	// Build request (multimodal-generation format)
 	wanxiangReq := Wanxiang26ImageRequest{
-		Model: "wan2.6-t2i", // Wanxiang 2.6 text-to-image model
+		Model: "wan2.6-t2i",
 		Input: Wanxiang26ImageInput{
-			Prompt:         req.Prompt,
-			NegativePrompt: req.NegativePrompt,
+			Messages: []Wanxiang26ImageMessage{
+				{
+					Role: "user",
+					Content: []Wanxiang26ImageContentPart{
+						{Text: req.Prompt},
+					},
+				},
+			},
 		},
 		Parameters: Wanxiang26ImageParameters{
-			Size:  req.Size,
-			N:     req.N,
-			Style: req.Style,
+			Size:           size,
+			N:              req.N,
+			NegativePrompt: req.NegativePrompt,
+			PromptExtend:   true,
+			Watermark:      false,
 		},
 	}
 
@@ -176,7 +208,8 @@ func (p *Wanxiang26Provider) GenerateImage(ctx context.Context, req ImageGenerat
 		return nil, &MediaError{Code: "marshal_error", Message: "failed to marshal request", Err: err}
 	}
 
-	url := p.baseURL + "/api/v1/services/aigc/text2image/image-synthesis/generation"
+	// wan2.6-t2i uses multimodal-generation endpoint, NOT text2image/image-synthesis
+	url := p.baseURL + "/api/v1/services/aigc/multimodal-generation/generation"
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
 	if err != nil {
 		return nil, &MediaError{Code: "request_error", Message: "failed to create request", Err: err}
@@ -206,23 +239,19 @@ func (p *Wanxiang26Provider) GenerateImage(ctx context.Context, req ImageGenerat
 		return nil, &MediaError{Code: "decode_error", Message: "failed to decode response", Err: err}
 	}
 
-	// Build response
+	// Build response from choices[0].message.content
 	response := &ImageGenerationResponse{
 		Usage: GenerationUsage{
 			ImageCount: wanxiangResp.Usage.ImageCount,
 		},
 	}
 
-	for _, result := range wanxiangResp.Output.Results {
-		if result.ErrorCode != "" {
-			log.Warn().Str("error_code", result.ErrorCode).Str("error_msg", result.ErrorMsg).Msg("image generation failed for one result")
-			continue
+	for _, choice := range wanxiangResp.Output.Choices {
+		for _, part := range choice.Message.Content {
+			if part.Type == "image" && part.Image != "" {
+				response.Images = append(response.Images, GeneratedImage{URL: part.Image})
+			}
 		}
-		img := GeneratedImage{
-			URL:        result.URL,
-			Base64Data: result.Base64,
-		}
-		response.Images = append(response.Images, img)
 	}
 
 	if len(response.Images) == 0 {
@@ -454,14 +483,13 @@ func (p *Wanxiang26Provider) HealthCheck(ctx context.Context) error {
 }
 
 func (p *Wanxiang26Provider) SupportedImageSizes() []string {
+	// wan2.6-t2i: total pixels 1280*1280 ~ 1440*1440, aspect ratio 1:4 ~ 4:1
 	return []string{
-		"1024*1024",
-		"1024*768",
-		"768*1024",
-		"720*1280",
-		"1280*720",
-		"480*854",
-		"854*480",
+		"1280*1280", // 1:1 default
+		"1104*1472", // 3:4
+		"1472*1104", // 4:3
+		"960*1696",  // 9:16
+		"1696*960",  // 16:9
 	}
 }
 

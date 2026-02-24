@@ -23,7 +23,7 @@ func (r *SessionRepository) Create(ctx context.Context, session *model.Session) 
 	return r.db.WithContext(ctx).Create(session).Error
 }
 
-// GetByID retrieves a session by ID
+// GetByID retrieves a session by ID (excludes soft-deleted)
 func (r *SessionRepository) GetByID(ctx context.Context, id string) (*model.Session, error) {
 	var session model.Session
 	err := r.db.WithContext(ctx).Preload("Messages").Where("id = ?", id).First(&session).Error
@@ -31,6 +31,21 @@ func (r *SessionRepository) GetByID(ctx context.Context, id string) (*model.Sess
 		return nil, err
 	}
 	return &session, nil
+}
+
+// GetByIDUnscoped retrieves a session by ID including soft-deleted
+func (r *SessionRepository) GetByIDUnscoped(ctx context.Context, id string) (*model.Session, error) {
+	var session model.Session
+	err := r.db.WithContext(ctx).Unscoped().Where("id = ?", id).First(&session).Error
+	if err != nil {
+		return nil, err
+	}
+	return &session, nil
+}
+
+// Restore restores a soft-deleted session
+func (r *SessionRepository) Restore(ctx context.Context, id string) error {
+	return r.db.WithContext(ctx).Unscoped().Model(&model.Session{}).Where("id = ?", id).Update("deleted_at", nil).Error
 }
 
 // GetByUserID retrieves all sessions for a user

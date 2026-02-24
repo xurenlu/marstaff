@@ -16,12 +16,14 @@ import (
 // AFKTaskAPI handles AFK task API endpoints
 type AFKTaskAPI struct {
 	taskRepo *repository.AFKTaskRepository
+	userRepo *repository.UserRepository
 }
 
 // NewAFKTaskAPI creates a new AFK task API
 func NewAFKTaskAPI(db *gorm.DB) *AFKTaskAPI {
 	return &AFKTaskAPI{
 		taskRepo: repository.NewAFKTaskRepository(db),
+		userRepo: repository.NewUserRepository(db),
 	}
 }
 
@@ -96,7 +98,9 @@ func (api *AFKTaskAPI) CreateTask(c *gin.Context) {
 	c.JSON(http.StatusCreated, task)
 }
 
-// ListTasks lists AFK tasks for a user
+// ListTasks lists AFK tasks for a user.
+// When user_id is "default", also includes tasks created with the resolved real user ID (UUID),
+// since chat/WebSocket may create tasks with the resolved user ID instead of "default".
 func (api *AFKTaskAPI) ListTasks(c *gin.Context) {
 	ctx := c.Request.Context()
 	userID := c.Query("user_id")
@@ -111,7 +115,20 @@ func (api *AFKTaskAPI) ListTasks(c *gin.Context) {
 		}
 	}
 
-	tasks, err := api.taskRepo.GetByUserID(ctx, userID, limit)
+	userIDs := []string{userID}
+	if userID == "default" && api.userRepo != nil {
+		if user, err := api.userRepo.GetByPlatformID(ctx, "web", "default"); err == nil && user != nil && user.ID != "" {
+			userIDs = []string{"default", user.ID}
+		}
+	}
+
+	var tasks []*model.AFKTask
+	var err error
+	if len(userIDs) > 1 {
+		tasks, err = api.taskRepo.GetByUserIDs(ctx, userIDs, limit)
+	} else {
+		tasks, err = api.taskRepo.GetByUserID(ctx, userID, limit)
+	}
 	if err != nil {
 		log.Error().Err(err).Msg("failed to list tasks")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list tasks"})

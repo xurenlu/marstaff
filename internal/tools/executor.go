@@ -2,9 +2,12 @@ package tools
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/rs/zerolog/log"
+	"gorm.io/gorm"
+
 	"github.com/rocky/marstaff/internal/agent"
 	"github.com/rocky/marstaff/internal/media"
 	"github.com/rocky/marstaff/internal/model"
@@ -215,10 +218,11 @@ func (e *Executor) createAsyncAFKTask(ctx context.Context, task media.AsyncTaskI
 		return fmt.Errorf("user_id and session_id not provided in task info")
 	}
 
-	// Limit task name length
+	// Limit task name length (truncate by runes to avoid cutting mid-UTF8-char)
 	name := "视频生成 - " + task.Prompt
-	if len(name) > 100 {
-		name = name[:100] + "..."
+	runes := []rune(name)
+	if len(runes) > 100 {
+		name = string(runes[:100]) + "..."
 	}
 
 	// Create AFK task
@@ -229,6 +233,7 @@ func (e *Executor) createAsyncAFKTask(ctx context.Context, task media.AsyncTaskI
 		Description: "异步视频生成任务，完成后将自动通知",
 		TaskType:    model.AFKTaskTypeAsync,
 		Status:      model.AFKTaskStatusPending,
+		Metadata:    "{}", // Empty JSON object for MySQL JSON column
 		TriggerConfig: model.TriggerConfig{
 			Type: model.AFKTaskTypeAsync,
 			AsyncTaskConfig: &model.AsyncTaskConfig{
@@ -246,18 +251,22 @@ func (e *Executor) createAsyncAFKTask(ctx context.Context, task media.AsyncTaskI
 		return fmt.Errorf("failed to create AFK task: %w", err)
 	}
 
-	// Update session to enter AFK mode
+	// Update session to enter AFK mode (best-effort: session may not exist if not persisted)
 	session, err := e.sessionRepo.GetByID(ctx, sessionID)
 	if err != nil {
-		return fmt.Errorf("failed to get session: %w", err)
-	}
-
-	if err := session.EnterAFKMode(); err != nil {
-		return fmt.Errorf("failed to enter AFK mode: %w", err)
-	}
-
-	if err := e.sessionRepo.Update(ctx, session); err != nil {
-		return fmt.Errorf("failed to update session: %w", err)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			log.Warn().Str("session_id", sessionID).Msg("session not found when creating AFK task, skipping AFK mode update")
+			// AFK task is created; video polling will continue. Session just won't show AFK indicator.
+		} else {
+			return fmt.Errorf("failed to get session: %w", err)
+		}
+	} else {
+		if err := session.EnterAFKMode(); err != nil {
+			return fmt.Errorf("failed to enter AFK mode: %w", err)
+		}
+		if err := e.sessionRepo.Update(ctx, session); err != nil {
+			return fmt.Errorf("failed to update session: %w", err)
+		}
 	}
 
 	log.Info().
@@ -273,6 +282,13 @@ func (e *Executor) createAsyncAFKTask(ctx context.Context, task media.AsyncTaskI
 func (e *Executor) SetMediaUploader(uploader media.VideoUploader) {
 	if e.videoTool != nil {
 		e.videoTool.SetUploader(uploader)
+	}
+}
+
+// SetImageUploader sets the OSS uploader for generated images (when provider returns base64)
+func (e *Executor) SetImageUploader(uploader media.ImageUploader) {
+	if e.imageTool != nil {
+		e.imageTool.SetImageUploader(uploader)
 	}
 }
 

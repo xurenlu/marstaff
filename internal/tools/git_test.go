@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,6 +11,8 @@ import (
 	"time"
 
 	"github.com/rocky/marstaff/internal/agent"
+	"github.com/rocky/marstaff/internal/contextkeys"
+	"github.com/rocky/marstaff/internal/provider"
 	"github.com/rocky/marstaff/internal/tools/security"
 )
 
@@ -101,14 +104,15 @@ func setupTestGitExecutor(t *testing.T, workDir string) *GitExecutor {
 // mockProvider is a minimal implementation of provider.Provider for testing
 type mockProvider struct{}
 
-func (m *mockProvider) Name() string                                         { return "mock" }
-func (m *mockProvider) HealthCheck(ctx context.Context) error                { return nil }
-func (m *mockProvider) CreateChatCompletion(ctx context.Context, req interface{}) (interface{}, error) {
+func (m *mockProvider) Name() string { return "mock" }
+func (m *mockProvider) HealthCheck(ctx context.Context) error { return nil }
+func (m *mockProvider) CreateChatCompletion(ctx context.Context, req provider.ChatCompletionRequest) (*provider.ChatCompletionResponse, error) {
 	return nil, nil
 }
-func (m *mockProvider) CreateChatCompletionStream(ctx context.Context, req interface{}) (interface{}, error) {
+func (m *mockProvider) CreateChatCompletionStream(ctx context.Context, req provider.ChatCompletionRequest) (io.ReadCloser, error) {
 	return nil, nil
 }
+func (m *mockProvider) SupportedModels() []string { return nil }
 
 // TestGitStatus tests the git_status tool
 func TestGitStatus(t *testing.T) {
@@ -116,7 +120,7 @@ func TestGitStatus(t *testing.T) {
 	defer cleanup()
 
 	executor := setupTestGitExecutor(t, tmpDir)
-	ctx := context.WithValue(context.Background(), contextkeys.SessionWorkDir{}, tmpDir)
+	ctx := context.WithValue(context.Background(), contextkeys.SessionWorkDir, tmpDir)
 
 	t.Run("Clean working tree", func(t *testing.T) {
 		result, err := executor.toolGitStatus(ctx, map[string]interface{}{})
@@ -152,7 +156,7 @@ func TestGitLog(t *testing.T) {
 	defer cleanup()
 
 	executor := setupTestGitExecutor(t, tmpDir)
-	ctx := context.WithValue(context.Background(), contextkeys.SessionWorkDir{}, tmpDir)
+	ctx := context.WithValue(context.Background(), contextkeys.SessionWorkDir, tmpDir)
 
 	t.Run("Show commit log", func(t *testing.T) {
 		result, err := executor.toolGitLog(ctx, map[string]interface{}{
@@ -175,7 +179,7 @@ func TestGitBranch(t *testing.T) {
 	defer cleanup()
 
 	executor := setupTestGitExecutor(t, tmpDir)
-	ctx := context.WithValue(context.Background(), contextkeys.SessionWorkDir{}, tmpDir)
+	ctx := context.WithValue(context.Background(), contextkeys.SessionWorkDir, tmpDir)
 
 	t.Run("List branches", func(t *testing.T) {
 		result, err := executor.toolGitBranch(ctx, map[string]interface{}{
@@ -230,7 +234,7 @@ func TestGitAdd(t *testing.T) {
 	defer cleanup()
 
 	executor := setupTestGitExecutor(t, tmpDir)
-	ctx := context.WithValue(context.Background(), contextkeys.SessionWorkDir{}, tmpDir)
+	ctx := context.WithValue(context.Background(), contextkeys.SessionWorkDir, tmpDir)
 
 	t.Run("Add new file", func(t *testing.T) {
 		// Create a new file
@@ -259,7 +263,7 @@ func TestGitCommit(t *testing.T) {
 	defer cleanup()
 
 	executor := setupTestGitExecutor(t, tmpDir)
-	ctx := context.WithValue(context.Background(), contextkeys.SessionWorkDir{}, tmpDir)
+	ctx := context.WithValue(context.Background(), contextkeys.SessionWorkDir, tmpDir)
 
 	t.Run("Create commit", func(t *testing.T) {
 		// Create and add a file
@@ -296,7 +300,7 @@ func TestGitDiff(t *testing.T) {
 	defer cleanup()
 
 	executor := setupTestGitExecutor(t, tmpDir)
-	ctx := context.WithValue(context.Background(), contextkeys.SessionWorkDir{}, tmpDir)
+	ctx := context.WithValue(context.Background(), contextkeys.SessionWorkDir, tmpDir)
 
 	t.Run("Show unstaged changes", func(t *testing.T) {
 		// Modify a file
@@ -333,7 +337,7 @@ func TestGitCheckout(t *testing.T) {
 	defer cleanup()
 
 	executor := setupTestGitExecutor(t, tmpDir)
-	ctx := context.WithValue(context.Background(), contextkeys.SessionWorkDir{}, tmpDir)
+	ctx := context.WithValue(context.Background(), contextkeys.SessionWorkDir, tmpDir)
 
 	t.Run("Create and checkout branch", func(t *testing.T) {
 		// Create a new branch first
@@ -362,7 +366,7 @@ func TestGitSwitch(t *testing.T) {
 	defer cleanup()
 
 	executor := setupTestGitExecutor(t, tmpDir)
-	ctx := context.WithValue(context.Background(), contextkeys.SessionWorkDir{}, tmpDir)
+	ctx := context.WithValue(context.Background(), contextkeys.SessionWorkDir, tmpDir)
 
 	t.Run("Create and switch branch", func(t *testing.T) {
 		result, err := executor.toolGitSwitch(ctx, map[string]interface{}{
@@ -382,7 +386,7 @@ func TestGitStash(t *testing.T) {
 	defer cleanup()
 
 	executor := setupTestGitExecutor(t, tmpDir)
-	ctx := context.WithValue(context.Background(), contextkeys.SessionWorkDir{}, tmpDir)
+	ctx := context.WithValue(context.Background(), contextkeys.SessionWorkDir, tmpDir)
 
 	t.Run("Stash and pop changes", func(t *testing.T) {
 		// Modify a file
@@ -431,7 +435,7 @@ func TestGitShow(t *testing.T) {
 	defer cleanup()
 
 	executor := setupTestGitExecutor(t, tmpDir)
-	ctx := context.WithValue(context.Background(), contextkeys.SessionWorkDir{}, tmpDir)
+	ctx := context.WithValue(context.Background(), contextkeys.SessionWorkDir, tmpDir)
 
 	t.Run("Show HEAD", func(t *testing.T) {
 		result, err := executor.toolGitShow(ctx, map[string]interface{}{})
@@ -466,7 +470,7 @@ func TestGitWorkflow(t *testing.T) {
 	defer cleanup()
 
 	executor := setupTestGitExecutor(t, tmpDir)
-	ctx := context.WithValue(context.Background(), contextkeys.SessionWorkDir{}, tmpDir)
+	ctx := context.WithValue(context.Background(), contextkeys.SessionWorkDir, tmpDir)
 
 	t.Run("Complete workflow", func(t *testing.T) {
 		steps := []struct {

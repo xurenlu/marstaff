@@ -138,6 +138,9 @@ func (e *Engine) Chat(ctx context.Context, req *ChatRequest) (*ChatResponse, err
 	if err != nil {
 		return nil, fmt.Errorf("failed to create completion: %w", err)
 	}
+	if len(completion.Choices) == 0 {
+		return nil, fmt.Errorf("provider returned empty choices")
+	}
 
 	response := &ChatResponse{
 		Content:      completion.Choices[0].Message.Content,
@@ -191,6 +194,9 @@ func (e *Engine) GenerateSessionTitle(ctx context.Context, userContent string) s
 			n = len(r)
 		}
 		log.Warn().Err(err).Str("content", string(r[:n])).Msg("failed to generate session title")
+		return truncateForTitle(userContent)
+	}
+	if len(completion.Choices) == 0 {
 		return truncateForTitle(userContent)
 	}
 	title := strings.TrimSpace(completion.Choices[0].Message.Content)
@@ -387,6 +393,9 @@ func (e *Engine) summarizeConversation(ctx context.Context, sessionID string) st
 	completion, err := e.provider.CreateChatCompletion(ctx, req)
 	if err != nil {
 		log.Warn().Err(err).Str("session_id", sessionID).Msg("failed to generate conversation summary")
+		return ""
+	}
+	if len(completion.Choices) == 0 {
 		return ""
 	}
 

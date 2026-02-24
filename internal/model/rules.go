@@ -51,6 +51,18 @@ func (m *MCPServer) BeforeCreate(tx *gorm.DB) error {
 	if m.ID == "" {
 		m.ID = uuid.New().String()
 	}
+	return m.normalizeJSONColumns()
+}
+
+// BeforeSave normalizes JSON columns before create/update (MySQL JSON rejects empty string)
+func (m *MCPServer) BeforeSave(tx *gorm.DB) error {
+	return m.normalizeJSONColumns()
+}
+
+func (m *MCPServer) normalizeJSONColumns() error {
+	if m.Config == "" {
+		m.Config = "{}"
+	}
 	return nil
 }
 
@@ -72,6 +84,18 @@ type MCPTool struct {
 func (t *MCPTool) BeforeCreate(tx *gorm.DB) error {
 	if t.ID == "" {
 		t.ID = uuid.New().String()
+	}
+	return t.normalizeJSONColumns()
+}
+
+// BeforeSave normalizes JSON columns before create/update (MySQL JSON rejects empty string)
+func (t *MCPTool) BeforeSave(tx *gorm.DB) error {
+	return t.normalizeJSONColumns()
+}
+
+func (t *MCPTool) normalizeJSONColumns() error {
+	if t.InputSchema == "" {
+		t.InputSchema = "{}"
 	}
 	return nil
 }

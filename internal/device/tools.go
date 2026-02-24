@@ -1,8 +1,11 @@
 package device
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"image"
+	"image/png"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -15,8 +18,9 @@ import (
 
 // ToolExecutor provides device control tools for the agent
 type ToolExecutor struct {
-	manager *Manager
-	engine  *agent.Engine
+	manager       *Manager
+	engine        *agent.Engine
+	imageUploader ImageUploader
 }
 
 // NewToolExecutor creates a new device control tool executor
@@ -25,6 +29,28 @@ func NewToolExecutor(engine *agent.Engine) *ToolExecutor {
 		manager: NewManager(),
 		engine:  engine,
 	}
+}
+
+// SetImageUploader sets the OSS uploader for screenshots. Required for screenshot tools to return URLs.
+func (e *ToolExecutor) SetImageUploader(u ImageUploader) {
+	e.imageUploader = u
+}
+
+// uploadScreenshot encodes RGBA to PNG, uploads to OSS, returns URL. Falls back to size-only text if no uploader.
+func (e *ToolExecutor) uploadScreenshot(ctx context.Context, img *image.RGBA, source string) (string, error) {
+	if e.imageUploader == nil {
+		return "", fmt.Errorf("OSS 未配置，无法上传截图。请在配置中设置 OSS 后重试")
+	}
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		return "", fmt.Errorf("encode screenshot failed: %w", err)
+	}
+	filename := fmt.Sprintf("screenshot_%s_%d.png", source, time.Now().UnixNano())
+	url, err := e.imageUploader.UploadImagePNG(buf.Bytes(), filename)
+	if err != nil {
+		return "", fmt.Errorf("upload screenshot to OSS failed: %w", err)
+	}
+	return url, nil
 }
 
 // RegisterBuiltInTools registers device control tools with the engine
@@ -292,10 +318,12 @@ func (e *ToolExecutor) toolWindowsScreenshot(ctx context.Context, params map[str
 		return "", fmt.Errorf("screenshot failed: %w", err)
 	}
 
-	// TODO: Convert image to base64 and return
-	log.Info().Int("width", img.Bounds().Dx()).Int("height", img.Bounds().Dy()).Msg("captured screenshot")
-
-	return fmt.Sprintf("Screenshot captured: %dx%d", img.Bounds().Dx(), img.Bounds().Dy()), nil
+	url, err := e.uploadScreenshot(ctx, img, "windows")
+	if err != nil {
+		return "", err
+	}
+	log.Info().Int("width", img.Bounds().Dx()).Int("height", img.Bounds().Dy()).Str("url", url).Msg("windows screenshot uploaded")
+	return fmt.Sprintf("Screenshot captured: %dx%d\nImage URL: %s", img.Bounds().Dx(), img.Bounds().Dy(), url), nil
 }
 
 // toolAndroidConnect connects to an Android device
@@ -540,12 +568,15 @@ func (e *ToolExecutor) toolAndroidScreenshot(ctx context.Context, params map[str
 		return "", fmt.Errorf("screenshot failed: %w", err)
 	}
 
-	// TODO: Convert image to base64 and return
-	if img != nil {
-		log.Info().Int("width", img.Bounds().Dx()).Int("height", img.Bounds().Dy()).Msg("captured screenshot")
+	if img == nil {
+		return "Screenshot captured (no image data)", nil
 	}
-
-	return "Screenshot captured", nil
+	url, err := e.uploadScreenshot(ctx, img, "android")
+	if err != nil {
+		return "", err
+	}
+	log.Info().Int("width", img.Bounds().Dx()).Int("height", img.Bounds().Dy()).Str("url", url).Msg("android screenshot uploaded")
+	return fmt.Sprintf("Screenshot captured: %dx%d\nImage URL: %s", img.Bounds().Dx(), img.Bounds().Dy(), url), nil
 }
 
 // Browser device tools
@@ -764,9 +795,12 @@ func (e *ToolExecutor) toolBrowserScreenshot(ctx context.Context, params map[str
 		return "", fmt.Errorf("screenshot failed: %w", err)
 	}
 
-	log.Info().Int("width", img.Bounds().Dx()).Int("height", img.Bounds().Dy()).Msg("browser screenshot captured")
-
-	return fmt.Sprintf("Browser screenshot captured: %dx%d", img.Bounds().Dx(), img.Bounds().Dy()), nil
+	url, err := e.uploadScreenshot(ctx, img, "browser")
+	if err != nil {
+		return "", err
+	}
+	log.Info().Int("width", img.Bounds().Dx()).Int("height", img.Bounds().Dy()).Str("url", url).Msg("browser screenshot uploaded")
+	return fmt.Sprintf("Browser screenshot captured: %dx%d\nImage URL: %s", img.Bounds().Dx(), img.Bounds().Dy(), url), nil
 }
 
 // toolBrowserEval executes JavaScript

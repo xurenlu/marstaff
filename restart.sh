@@ -10,21 +10,37 @@ NC='\033[0m' # No Color
 PORT=18789
 
 echo -e "${GREEN}=== Marstaff Restart Script ===${NC}"
+echo -e "  ${YELLOW}(Using Docker? Run: docker compose build --no-cache && docker compose up -d)${NC}"
 echo ""
 
 # Kill processes on port
 echo -e "${YELLOW}[1/2] Killing existing processes...${NC}"
 
-PID=$(lsof -ti:$PORT 2>/dev/null)
-if [ -n "$PID" ]; then
-    echo -e "  ${RED}Killing process (PID: $PID) on port $PORT${NC}"
-    kill -9 $PID 2>/dev/null
-else
-    echo -e "  ${GREEN}No process found on port $PORT${NC}"
+for i in 1 2 3 4 5; do
+    PID=$(lsof -ti:$PORT 2>/dev/null)
+    if [ -n "$PID" ]; then
+        echo -e "  ${RED}Killing process (PID: $PID) on port $PORT${NC}"
+        kill -9 $PID 2>/dev/null
+        sleep 2
+    else
+        break
+    fi
+done
+
+# Verify port is free
+if lsof -ti:$PORT >/dev/null 2>&1; then
+    echo -e "  ${RED}WARNING: Port $PORT still in use after kill. Retrying...${NC}"
+    sleep 3
+    kill -9 $(lsof -ti:$PORT 2>/dev/null) 2>/dev/null
+    sleep 2
 fi
 
-# Wait a moment
-sleep 1
+if lsof -ti:$PORT >/dev/null 2>&1; then
+    echo -e "  ${RED}ERROR: Port $PORT still in use. Cannot start.${NC}"
+    exit 1
+fi
+
+echo -e "  ${GREEN}Port $PORT is free${NC}"
 echo ""
 
 # Set environment variables

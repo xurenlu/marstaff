@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/rs/zerolog/log"
 
@@ -28,12 +30,15 @@ func NewExecutor(engine *Engine) *Executor {
 
 // ExecuteToolCalls executes tool calls returned by the AI
 func (e *Executor) ExecuteToolCalls(ctx context.Context, sessionID, userID string, toolCalls []provider.ToolCall) ([]provider.Message, error) {
-	// Enrich context with session work_dir and session_id
+	// Enrich context with session work_dir, session_id, and user_id for tools (e.g. video generation)
 	if sessionID != "" {
 		ctx = context.WithValue(ctx, contextkeys.SessionID, sessionID)
 		if session, err := e.engine.GetSession(ctx, sessionID); err == nil && session != nil && session.WorkDir != "" {
 			ctx = context.WithValue(ctx, contextkeys.SessionWorkDir, session.WorkDir)
 		}
+	}
+	if userID != "" {
+		ctx = context.WithValue(ctx, contextkeys.UserID, userID)
 	}
 
 	var results []provider.Message
@@ -125,6 +130,12 @@ func (e *Executor) ExecuteWithToolsStream(ctx context.Context, req *ChatRequest,
 	}
 
 	if len(resp.ToolCalls) == 0 {
+		if resp.Content == "" && req.SessionID != "" {
+			log.Debug().
+				Str("session_id", req.SessionID).
+				Int("tool_count", 0).
+				Msg("agent returned no content and no tool calls (provider may not support tools or use different format)")
+		}
 		return resp, nil
 	}
 
@@ -154,6 +165,19 @@ func (e *Executor) ExecuteWithToolsStream(ctx context.Context, req *ChatRequest,
 		resp, err = e.engine.Chat(ctx, req)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get response after tool execution: %w", err)
+		}
+
+		// When LLM returns empty content after tool execution, use tool results as response
+		// (some providers e.g. Qwen may not produce a summary when tools are used)
+		if len(resp.ToolCalls) == 0 && resp.Content == "" && len(toolResults) > 0 {
+			var sb strings.Builder
+			for _, tr := range toolResults {
+				if tr.Content != "" {
+					sb.WriteString(tr.Content)
+					sb.WriteString("\n")
+				}
+			}
+			resp.Content = strings.TrimSpace(sb.String())
 		}
 	}
 
@@ -197,7 +221,12 @@ func (e *Executor) RegisterBuiltInTools() {
 			"properties": map[string]interface{}{},
 		},
 		func(ctx context.Context, params map[string]interface{}) (string, error) {
-			return fmt.Sprintf("Current time: %s", ctx.Value("current_time")), nil
+			if t := ctx.Value("current_time"); t != nil {
+				if s, ok := t.(string); ok && s != "" {
+					return fmt.Sprintf("Current time: %s", s), nil
+				}
+			}
+			return fmt.Sprintf("Current time: %s", time.Now().Format("2006-01-02 15:04:05")), nil
 		})
 
 	// Get skills list

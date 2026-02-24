@@ -51,13 +51,14 @@ type Message struct {
 
 // Client represents a WebSocket client connection
 type Client struct {
-	ID        string
-	UserID    string
-	SessionID string
-	Conn      *websocket.Conn
-	Send      chan []byte
-	Hub       *Hub
-	mu        sync.Mutex
+	ID              string
+	UserID          string // Resolved real user ID (UUID from users table)
+	PlatformUserID  string // Original platform_user_id from query (e.g. "default"), used for session creation
+	SessionID       string
+	Conn            *websocket.Conn
+	Send            chan []byte
+	Hub             *Hub
+	mu              sync.Mutex
 }
 
 // Hub maintains the set of active clients and broadcasts messages

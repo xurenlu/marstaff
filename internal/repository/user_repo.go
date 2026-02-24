@@ -2,7 +2,9 @@ package repository
 
 import (
 	"context"
+	"fmt"
 
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 
 	"github.com/rocky/marstaff/internal/model"
@@ -52,11 +54,21 @@ func (r *UserRepository) GetOrCreateByPlatformID(ctx context.Context, platform, 
 		return user, nil
 	}
 
-	// Create new user
+	// Create new user - must set unique email to avoid duplicate key on users.idx_users_email
+	// (MySQL UNIQUE allows multiple NULLs but not multiple empty strings)
+	email := fmt.Sprintf("%s_%s@internal", platform, platformUserID)
+	if email == "_@internal" || email == "@internal" {
+		email = uuid.New().String() + "@internal"
+	}
+	usernameToUse := username
+	if usernameToUse == "" {
+		usernameToUse = email
+	}
 	user = &model.User{
 		Platform:       platform,
 		PlatformUserID: platformUserID,
-		Username:       username,
+		Username:       usernameToUse,
+		Email:          email,
 	}
 
 	if err := r.Create(ctx, user); err != nil {

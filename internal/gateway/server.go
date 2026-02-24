@@ -94,12 +94,13 @@ func (s *Server) ServeWebSocket(c *gin.Context) {
 
 	// Create client
 	client := &Client{
-		ID:        clientID,
-		UserID:    realUserID,
-		SessionID: sessionID,
-		Conn:      conn,
-		Send:      make(chan []byte, 256),
-		Hub:       s.hub,
+		ID:             clientID,
+		UserID:         realUserID,
+		PlatformUserID: userID, // Keep original for session creation (GetOrCreateByPlatformID expects "default")
+		SessionID:      sessionID,
+		Conn:           conn,
+		Send:           make(chan []byte, 256),
+		Hub:            s.hub,
 	}
 
 	// Register client with hub

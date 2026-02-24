@@ -36,7 +36,17 @@ import (
 
 var (
 	configFile string
+	Version    = "1.0.0-rc2"
 )
+
+// truncateRunes truncates s to at most max runes (avoids cutting mid-UTF8-char)
+func truncateRunes(s string, max int) string {
+	r := []rune(s)
+	if len(r) <= max {
+		return s
+	}
+	return string(r[:max])
+}
 
 func main() {
 	var rootCmd = &cobra.Command{
@@ -159,8 +169,29 @@ func run(cmd *cobra.Command, args []string) {
 	executor := agent.NewExecutor(engine)
 	executor.RegisterBuiltInTools()
 
+	// Create OSS uploader early for device screenshot tools (screenshots must upload to OSS, not base64)
+	var ossUploaderForDevice *gateway.OSSUploader
+	if cfg.OSS.AccessKeyID != "" && cfg.OSS.AccessKeySecret != "" {
+		ossUploaderForDevice, err = gateway.NewOSSUploaderWithConfig(gateway.OSSConfig{
+			AccessKeyID:     cfg.OSS.AccessKeyID,
+			AccessKeySecret: cfg.OSS.AccessKeySecret,
+			Bucket:          cfg.OSS.Bucket,
+			Endpoint:        cfg.OSS.Endpoint,
+			Domain:          cfg.OSS.Domain,
+			PathPrefix:      cfg.OSS.PathPrefix,
+		})
+		if err != nil {
+			log.Warn().Err(err).Msg("failed to create OSS uploader for device screenshots")
+		} else {
+			log.Info().Msg("OSS uploader ready for device screenshots")
+		}
+	}
+
 	// Create and register device control tools
 	deviceToolExecutor := device.NewToolExecutor(engine)
+	if ossUploaderForDevice != nil {
+		deviceToolExecutor.SetImageUploader(newOSSImageUploader(ossUploaderForDevice))
+	}
 	deviceToolExecutor.RegisterBuiltInTools()
 
 	// Create and register file/command tools with security
@@ -182,9 +213,13 @@ func run(cmd *cobra.Command, args []string) {
 			} else {
 				toolsExecutor.SetMediaProvider(mediaProv)
 
-				// Create OSS uploader for storing generated content
-				var ossUploader *gateway.OSSUploader
-				if cfg.OSS.AccessKeyID != "" && cfg.OSS.AccessKeySecret != "" {
+				// Reuse OSS uploader for media (videos, images) if already created for device screenshots
+				if ossUploaderForDevice != nil {
+					toolsExecutor.SetMediaUploader(newOSSVideoUploader(ossUploaderForDevice))
+					toolsExecutor.SetImageUploader(newOSSMediaImageUploader(ossUploaderForDevice))
+					log.Info().Msg("OSS uploader configured for media storage")
+				} else if cfg.OSS.AccessKeyID != "" && cfg.OSS.AccessKeySecret != "" {
+					var ossUploader *gateway.OSSUploader
 					ossUploader, err = gateway.NewOSSUploaderWithConfig(gateway.OSSConfig{
 						AccessKeyID:     cfg.OSS.AccessKeyID,
 						AccessKeySecret: cfg.OSS.AccessKeySecret,
@@ -196,7 +231,9 @@ func run(cmd *cobra.Command, args []string) {
 					if err != nil {
 						log.Warn().Err(err).Msg("failed to create OSS uploader, videos will use direct URLs")
 					} else {
+						ossUploaderForDevice = ossUploader
 						toolsExecutor.SetMediaUploader(newOSSVideoUploader(ossUploader))
+						toolsExecutor.SetImageUploader(newOSSMediaImageUploader(ossUploader))
 						log.Info().Msg("OSS uploader configured for media storage")
 					}
 				}
@@ -355,9 +392,9 @@ func run(cmd *cobra.Command, args []string) {
 
 	activeSessions := make(map[string]string)
 
-	// Create OSS uploader if configured
-	var ossUploader *gateway.OSSUploader
-	if cfg.OSS.AccessKeyID != "" && cfg.OSS.AccessKeySecret != "" {
+	// Reuse OSS uploader for file upload (already created for device screenshots if configured)
+	ossUploader := ossUploaderForDevice
+	if ossUploader == nil && cfg.OSS.AccessKeyID != "" && cfg.OSS.AccessKeySecret != "" {
 		var err error
 		ossUploader, err = gateway.NewOSSUploaderWithConfig(gateway.OSSConfig{
 			AccessKeyID:     cfg.OSS.AccessKeyID,
@@ -370,7 +407,8 @@ func run(cmd *cobra.Command, args []string) {
 		if err != nil {
 			log.Warn().Err(err).Msg("failed to create OSS uploader, file upload not available")
 		} else {
-			log.Info().Msg("OSS uploader initialized")
+			ossUploaderForDevice = ossUploader
+			log.Info().Msg("OSS uploader initialized for file upload")
 		}
 	}
 
@@ -476,11 +514,15 @@ func run(cmd *cobra.Command, args []string) {
 
 		if sessionID != "" && sessionAPI != nil {
 			ctx := context.Background()
+			platformUserID := client.PlatformUserID
+			if platformUserID == "" {
+				platformUserID = "default"
+			}
 			createReq := &api.CreateSessionRequest{
 				SessionID: sessionID,
-				UserID:    client.UserID,
+				UserID:    platformUserID, // Must be platform_user_id (e.g. "default") for GetOrCreateByPlatformID
 				Platform:  "web",
-				Title:     content[:min(50, len(content))],
+				Title:     truncateRunes(content, 50),
 				Model:     "default",
 			}
 			if workDirFromMsg != "" {
@@ -488,7 +530,15 @@ func run(cmd *cobra.Command, args []string) {
 			}
 			_, err := sessionAPI.GetOrCreateSessionDirect(ctx, createReq)
 			if err != nil {
-				log.Error().Err(err).Msg("failed to get or create session")
+				log.Error().Err(err).Str("session_id", sessionID).Msg("failed to get or create session")
+				hub.SendToUser(client.UserID, &gateway.Message{
+					Type:      gateway.MessageTypeError,
+					UserID:    client.UserID,
+					SessionID: sessionID,
+					Data:      map[string]interface{}{"error": "无法创建会话，请刷新后重试"},
+					Timestamp: time.Now().Unix(),
+				})
+				return fmt.Errorf("session creation failed: %w", err)
 			}
 		}
 
@@ -769,28 +819,34 @@ func run(cmd *cobra.Command, args []string) {
 					Timestamp: time.Now().Unix(),
 				})
 
+				// Resolve provider for background tasks (memory/summary) - use user's chat_provider choice
+				var bgProvider provider.Provider
+				if cp, ok := chatProviders[providerChoice]; ok {
+					bgProvider = cp
+				}
+
 				// Auto-trigger: Check if summarization is needed
 				if summaryService != nil && sessionID != "" {
-					go func(sid string) {
+					go func(sid string, p provider.Provider) {
 						ctx := context.Background()
 						if shouldSummarize, err := summaryService.ShouldSummarize(ctx, sid); err == nil && shouldSummarize {
 							log.Info().Str("session_id", sid).Msg("auto-triggering conversation summarization")
-							if err := summaryService.SummarizeAndArchive(ctx, sid); err != nil {
+							if err := summaryService.SummarizeAndArchive(ctx, sid, p); err != nil {
 								log.Warn().Err(err).Str("session_id", sid).Msg("failed to summarize conversation")
 							}
 						}
-					}(sessionID)
+					}(sessionID, bgProvider)
 				}
 
 				// Auto-trigger: Extract and save memories
 				if memoryService != nil && sessionID != "" && client.UserID != "" {
-					go func(sid, uid string) {
+					go func(sid, uid string, p provider.Provider) {
 						ctx := context.Background()
 						log.Info().Str("session_id", sid).Msg("auto-triggering memory extraction")
-						if err := memoryService.ExtractAndSave(ctx, uid, sid); err != nil {
+						if err := memoryService.ExtractAndSave(ctx, uid, sid, p); err != nil {
 							log.Warn().Err(err).Str("session_id", sid).Msg("failed to extract memories")
 						}
-					}(sessionID, client.UserID)
+					}(sessionID, client.UserID, bgProvider)
 				}
 			}
 		}()
@@ -809,6 +865,7 @@ func run(cmd *cobra.Command, args []string) {
 		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
 		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, accept, origin, Cache-Control, X-Requested-With")
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, DELETE")
+		c.Writer.Header().Set("X-Marstaff-Version", Version)
 
 		if c.Request.Method == "OPTIONS" {
 			c.AbortWithStatus(http.StatusNoContent)
@@ -848,6 +905,7 @@ func run(cmd *cobra.Command, args []string) {
 		apiGroup.GET("/health", func(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{
 				"status":   "ok",
+				"version":  Version,
 				"provider": prov.Name(),
 				"clients":  server.GetClientCount(),
 				"database": db != nil,
@@ -1249,4 +1307,38 @@ func (a *userRepoAdapter) GetByPlatformID(ctx context.Context, platform, platfor
 
 func newOSSVideoUploader(oss *gateway.OSSUploader) media.VideoUploader {
 	return &ossVideoUploaderAdapter{uploader: oss}
+}
+
+// ossImageUploaderAdapter adapts gateway.OSSUploader to device.ImageUploader for screenshots
+type ossImageUploaderAdapter struct {
+	uploader *gateway.OSSUploader
+}
+
+func (a *ossImageUploaderAdapter) UploadImagePNG(data []byte, filename string) (string, error) {
+	resp, err := a.uploader.UploadBytes(data, filename, "image/png")
+	if err != nil {
+		return "", err
+	}
+	return resp.URL, nil
+}
+
+func newOSSImageUploader(oss *gateway.OSSUploader) device.ImageUploader {
+	return &ossImageUploaderAdapter{uploader: oss}
+}
+
+// ossMediaImageUploaderAdapter adapts gateway.OSSUploader to media.ImageUploader for generated images
+type ossMediaImageUploaderAdapter struct {
+	uploader *gateway.OSSUploader
+}
+
+func (a *ossMediaImageUploaderAdapter) UploadImage(data []byte, filename, contentType string) (string, error) {
+	resp, err := a.uploader.UploadBytes(data, filename, contentType)
+	if err != nil {
+		return "", err
+	}
+	return resp.URL, nil
+}
+
+func newOSSMediaImageUploader(oss *gateway.OSSUploader) media.ImageUploader {
+	return &ossMediaImageUploaderAdapter{uploader: oss}
 }
