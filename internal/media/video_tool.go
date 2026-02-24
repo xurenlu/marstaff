@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -22,6 +23,19 @@ type UploadResult struct {
 	Size     int64  `json:"size"`
 }
 
+// AsyncTaskInfo contains information about an async task
+type AsyncTaskInfo struct {
+	TaskID    string // API returned task ID
+	StatusURL string // Status check URL
+	Provider  string // Provider name
+	Prompt    string // Original prompt
+	UserID    string // User ID for AFK task
+	SessionID string // Session ID for AFK task
+}
+
+// AsyncTaskCreatedCallback is called when an async task is created
+type AsyncTaskCreatedCallback func(ctx context.Context, task AsyncTaskInfo) error
+
 // GenerateVideoTool generates videos from text prompts
 // Parameters:
 //   - prompt (string, required): Text description of the video to generate
@@ -34,8 +48,11 @@ type UploadResult struct {
 //
 // Returns: JSON formatted response with video URLs or status information
 type GenerateVideoTool struct {
-	provider MediaProvider
-	uploader VideoUploader // Optional: for uploading to OSS
+	provider           MediaProvider
+	uploader           VideoUploader                           // Optional: for uploading to OSS
+	asyncTaskCallback  AsyncTaskCreatedCallback                // Callback for async task creation
+	currentUserID      string                                  // Current user ID from context
+	currentSessionID   string                                  // Current session ID from context
 }
 
 // NewGenerateVideoTool creates a new video generation tool
@@ -50,8 +67,21 @@ func (t *GenerateVideoTool) SetUploader(uploader VideoUploader) {
 	t.uploader = uploader
 }
 
+// SetAsyncTaskCallback sets the callback for async task creation
+func (t *GenerateVideoTool) SetAsyncTaskCallback(callback AsyncTaskCreatedCallback) {
+	t.asyncTaskCallback = callback
+}
+
 // Execute executes the video generation tool
 func (t *GenerateVideoTool) Execute(ctx context.Context, params map[string]interface{}) (string, error) {
+	// Extract user_id and session_id from context for async task creation
+	if userID, ok := ctx.Value("user_id").(string); ok {
+		t.currentUserID = userID
+	}
+	if sessionID, ok := ctx.Value("session_id").(string); ok {
+		t.currentSessionID = sessionID
+	}
+
 	// Extract parameters
 	prompt, err := getStringParam(params, "prompt", true)
 	if err != nil {
@@ -145,10 +175,37 @@ func (t *GenerateVideoTool) Execute(ctx context.Context, params map[string]inter
 
 	result += fmt.Sprintf("\nUsage: %d video(s) generated\n", resp.Usage.VideoCount)
 
-	// Add note about async processing
+	// Check for async tasks and trigger callback
 	for _, vid := range resp.Videos {
 		if vid.Status == "processing" || vid.StatusURL != "" {
-			result += "\nNote: Video generation is processing asynchronously. Use the status URL to check progress."
+			// Extract task ID from status URL
+			var taskID string
+			if vid.StatusURL != "" {
+				parts := strings.Split(vid.StatusURL, "/")
+				if len(parts) > 0 {
+					taskID = parts[len(parts)-1]
+				}
+			}
+
+			asyncTask := AsyncTaskInfo{
+				TaskID:    taskID,
+				StatusURL: vid.StatusURL,
+				Provider:  t.provider.Name(),
+				Prompt:    prompt,
+				UserID:    t.currentUserID,
+				SessionID: t.currentSessionID,
+			}
+
+			// Call the callback in a separate goroutine to avoid blocking
+			if t.asyncTaskCallback != nil {
+				go func() {
+					if err := t.asyncTaskCallback(ctx, asyncTask); err != nil {
+						log.Error().Err(err).Str("task_id", taskID).Msg("failed to create AFK task for async video generation")
+					}
+				}()
+			}
+
+			result += "\nNote: Video generation is processing asynchronously. You will be notified when it completes."
 			break
 		}
 	}

@@ -279,7 +279,7 @@ func (p *Wanxiang26Provider) GenerateVideo(ctx context.Context, req VideoGenerat
 	}
 
 	// Wanxiang 2.6 video generation endpoint
-	url := p.baseURL + "/api/v1/services/aigc/video-generation/video-synthesis/generation"
+	url := p.baseURL + "/api/v1/services/aigc/video-generation/video-synthesis"
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
 	if err != nil {
 		return nil, &MediaError{Code: "request_error", Message: "failed to create request", Err: err}
@@ -415,7 +415,7 @@ func (p *Wanxiang26Provider) ImageToVideo(ctx context.Context, imageURL, prompt 
 		return nil, &MediaError{Code: "marshal_error", Message: "failed to marshal request", Err: err}
 	}
 
-	url := p.baseURL + "/api/v1/services/aigc/video-generation/video-synthesis/generation"
+	url := p.baseURL + "/api/v1/services/aigc/video-generation/video-synthesis"
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
 	if err != nil {
 		return nil, &MediaError{Code: "request_error", Message: "failed to create request", Err: err}

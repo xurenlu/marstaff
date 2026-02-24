@@ -4,18 +4,29 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/rs/zerolog/log"
 	"github.com/rocky/marstaff/internal/agent"
 	"github.com/rocky/marstaff/internal/media"
+	"github.com/rocky/marstaff/internal/model"
+	"github.com/rocky/marstaff/internal/repository"
 	"github.com/rocky/marstaff/internal/tools/security"
 )
 
 // Executor handles file and command tools with security validation
 type Executor struct {
-	engine         *agent.Engine
-	validator      *security.Validator
-	mediaProvider  media.MediaProvider
-	imageTool      *media.GenerateImageTool
-	videoTool      *media.GenerateVideoTool
+	engine            *agent.Engine
+	validator         *security.Validator
+	mediaProvider     media.MediaProvider
+	imageTool         *media.GenerateImageTool
+	videoTool         *media.GenerateVideoTool
+	afkTaskRepo       *repository.AFKTaskRepository
+	sessionRepo       *repository.SessionRepository
+}
+
+// ExecutorContext holds context for tool execution
+type ExecutorContext struct {
+	UserID    string
+	SessionID string
 }
 
 // NewExecutor creates a new tool executor
@@ -172,6 +183,90 @@ func (e *Executor) SetMediaProvider(provider media.MediaProvider) {
 	e.mediaProvider = provider
 	e.imageTool = media.NewGenerateImageTool(provider)
 	e.videoTool = media.NewGenerateVideoTool(provider)
+
+	// Set the async task callback if repositories are available
+	if e.afkTaskRepo != nil && e.sessionRepo != nil {
+		e.videoTool.SetAsyncTaskCallback(e.createAsyncAFKTask)
+	}
+}
+
+// SetRepositories sets the AFK task and session repositories
+func (e *Executor) SetRepositories(afkTaskRepo *repository.AFKTaskRepository, sessionRepo *repository.SessionRepository) {
+	e.afkTaskRepo = afkTaskRepo
+	e.sessionRepo = sessionRepo
+
+	// Update the video tool callback if it's already created
+	if e.videoTool != nil {
+		e.videoTool.SetAsyncTaskCallback(e.createAsyncAFKTask)
+	}
+}
+
+// createAsyncAFKTask creates an AFK task for async video generation
+func (e *Executor) createAsyncAFKTask(ctx context.Context, task media.AsyncTaskInfo) error {
+	if e.afkTaskRepo == nil || e.sessionRepo == nil {
+		return fmt.Errorf("repositories not set")
+	}
+
+	// Use UserID and SessionID from task info
+	userID := task.UserID
+	sessionID := task.SessionID
+
+	if userID == "" || sessionID == "" {
+		return fmt.Errorf("user_id and session_id not provided in task info")
+	}
+
+	// Limit task name length
+	name := "视频生成 - " + task.Prompt
+	if len(name) > 100 {
+		name = name[:100] + "..."
+	}
+
+	// Create AFK task
+	afkTask := &model.AFKTask{
+		UserID:      userID,
+		SessionID:   &sessionID,
+		Name:        name,
+		Description: "异步视频生成任务，完成后将自动通知",
+		TaskType:    model.AFKTaskTypeAsync,
+		Status:      model.AFKTaskStatusPending,
+		TriggerConfig: model.TriggerConfig{
+			Type: model.AFKTaskTypeAsync,
+			AsyncTaskConfig: &model.AsyncTaskConfig{
+				TaskType:       "video_generation",
+				Provider:       task.Provider,
+				TaskID:         task.TaskID,
+				StatusURL:      task.StatusURL,
+				OriginalPrompt: task.Prompt,
+				PollInterval:   30, // Default 30 seconds
+			},
+		},
+	}
+
+	if err := e.afkTaskRepo.Create(ctx, afkTask); err != nil {
+		return fmt.Errorf("failed to create AFK task: %w", err)
+	}
+
+	// Update session to enter AFK mode
+	session, err := e.sessionRepo.GetByID(ctx, sessionID)
+	if err != nil {
+		return fmt.Errorf("failed to get session: %w", err)
+	}
+
+	if err := session.EnterAFKMode(); err != nil {
+		return fmt.Errorf("failed to enter AFK mode: %w", err)
+	}
+
+	if err := e.sessionRepo.Update(ctx, session); err != nil {
+		return fmt.Errorf("failed to update session: %w", err)
+	}
+
+	log.Info().
+		Str("task_id", afkTask.ID).
+		Str("session_id", sessionID).
+		Str("user_id", userID).
+		Msg("created AFK async task for video generation")
+
+	return nil
 }
 
 // SetMediaUploader sets the media uploader (OSS) for storing generated content

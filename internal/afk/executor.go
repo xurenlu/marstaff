@@ -17,14 +17,27 @@ import (
 	"github.com/rocky/marstaff/internal/provider"
 )
 
+// AsyncTaskNotifier is an interface for async task notifications
+type AsyncTaskNotifier interface {
+	NotifyTaskCompleted(sessionID string, task *model.AFKTask, resultURL string)
+	NotifyTaskFailed(sessionID string, task *model.AFKTask, errorMessage string)
+	NotifyAFKStatusChanged(sessionID string, isAFK bool, pendingTasks int, tasks []*model.AFKTask)
+}
+
 // TaskExecutor handles task execution
 type TaskExecutor struct {
-	engine *agent.Engine
+	engine   *agent.Engine
+	notifier AsyncTaskNotifier
 }
 
 // NewTaskExecutor creates a new task executor
 func NewTaskExecutor(engine *agent.Engine) *TaskExecutor {
 	return &TaskExecutor{engine: engine}
+}
+
+// SetNotifier sets the async task notifier
+func (e *TaskExecutor) SetNotifier(notifier AsyncTaskNotifier) {
+	e.notifier = notifier
 }
 
 // Execute executes a task and returns the result
@@ -466,4 +479,126 @@ func ptrToString(s *string) string {
 		return ""
 	}
 	return *s
+}
+
+// CheckAsyncTask checks the status of an async task (video/image generation)
+func (e *TaskExecutor) CheckAsyncTask(ctx context.Context, task *model.AFKTask) (status, resultURL string, err error) {
+	config := task.TriggerConfig.AsyncTaskConfig
+	if config == nil {
+		return "", "", fmt.Errorf("async task config is nil")
+	}
+
+	switch config.Provider {
+	case "wanxiang_2.6", "wanxiang_2":
+		return e.checkWanxiangVideoStatus(ctx, config.TaskID, config.StatusURL)
+	case "qwen_wanxiang":
+		return e.checkQwenVideoStatus(ctx, config.StatusURL)
+	default:
+		return "", "", fmt.Errorf("unsupported provider: %s", config.Provider)
+	}
+}
+
+// checkWanxiangVideoStatus checks video generation status for Wanxiang 2.6 provider
+func (e *TaskExecutor) checkWanxiangVideoStatus(ctx context.Context, taskID, statusURL string) (status, resultURL string, err error) {
+	// Use the status URL directly if provided
+	url := statusURL
+	if url == "" && taskID != "" {
+		// Construct default URL
+		url = fmt.Sprintf("https://dashscope.aliyuncs.com/api/v1/tasks/%s", taskID)
+	}
+
+	if url == "" {
+		return "", "", fmt.Errorf("no status URL available")
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	// Use API key from environment
+	apiKey := os.Getenv("QWEN_API_KEY")
+	if apiKey == "" {
+		return "", "", fmt.Errorf("QWEN_API_KEY not set")
+	}
+
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", "", fmt.Errorf("HTTP request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", "", fmt.Errorf("unexpected status code: %d, body: %s", resp.StatusCode, string(body))
+	}
+
+	var response struct {
+		Output struct {
+			TaskStatus string `json:"task_status"`
+			VideoURL   string `json:"video_url"`
+		} `json:"output"`
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if err := json.Unmarshal(body, &response); err != nil {
+		return "", "", fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return response.Output.TaskStatus, response.Output.VideoURL, nil
+}
+
+// checkQwenVideoStatus checks video generation status for Qwen Wanxiang provider
+func (e *TaskExecutor) checkQwenVideoStatus(ctx context.Context, statusURL string) (status, resultURL string, err error) {
+	// Qwen uses the same format as Wanxiang, so we can reuse the Wanxiang method
+	return e.checkWanxiangVideoStatus(ctx, "", statusURL)
+}
+
+// NotifyAsyncTaskCompleted sends a notification when an async task completes
+func (e *TaskExecutor) NotifyAsyncTaskCompleted(sessionID string, task *model.AFKTask, resultURL string) {
+	log.Info().
+		Str("session_id", sessionID).
+		Str("task_id", task.ID).
+		Str("result_url", resultURL).
+		Msg("async task completed")
+
+	// Send WebSocket notification if notifier is available
+	if e.notifier != nil {
+		e.notifier.NotifyTaskCompleted(sessionID, task, resultURL)
+	}
+}
+
+// NotifyAsyncTaskFailed sends a notification when an async task fails
+func (e *TaskExecutor) NotifyAsyncTaskFailed(sessionID string, task *model.AFKTask, errorMessage string) {
+	log.Error().
+		Str("session_id", sessionID).
+		Str("task_id", task.ID).
+		Str("error", errorMessage).
+		Msg("async task failed")
+
+	// Send WebSocket notification if notifier is available
+	if e.notifier != nil {
+		e.notifier.NotifyTaskFailed(sessionID, task, errorMessage)
+	}
+}
+
+// NotifyAFKStatusChanged sends a notification when AFK mode status changes
+func (e *TaskExecutor) NotifyAFKStatusChanged(sessionID string, isAFK bool, pendingTasks int, tasks []*model.AFKTask) {
+	log.Info().
+		Str("session_id", sessionID).
+		Bool("is_afk", isAFK).
+		Int("pending_tasks", pendingTasks).
+		Msg("AFK status changed")
+
+	// Send WebSocket notification if notifier is available
+	if e.notifier != nil {
+		e.notifier.NotifyAFKStatusChanged(sessionID, isAFK, pendingTasks, tasks)
+	}
 }

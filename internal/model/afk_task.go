@@ -13,9 +13,10 @@ import (
 type AFKTaskType string
 
 const (
-	AFKTaskTypeScheduled  AFKTaskType = "scheduled"   // Cron-based scheduled tasks
-	AFKTaskTypeAIDriven   AFKTaskType = "ai_driven"   // AI decides when to check
-	AFKTaskTypeEventBased AFKTaskType = "event_based" // File/API event watching
+	AFKTaskTypeScheduled  AFKTaskType = "scheduled"    // Cron-based scheduled tasks
+	AFKTaskTypeAIDriven   AFKTaskType = "ai_driven"    // AI decides when to check
+	AFKTaskTypeEventBased AFKTaskType = "event_based"  // File/API event watching
+	AFKTaskTypeAsync      AFKTaskType = "async"        // Async task (video/image generation)
 )
 
 // AFKTaskStatus represents the status of an AFK task
@@ -27,7 +28,19 @@ const (
 	AFKTaskStatusDisabled  AFKTaskStatus = "disabled"
 	AFKTaskStatusCompleted AFKTaskStatus = "completed"
 	AFKTaskStatusError     AFKTaskStatus = "error"
+	AFKTaskStatusPending   AFKTaskStatus = "pending"   // For async tasks
+	AFKTaskStatusFailed    AFKTaskStatus = "failed"    // For async tasks
 )
+
+// AsyncTaskConfig defines configuration for async tasks (video/image generation)
+type AsyncTaskConfig struct {
+	TaskType       string `json:"task_type"`        // "video_generation", "image_generation", etc.
+	Provider       string `json:"provider"`         // "wanxiang_2.6", "qwen_wanxiang", etc.
+	TaskID         string `json:"task_id"`          // API returned task ID
+	StatusURL      string `json:"status_url"`       // Status check URL
+	OriginalPrompt string `json:"original_prompt"`  // Original prompt for the task
+	PollInterval   int    `json:"poll_interval"`    // Poll interval in seconds, default 30
+}
 
 // TriggerConfig defines how a task is triggered
 type TriggerConfig struct {
@@ -49,6 +62,9 @@ type TriggerConfig struct {
 	ComparisonType string                 `json:"comparison_type,omitempty"` // "gt", "lt", "eq", "contains"
 	ThresholdValue float64                `json:"threshold_value,omitempty"`  // Numeric threshold
 	ThresholdString string                 `json:"threshold_string,omitempty"` // String threshold
+
+	// For async tasks
+	AsyncTaskConfig *AsyncTaskConfig `json:"async_task_config,omitempty"` // Async task configuration
 }
 
 // Scan implements sql.Scanner for TriggerConfig
@@ -168,6 +184,7 @@ type AFKTask struct {
 	NextExecutionTime *time.Time         `gorm:"index" json:"next_execution_time,omitempty"`
 	ExecutionCount    int                `gorm:"default:0" json:"execution_count"`
 	ErrorMessage      string             `gorm:"type:text;column:error_message" json:"error_message,omitempty"`
+	ResultURL         string             `gorm:"type:text" json:"result_url,omitempty"` // For async tasks: final result URL
 	Metadata          string             `gorm:"type:json" json:"metadata,omitempty"`
 	CreatedAt         time.Time          `json:"created_at"`
 	UpdatedAt         time.Time          `json:"updated_at"`

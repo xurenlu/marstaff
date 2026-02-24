@@ -256,6 +256,40 @@ func (h *Hub) SendToSession(sessionID string, msg *Message) {
 	h.broadcast <- msg
 }
 
+// BroadcastToSession broadcasts a message to all clients in a specific session
+// This is a convenience method for sending notifications with custom message types
+func (h *Hub) BroadcastToSession(sessionID string, messageType string, data interface{}) {
+	// Create the message
+	msg := &Message{
+		Type:      MessageType(messageType),
+		SessionID: sessionID,
+		Data:      data,
+		Timestamp: time.Now().Unix(),
+	}
+
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	// Marshal the message
+	msgBytes, err := json.Marshal(msg)
+	if err != nil {
+		log.Error().Err(err).Str("session_id", sessionID).Msg("failed to marshal message")
+		return
+	}
+
+	// Send to all clients in the session
+	if sessionClients, ok := h.sessionClients[sessionID]; ok && len(sessionClients) > 0 {
+		for _, client := range sessionClients {
+			select {
+			case client.Send <- msgBytes:
+			default:
+				log.Warn().Str("client_id", client.ID).Msg("client send channel full, closing")
+				h.unregister <- client
+			}
+		}
+	}
+}
+
 // GetClientCount returns the number of connected clients
 func (h *Hub) GetClientCount() int {
 	h.mu.RLock()
