@@ -540,6 +540,146 @@
         </div>
     </div>
 
+    <!-- Install Skill Modal -->
+    <div id="installSkillModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>安装技能</h2>
+                <button class="modal-close" onclick="closeModal('installSkillModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="tabs">
+                    <button class="tab-btn active" onclick="switchInstallTab('content')">从内容安装</button>
+                    <button class="tab-btn" onclick="switchInstallTab('url')">从 URL 安装</button>
+                </div>
+
+                <div id="installContentTab" class="tab-panel active">
+                    <div class="form-group">
+                        <label>SKILL.md 内容</label>
+                        <small style="display: block; margin-bottom: 0.5rem; color: var(--text-secondary);">
+                            YAML front matter + markdown 内容
+                        </small>
+                        <textarea id="skillContent" class="form-control" placeholder="---
+name: My Skill
+description: A helpful skill
+category: utility
+version: 1.0.0
+---
+
+# My Skill
+
+This skill does something useful..." style="width: 100%; padding: 0.75rem; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary); min-height: 200px;"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label class="checkbox-group">
+                            <input type="checkbox" id="skillOverwrite">
+                            <span>覆盖已存在的技能</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div id="installUrlTab" class="tab-panel">
+                    <div class="form-group">
+                        <label>GitHub URL</label>
+                        <small style="display: block; margin-bottom: 0.5rem; color: var(--text-secondary);">
+                            从 GitHub 仓库获取 SKILL.md 文件
+                        </small>
+                        <input type="url" id="skillUrl" class="form-control" placeholder="https://github.com/user/repo/tree/main/skill-name" style="width: 100%; padding: 0.6rem; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary);">
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('installSkillModal')">取消</button>
+                <button class="btn btn-primary" onclick="submitInstallSkill()">安装</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create Rule Modal -->
+    <div id="createRuleModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="ruleModalTitle">新建规则</h2>
+                <button class="modal-close" onclick="closeModal('createRuleModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>规则名称 <span style="color: var(--error-color);">*</span></label>
+                    <input type="text" id="ruleName" class="form-control" placeholder="例如: 编程助手" style="width: 100%; padding: 0.6rem; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary);">
+                </div>
+                <div class="form-group">
+                    <label>分类</label>
+                    <select id="ruleCategory" class="form-control" style="width: 100%; padding: 0.6rem; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary);">
+                        <option value="">选择分类...</option>
+                        <option value="coding">编程</option>
+                        <option value="writing">写作</option>
+                        <option value="general">通用</option>
+                        <option value="analysis">分析</option>
+                        <option value="custom">自定义</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>描述</label>
+                    <input type="text" id="ruleDescription" class="form-control" placeholder="简要描述这个规则的用途" style="width: 100%; padding: 0.6rem; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary);">
+                </div>
+                <div class="form-group">
+                    <label>规则内容 (系统提示词) <span style="color: var(--error-color);">*</span></label>
+                    <small style="display: block; margin-bottom: 0.5rem; color: var(--text-secondary);">
+                        这是 AI 将遵循的系统提示词或行为规则
+                    </small>
+                    <textarea id="ruleContent" class="form-control" placeholder="你是一个专业的编程助手，擅长帮助用户编写、调试和理解代码..." style="width: 100%; padding: 0.75rem; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary); min-height: 150px;"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('createRuleModal')">取消</button>
+                <button class="btn btn-primary" onclick="submitRule()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add MCP Server Modal -->
+    <div id="addMcpServerModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="mcpModalTitle">添加 MCP 服务器</h2>
+                <button class="modal-close" onclick="closeModal('addMcpServerModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>服务器名称 <span style="color: var(--error-color);">*</span></label>
+                    <input type="text" id="mcpName" class="form-control" placeholder="例如: GitHub MCP Server" style="width: 100%; padding: 0.6rem; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary);">
+                </div>
+                <div class="form-group">
+                    <label>服务器端点 <span style="color: var(--error-color);">*</span></label>
+                    <small style="display: block; margin-bottom: 0.5rem; color: var(--text-secondary);">
+                        MCP 服务器的 URL 端点
+                    </small>
+                    <input type="url" id="mcpEndpoint" class="form-control" placeholder="http://localhost:3000/mcp" style="width: 100%; padding: 0.6rem; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary);">
+                </div>
+                <div class="form-group">
+                    <label>描述</label>
+                    <textarea id="mcpDescription" class="form-control" placeholder="描述这个 MCP 服务器提供的功能..." style="width: 100%; padding: 0.75rem; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary); min-height: 80px;"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>配置 (可选)</label>
+                    <small style="display: block; margin-bottom: 0.5rem; color: var(--text-secondary);">
+                        JSON 格式的额外配置 (headers, auth 等)
+                    </small>
+                    <textarea id="mcpConfig" class="form-control" placeholder='{
+  "auth_type": "bearer",
+  "headers": {
+    "Authorization": "Bearer token"
+  }
+}' style="width: 100%; padding: 0.75rem; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary); min-height: 100px; font-family: monospace; font-size: 0.85rem;"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('addMcpServerModal')">取消</button>
+                <button class="btn btn-primary" onclick="submitMcpServer()">保存</button>
+            </div>
+        </div>
+    </div>
+
     <script src="/static/js/storage.js"></script>
     <script src="/static/js/api.js"></script>
     <script>
@@ -933,17 +1073,81 @@
             }
         }
 
-        document.getElementById('installSkillBtn').addEventListener('click', showInstallSkillModal);
+        document.getElementById('installSkillBtn').addEventListener('click', () => openModal('installSkillModal'));
 
-        function showInstallSkillModal() {
-            const content = prompt('请输入 SKILL.md 内容 (YAML front matter + markdown):');
-            if (!content) return;
-
-            const overwrite = confirm('如果技能已存在，是否覆盖？');
-
-            installSkill(content, overwrite);
+        // Modal helper functions
+        function openModal(modalId) {
+            document.getElementById(modalId).classList.add('active');
         }
 
+        function closeModal(modalId) {
+            document.getElementById(modalId).classList.remove('active');
+            // Clear form inputs
+            const modal = document.getElementById(modalId);
+            modal.querySelectorAll('input, textarea').forEach(input => {
+                if (input.type === 'checkbox') {
+                    input.checked = false;
+                } else {
+                    input.value = '';
+                }
+            });
+            modal.querySelectorAll('select').forEach(select => select.value = '');
+        }
+
+        // Install skill modal
+        function switchInstallTab(tab) {
+            document.querySelectorAll('#installSkillModal .tab-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('#installSkillModal .tab-panel').forEach(panel => panel.classList.remove('active'));
+
+            document.querySelector(`#installSkillModal .tab-btn[onclick="switchInstallTab('${tab}')"]`).classList.add('active');
+            document.getElementById(`install${tab.charAt(0).toUpperCase() + tab.slice(1)}Tab`).classList.add('active');
+        }
+
+        async function submitInstallSkill() {
+            const contentTab = document.getElementById('installContentTab');
+            const urlTab = document.getElementById('installUrlTab');
+            const content = document.getElementById('skillContent').value;
+            const url = document.getElementById('skillUrl').value;
+            const overwrite = document.getElementById('skillOverwrite').checked;
+
+            if (contentTab.classList.contains('active') && !content.trim()) {
+                alert('请输入 SKILL.md 内容');
+                return;
+            }
+
+            if (urlTab.classList.contains('active') && !url.trim()) {
+                alert('请输入 GitHub URL');
+                return;
+            }
+
+            try {
+                const body = { overwrite };
+                if (contentTab.classList.contains('active')) {
+                    body.content = content;
+                } else if (urlTab.classList.contains('active')) {
+                    body.url = url;
+                }
+
+                const response = await fetch(`${API_BASE}/api/skills/install`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+
+                if (response.ok) {
+                    await loadSkills();
+                    closeModal('installSkillModal');
+                    alert('技能安装成功!');
+                } else {
+                    const err = await response.json();
+                    alert('安装失败: ' + (err.error || '未知错误'));
+                }
+            } catch (error) {
+                alert('错误: ' + error.message);
+            }
+        }
+
+        // Old install skill function (kept for backward compatibility)
         async function installSkill(content, overwrite) {
             try {
                 const response = await fetch(`${API_BASE}/api/skills/install`, {
@@ -961,6 +1165,10 @@
             } catch (error) {
                 alert('错误: ' + error.message);
             }
+        }
+
+        function showInstallSkillModal() {
+            openModal('installSkillModal');
         }
 
         // ===== RULES MANAGEMENT =====
@@ -1048,75 +1256,84 @@
             }
         }
 
-        document.getElementById('createRuleBtn').addEventListener('click', showCreateRuleModal);
+        document.getElementById('createRuleBtn').addEventListener('click', () => {
+            document.getElementById('ruleModalTitle').textContent = '新建规则';
+            openModal('createRuleModal');
+        });
+
+        let editingRuleId = null;
 
         function showCreateRuleModal() {
-            const name = prompt('规则名称:');
-            if (!name) return;
+            editingRuleId = null;
+            document.getElementById('ruleModalTitle').textContent = '新建规则';
+            openModal('createRuleModal');
+        }
 
-            const description = prompt('规则描述 (可选):') || '';
-            const content = prompt('规则内容 (系统提示词):');
-            if (!content) {
-                alert('规则内容不能为空');
+        async function submitRule() {
+            const name = document.getElementById('ruleName').value.trim();
+            const category = document.getElementById('ruleCategory').value;
+            const description = document.getElementById('ruleDescription').value.trim();
+            const content = document.getElementById('ruleContent').value.trim();
+
+            if (!name) {
+                alert('请输入规则名称');
                 return;
             }
 
-            const category = prompt('分类 (可选):') || '';
+            if (!content) {
+                alert('请输入规则内容');
+                return;
+            }
 
-            createRule({ name, description, content, category });
-        }
-
-        async function createRule(data) {
             try {
-                const response = await fetch(`${API_BASE}/api/rules?user_id=default`, {
-                    method: 'POST',
+                const url = editingRuleId
+                    ? `${API_BASE}/api/rules/${editingRuleId}`
+                    : `${API_BASE}/api/rules?user_id=default`;
+
+                const method = editingRuleId ? 'PUT' : 'POST';
+
+                const response = await fetch(url, {
+                    method: method,
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(data)
+                    body: JSON.stringify({ name, category, description, content })
                 });
+
                 if (response.ok) {
                     await loadRules();
-                    alert('规则创建成功!');
+                    closeModal('createRuleModal');
+                    editingRuleId = null;
+                    alert(editingRuleId ? '规则已更新!' : '规则创建成功!');
                 } else {
                     const err = await response.json();
-                    alert('创建失败: ' + (err.error || '未知错误'));
+                    alert((editingRuleId ? '更新失败: ' : '创建失败: ') + (err.error || '未知错误'));
                 }
             } catch (error) {
                 alert('错误: ' + error.message);
             }
+        }
+
+        async function createRule(data) {
+            // Legacy function - now opens modal with pre-filled data if needed
+            document.getElementById('ruleName').value = data.name || '';
+            document.getElementById('ruleCategory').value = data.category || '';
+            document.getElementById('ruleDescription').value = data.description || '';
+            document.getElementById('ruleContent').value = data.content || '';
+            editingRuleId = null;
+            document.getElementById('ruleModalTitle').textContent = '新建规则';
+            openModal('createRuleModal');
         }
 
         async function editRule(ruleId) {
             const rule = rules.find(r => r.id === ruleId);
             if (!rule) return;
 
-            const name = prompt('规则名称:', rule.name);
-            if (!name) return;
-
-            const description = prompt('规则描述:', rule.description || '') || '';
-            const content = prompt('规则内容:', rule.content);
-            if (!content) {
-                alert('规则内容不能为空');
-                return;
-            }
-
-            const category = prompt('分类:', rule.category || '') || '';
-
-            try {
-                const response = await fetch(`${API_BASE}/api/rules/${ruleId}`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name, description, content, category })
-                });
-                if (response.ok) {
-                    await loadRules();
-                    alert('规则已更新');
-                } else {
-                    const err = await response.json();
-                    alert('更新失败: ' + (err.error || '未知错误'));
-                }
-            } catch (error) {
-                alert('错误: ' + error.message);
-            }
+            editingRuleId = ruleId;
+            document.getElementById('ruleModalTitle').textContent = '编辑规则';
+            document.getElementById('ruleName').value = rule.name || '';
+            document.getElementById('ruleCategory').value = rule.category || '';
+            document.getElementById('ruleDescription').value = rule.description || '';
+            document.getElementById('ruleContent').value = rule.content || '';
+            openModal('createRuleModal');
         }
 
         // ===== MCP SERVERS MANAGEMENT =====
@@ -1222,73 +1439,102 @@
             }
         }
 
-        document.getElementById('addMcpServerBtn').addEventListener('click', showAddMcpServerModal);
+        document.getElementById('addMcpServerBtn').addEventListener('click', () => {
+            editingMcpServerId = null;
+            document.getElementById('mcpModalTitle').textContent = '添加 MCP 服务器';
+            openModal('addMcpServerModal');
+        });
+
+        let editingMcpServerId = null;
 
         function showAddMcpServerModal() {
-            const name = prompt('服务器名称:');
-            if (!name) return;
+            editingMcpServerId = null;
+            document.getElementById('mcpModalTitle').textContent = '添加 MCP 服务器';
+            openModal('addMcpServerModal');
+        }
 
-            const endpoint = prompt('服务器端点 URL (如: http://localhost:3000/mcp):');
-            if (!endpoint) {
-                alert('服务器端点不能为空');
+        async function submitMcpServer() {
+            const name = document.getElementById('mcpName').value.trim();
+            const endpoint = document.getElementById('mcpEndpoint').value.trim();
+            const description = document.getElementById('mcpDescription').value.trim();
+            const configText = document.getElementById('mcpConfig').value.trim();
+
+            if (!name) {
+                alert('请输入服务器名称');
                 return;
             }
 
-            const description = prompt('服务器描述 (可选):') || '';
+            if (!endpoint) {
+                alert('请输入服务器端点');
+                return;
+            }
 
-            createMcpServer({ name, endpoint, description });
-        }
+            let config = null;
+            if (configText) {
+                try {
+                    config = JSON.parse(configText);
+                } catch (e) {
+                    alert('配置格式错误，请输入有效的 JSON');
+                    return;
+                }
+            }
 
-        async function createMcpServer(data) {
             try {
-                const response = await fetch(`${API_BASE}/api/mcp/servers?user_id=default`, {
-                    method: 'POST',
+                const url = editingMcpServerId
+                    ? `${API_BASE}/api/mcp/servers/${editingMcpServerId}`
+                    : `${API_BASE}/api/mcp/servers?user_id=default`;
+
+                const method = editingMcpServerId ? 'PUT' : 'POST';
+
+                const response = await fetch(url, {
+                    method: method,
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(data)
+                    body: JSON.stringify({ name, endpoint, description, config })
                 });
+
                 if (response.ok) {
                     await loadMcpServers();
-                    alert('MCP 服务器添加成功!');
+                    closeModal('addMcpServerModal');
+                    editingMcpServerId = null;
+                    alert(editingMcpServerId ? '服务器已更新!' : 'MCP 服务器添加成功!');
                 } else {
                     const err = await response.json();
-                    alert('添加失败: ' + (err.error || '未知错误'));
+                    alert((editingMcpServerId ? '更新失败: ' : '添加失败: ') + (err.error || '未知错误'));
                 }
             } catch (error) {
                 alert('错误: ' + error.message);
             }
+        }
+
+        async function createMcpServer(data) {
+            // Legacy function - now opens modal
+            document.getElementById('mcpName').value = data.name || '';
+            document.getElementById('mcpEndpoint').value = data.endpoint || '';
+            document.getElementById('mcpDescription').value = data.description || '';
+            editingMcpServerId = null;
+            document.getElementById('mcpModalTitle').textContent = '添加 MCP 服务器';
+            openModal('addMcpServerModal');
         }
 
         async function editMcpServer(serverId) {
             const server = mcpServers.find(s => s.id === serverId);
             if (!server) return;
 
-            const name = prompt('服务器名称:', server.name);
-            if (!name) return;
-
-            const endpoint = prompt('服务器端点 URL:', server.endpoint);
-            if (!endpoint) {
-                alert('服务器端点不能为空');
-                return;
-            }
-
-            const description = prompt('服务器描述:', server.description || '') || '';
-
-            try {
-                const response = await fetch(`${API_BASE}/api/mcp/servers/${serverId}`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name, endpoint, description })
-                });
-                if (response.ok) {
-                    await loadMcpServers();
-                    alert('服务器已更新');
-                } else {
-                    const err = await response.json();
-                    alert('更新失败: ' + (err.error || '未知错误'));
+            editingMcpServerId = serverId;
+            document.getElementById('mcpModalTitle').textContent = '编辑 MCP 服务器';
+            document.getElementById('mcpName').value = server.name || '';
+            document.getElementById('mcpEndpoint').value = server.endpoint || '';
+            document.getElementById('mcpDescription').value = server.description || '';
+            // Try to parse config if it exists
+            if (server.config) {
+                try {
+                    const configObj = JSON.parse(server.config);
+                    document.getElementById('mcpConfig').value = JSON.stringify(configObj, null, 2);
+                } catch (e) {
+                    document.getElementById('mcpConfig').value = server.config;
                 }
-            } catch (error) {
-                alert('错误: ' + error.message);
             }
+            openModal('addMcpServerModal');
         }
     </script>
 </body>
