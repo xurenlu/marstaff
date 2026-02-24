@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 
+	"github.com/joho/godotenv"
 	"github.com/spf13/viper"
 )
 
@@ -95,6 +96,9 @@ type LogConfig struct {
 
 // Load loads configuration from file
 func Load(configPath string) (*Config, error) {
+	// Load .env file if exists (search in current directory and parent directories)
+	_ = godotenv.Load()
+
 	v := viper.New()
 
 	// Set config file
