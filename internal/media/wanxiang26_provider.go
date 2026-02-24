@@ -155,7 +155,7 @@ func (p *Wanxiang26Provider) GenerateImage(ctx context.Context, req ImageGenerat
 
 	// Build request
 	wanxiangReq := Wanxiang26ImageRequest{
-		Model: "wanxiang-v2",
+		Model: "wan2.6-t2i", // Wanxiang 2.6 text-to-image model
 		Input: Wanxiang26ImageInput{
 			Prompt:         req.Prompt,
 			NegativePrompt: req.NegativePrompt,
@@ -256,7 +256,7 @@ func (p *Wanxiang26Provider) GenerateVideo(ctx context.Context, req VideoGenerat
 
 	// Build request
 	wanxiangReq := Wanxiang26VideoRequest{
-		Model: "wanxiang-v2", // Wanxiang 2.6 model
+		Model: "wan2.6-t2v", // Wanxiang 2.6 text-to-video model
 		Input: Wanxiang26Input{
 			Prompt: req.Prompt,
 		},
@@ -397,7 +397,7 @@ func (p *Wanxiang26Provider) ImageToVideo(ctx context.Context, imageURL, prompt 
 	}
 
 	wanxiangReq := Wanxiang26VideoRequest{
-		Model: "wanxiang-v2",
+		Model: "wan2.6-t2v", // Wanxiang 2.6 text-to-video model
 		Input: Wanxiang26Input{
 			Prompt:   prompt,
 			ImageURL: imageURL,
