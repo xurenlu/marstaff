@@ -3,9 +3,24 @@ package media
 import (
 	"context"
 	"fmt"
+	"io"
+	"net/http"
+	"time"
 
 	"github.com/rs/zerolog/log"
 )
+
+// VideoUploader is an interface for uploading videos to cloud storage
+type VideoUploader interface {
+	UploadVideoFile(data []byte, filename string) (*UploadResult, error)
+}
+
+// UploadResult represents the result of an upload operation
+type UploadResult struct {
+	URL      string `json:"url"`
+	Filename string `json:"filename"`
+	Size     int64  `json:"size"`
+}
 
 // GenerateVideoTool generates videos from text prompts
 // Parameters:
@@ -20,6 +35,7 @@ import (
 // Returns: JSON formatted response with video URLs or status information
 type GenerateVideoTool struct {
 	provider MediaProvider
+	uploader VideoUploader // Optional: for uploading to OSS
 }
 
 // NewGenerateVideoTool creates a new video generation tool
@@ -27,6 +43,11 @@ func NewGenerateVideoTool(provider MediaProvider) *GenerateVideoTool {
 	return &GenerateVideoTool{
 		provider: provider,
 	}
+}
+
+// SetUploader sets the video uploader (e.g., OSS uploader)
+func (t *GenerateVideoTool) SetUploader(uploader VideoUploader) {
+	t.uploader = uploader
 }
 
 // Execute executes the video generation tool
@@ -88,7 +109,7 @@ func (t *GenerateVideoTool) Execute(ctx context.Context, params map[string]inter
 		return "", fmt.Errorf("failed to generate videos: %w", err)
 	}
 
-	// Build response
+	// Process videos: download and upload to OSS if available
 	result := fmt.Sprintf("Generated %d video(s):\n", len(resp.Videos))
 
 	for i, vid := range resp.Videos {
@@ -98,7 +119,14 @@ func (t *GenerateVideoTool) Execute(ctx context.Context, params map[string]inter
 			result += fmt.Sprintf("  Status: %s\n", vid.Status)
 		}
 
-		if vid.URL != "" {
+		// If video URL is available and we have an uploader, download and re-upload
+		if vid.URL != "" && t.uploader != nil {
+			if ossURL, uploaded := t.downloadAndUpload(ctx, vid.URL); uploaded {
+				result += fmt.Sprintf("  URL: %s (uploaded to OSS)\n", ossURL)
+			} else {
+				result += fmt.Sprintf("  URL: %s (direct URL)\n", vid.URL)
+			}
+		} else if vid.URL != "" {
 			result += fmt.Sprintf("  URL: %s\n", vid.URL)
 		}
 
@@ -130,6 +158,51 @@ func (t *GenerateVideoTool) Execute(ctx context.Context, params map[string]inter
 		Msg("videos generated successfully")
 
 	return result, nil
+}
+
+// downloadAndUpload downloads a video from URL and uploads it to OSS
+func (t *GenerateVideoTool) downloadAndUpload(ctx context.Context, url string) (string, bool) {
+	// Download video
+	client := &http.Client{Timeout: 120 * time.Second}
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		log.Warn().Err(err).Str("url", url).Msg("failed to create download request")
+		return "", false
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Warn().Err(err).Str("url", url).Msg("failed to download video")
+		return "", false
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		log.Warn().Str("url", url).Int("status", resp.StatusCode).Msg("download failed with non-200 status")
+		return "", false
+	}
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Warn().Err(err).Str("url", url).Msg("failed to read video data")
+		return "", false
+	}
+
+	log.Info().Int("size", len(data)).Msg("video downloaded, uploading to OSS")
+
+	// Generate filename
+	timestamp := time.Now().Format("20060102_150405")
+	filename := fmt.Sprintf("video_%s.mp4", timestamp)
+
+	// Upload to OSS
+	uploadResult, err := t.uploader.UploadVideoFile(data, filename)
+	if err != nil {
+		log.Warn().Err(err).Msg("failed to upload to OSS, using direct URL")
+		return "", false
+	}
+
+	log.Info().Str("oss_url", uploadResult.URL).Msg("video uploaded to OSS")
+	return uploadResult.URL, true
 }
 
 // CheckVideoStatus checks the status of an asynchronously generated video

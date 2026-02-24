@@ -167,6 +167,26 @@ func run(cmd *cobra.Command, args []string) {
 				log.Warn().Err(err).Msg("failed to create media provider, image/video tools not available")
 			} else {
 				toolsExecutor.SetMediaProvider(mediaProv)
+
+				// Create OSS uploader for storing generated content
+				var ossUploader *gateway.OSSUploader
+				if cfg.OSS.AccessKeyID != "" && cfg.OSS.AccessKeySecret != "" {
+					ossUploader, err = gateway.NewOSSUploaderWithConfig(gateway.OSSConfig{
+						AccessKeyID:     cfg.OSS.AccessKeyID,
+						AccessKeySecret: cfg.OSS.AccessKeySecret,
+						Bucket:          cfg.OSS.Bucket,
+						Endpoint:        cfg.OSS.Endpoint,
+						Domain:          cfg.OSS.Domain,
+						PathPrefix:      cfg.OSS.PathPrefix,
+					})
+					if err != nil {
+						log.Warn().Err(err).Msg("failed to create OSS uploader, videos will use direct URLs")
+					} else {
+						toolsExecutor.SetMediaUploader(newOSSVideoUploader(ossUploader))
+						log.Info().Msg("OSS uploader configured for media storage")
+					}
+				}
+
 				toolsExecutor.RegisterMediaTools()
 				log.Info().Str("provider", mediaProv.Name()).Msg("media generation tools registered")
 			}
@@ -1119,4 +1139,25 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// ossVideoUploaderAdapter adapts gateway.OSSUploader to media.VideoUploader
+type ossVideoUploaderAdapter struct {
+	uploader *gateway.OSSUploader
+}
+
+func (a *ossVideoUploaderAdapter) UploadVideoFile(data []byte, filename string) (*media.UploadResult, error) {
+	resp, err := a.uploader.UploadVideoFile(data, filename)
+	if err != nil {
+		return nil, err
+	}
+	return &media.UploadResult{
+		URL:      resp.URL,
+		Filename: resp.Filename,
+		Size:     resp.Size,
+	}, nil
+}
+
+func newOSSVideoUploader(oss *gateway.OSSUploader) media.VideoUploader {
+	return &ossVideoUploaderAdapter{uploader: oss}
 }

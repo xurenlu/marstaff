@@ -122,7 +122,8 @@ func Load(configPath string) (*Config, error) {
 	expandEnvInProviderConfig(config.Provider.Zhipu)
 
 	// Expand environment variables in media configs
-	expandEnvInProviderConfig(config.Media.QWenWanxiang)
+	expandEnvInProviderConfig(config.Media.Wanxiang26)
+	expandEnvInProviderConfig(config.Media.QWenWanxiang) // Backward compatibility
 
 	// Expand environment variables in OSS config
 	config.OSS.AccessKeyID = expandEnv(config.OSS.AccessKeyID)
