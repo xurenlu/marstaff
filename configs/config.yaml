@@ -57,7 +57,7 @@ provider:
 # Media generation configuration (images and videos)
 media:
   default: "wanxiang_2.6"
-  wanxiang_2.6:
+  wanxiang_2_6:
     api_key: "${QWEN_API_KEY}"
     base_url: "https://dashscope.aliyuncs.com"
 
