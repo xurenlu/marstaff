@@ -321,6 +321,12 @@ func run(cmd *cobra.Command, args []string) {
 	go hub.Run()
 	server := gateway.NewServer(hub)
 
+	// Set up user repository for WebSocket server (to resolve platform_user_id to real user ID)
+	if db != nil {
+		userRepo := repository.NewUserRepository(db)
+		server.SetUserRepository(&userRepoAdapter{repo: userRepo})
+	}
+
 	activeSessions := make(map[string]string)
 
 	// Create OSS uploader if configured
@@ -1193,6 +1199,23 @@ func (a *ossVideoUploaderAdapter) UploadVideoFile(data []byte, filename string) 
 		URL:      resp.URL,
 		Filename: resp.Filename,
 		Size:     resp.Size,
+	}, nil
+}
+
+// userRepoAdapter adapts repository.UserRepository to gateway.UserRepository
+type userRepoAdapter struct {
+	repo *repository.UserRepository
+}
+
+func (a *userRepoAdapter) GetByPlatformID(ctx context.Context, platform, platformUserID string) (*gateway.User, error) {
+	user, err := a.repo.GetByPlatformID(ctx, platform, platformUserID)
+	if err != nil {
+		return nil, err
+	}
+	return &gateway.User{
+		ID:       user.ID,
+		Platform: user.Platform,
+		PlatformUserID: user.PlatformUserID,
 	}, nil
 }
 
