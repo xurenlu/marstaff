@@ -7,14 +7,14 @@ import (
 
 // SkillMetadata contains metadata about a skill
 type SkillMetadata struct {
-	ID          string            `json:"id"`
-	Name        string            `json:"name"`
-	Description string            `json:"description"`
-	Version     string            `json:"version"`
-	Author      string            `json:"author"`
-	Category    string            `json:"category"`
-	Tags        []string          `json:"tags"`
-	Parameters  map[string]string `json:"parameters"`
+	ID          string                 `json:"id"`
+	Name        string                 `json:"name"`
+	Description string                 `json:"description"`
+	Version     string                 `json:"version"`
+	Author      string                 `json:"author"`
+	Category    string                 `json:"category"`
+	Tags        []string               `json:"tags"`
+	Parameters  map[string]interface{} `json:"parameters"`
 }
 
 // Tool represents a tool/function that can be called

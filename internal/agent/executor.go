@@ -11,13 +11,15 @@ import (
 
 	"github.com/rocky/marstaff/internal/contextkeys"
 	"github.com/rocky/marstaff/internal/provider"
+	"github.com/rocky/marstaff/internal/sandbox"
 	"github.com/rocky/marstaff/internal/skill"
 )
 
 // Executor handles tool/function calls from AI
 type Executor struct {
-	engine   *Engine
-	registry skill.Registry
+	engine      *Engine
+	registry    skill.Registry
+	sandboxMode string // "off" or "non_main"
 }
 
 // NewExecutor creates a new tool executor
@@ -26,6 +28,11 @@ func NewExecutor(engine *Engine) *Executor {
 		engine:   engine,
 		registry: engine.GetSkillRegistry(),
 	}
+}
+
+// SetSandboxMode sets sandbox mode for non-main sessions
+func (e *Executor) SetSandboxMode(mode string) {
+	e.sandboxMode = mode
 }
 
 // ExecuteToolCalls executes tool calls returned by the AI
@@ -76,6 +83,15 @@ func (e *Executor) ExecuteToolCalls(ctx context.Context, sessionID, userID strin
 // executeToolCall executes a single tool call
 func (e *Executor) executeToolCall(ctx context.Context, sessionID, userID string, toolCall provider.ToolCall) (string, error) {
 	toolName := toolCall.Function.Name
+
+	// Sandbox whitelist: block disallowed tools in non-main sessions
+	if e.sandboxMode == "non_main" && sessionID != "" {
+		if session, err := e.engine.GetSession(ctx, sessionID); err == nil && session != nil && !session.IsMainSession {
+			if !sandbox.Whitelist[toolName] {
+				return "", fmt.Errorf("tool %s is not allowed in sandbox mode (non-main session)", toolName)
+			}
+		}
+	}
 
 	// Parse arguments
 	var args map[string]interface{}

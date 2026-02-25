@@ -98,6 +98,73 @@ func (api *AFKTaskAPI) CreateTask(c *gin.Context) {
 	c.JSON(http.StatusCreated, task)
 }
 
+// CreateDefaultHeartbeatRequest is the optional request body for creating a default heartbeat task
+type CreateDefaultHeartbeatRequest struct {
+	Name               string `json:"name,omitempty"`
+	CheckIntervalMinutes int  `json:"check_interval_minutes,omitempty"`
+	AIPrompt           string `json:"ai_prompt,omitempty"`
+}
+
+const defaultHeartbeatPrompt = "检查是否有待办事项需要处理，或是否有需要关注的事项。如有需要，请执行相应操作。"
+
+// CreateDefaultHeartbeatTask creates a default AI-driven heartbeat task (e.g. every 30 minutes)
+func (api *AFKTaskAPI) CreateDefaultHeartbeatTask(c *gin.Context) {
+	ctx := c.Request.Context()
+	userID := c.Query("user_id")
+	if userID == "" {
+		userID = "default"
+	}
+
+	var req CreateDefaultHeartbeatRequest
+	_ = c.ShouldBindJSON(&req) // Optional body, use defaults if empty
+
+	name := req.Name
+	if name == "" {
+		name = "默认心跳"
+	}
+	interval := req.CheckIntervalMinutes
+	if interval <= 0 {
+		interval = 30
+	}
+	aiPrompt := req.AIPrompt
+	if aiPrompt == "" {
+		aiPrompt = defaultHeartbeatPrompt
+	}
+
+	task := &model.AFKTask{
+		UserID:      userID,
+		Name:        name,
+		Description: "定期主动检查待办与关注事项",
+		TaskType:    model.AFKTaskTypeAIDriven,
+		TriggerConfig: model.TriggerConfig{
+			Type:           model.AFKTaskTypeAIDriven,
+			CheckInterval:  interval,
+			AIPrompt:       aiPrompt,
+		},
+		ActionConfig: model.ActionConfig{
+			AIAction: struct {
+				Enabled bool   `json:"enabled"`
+				Prompt  string `json:"prompt"`
+			}{Enabled: true, Prompt: ""},
+		},
+		Status: model.AFKTaskStatusActive,
+	}
+
+	if err := api.taskRepo.Create(ctx, task); err != nil {
+		log.Error().Err(err).Msg("failed to create default heartbeat task")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create task"})
+		return
+	}
+
+	log.Info().
+		Str("task_id", task.ID).
+		Str("name", task.Name).
+		Int("interval_minutes", interval).
+		Msg("default heartbeat task created")
+
+	c.JSON(http.StatusCreated, task)
+}
+
 // ListTasks lists AFK tasks for a user.
 // When user_id is "default", also includes tasks created with the resolved real user ID (UUID),
 // since chat/WebSocket may create tasks with the resolved user ID instead of "default".

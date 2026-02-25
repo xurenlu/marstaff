@@ -21,6 +21,7 @@ import (
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 
+	"github.com/rocky/marstaff/internal/adapter"
 	"github.com/rocky/marstaff/internal/agent"
 	"github.com/rocky/marstaff/internal/api"
 	afkpkg "github.com/rocky/marstaff/internal/afk"
@@ -31,12 +32,13 @@ import (
 	"github.com/rocky/marstaff/internal/model"
 	"github.com/rocky/marstaff/internal/provider"
 	"github.com/rocky/marstaff/internal/repository"
+	"github.com/rocky/marstaff/internal/skill"
 	"github.com/rocky/marstaff/internal/tools"
 )
 
 var (
 	configFile string
-	Version    = "1.0.0-rc2"
+	Version    = "1.10.0-rc4"
 )
 
 // truncateRunes truncates s to at most max runes (avoids cutting mid-UTF8-char)
@@ -116,9 +118,9 @@ func run(cmd *cobra.Command, args []string) {
 		}
 	}
 
-	// Build chat providers map (zai, qwen, gemini) for user-selectable chat engines
+	// Build chat providers map for user-selectable chat engines
 	chatProviders := make(map[string]provider.Provider)
-	for _, name := range []string{"zai", "qwen", "gemini"} {
+	for _, name := range []string{"zai", "qwen", "gemini", "deepseek", "minimax", "minimax_intl", "ollama", "vllm"} {
 		if provCfg := getProviderConfig(cfg, name); provCfg != nil {
 			cp, err := provider.CreateProvider(name, provCfg)
 			if err != nil {
@@ -167,6 +169,9 @@ func run(cmd *cobra.Command, args []string) {
 
 	// Create and register tool executor
 	executor := agent.NewExecutor(engine)
+	if cfg.Security.Sandbox.Mode == "non_main" {
+		executor.SetSandboxMode(cfg.Security.Sandbox.Mode)
+	}
 	executor.RegisterBuiltInTools()
 
 	// Create OSS uploader early for device screenshot tools (screenshots must upload to OSS, not base64)
@@ -201,6 +206,14 @@ func run(cmd *cobra.Command, args []string) {
 		log.Warn().Err(err).Msg("failed to create tools executor, file/command tools not available")
 	} else {
 		toolsExecutor.RegisterBuiltInTools()
+		if cfg.Security.Sandbox.Mode == "non_main" {
+			toolsExecutor.SetSandbox(cfg.Security.Sandbox.Mode, cfg.Security.Sandbox.Image)
+			log.Info().Str("sandbox_mode", cfg.Security.Sandbox.Mode).Str("image", cfg.Security.Sandbox.Image).Msg("sandbox enabled for non-main sessions")
+		}
+		// Wire session repo for sandbox (and media async tasks)
+		if sessionRepo != nil && afkTaskRepo != nil {
+			toolsExecutor.SetRepositories(afkTaskRepo, sessionRepo)
+		}
 		log.Info().Str("security_config", securityConfigPath).Msg("file and command tools registered")
 
 		// Create and register media generation provider
@@ -240,12 +253,6 @@ func run(cmd *cobra.Command, args []string) {
 
 				toolsExecutor.RegisterMediaTools()
 				log.Info().Str("provider", mediaProv.Name()).Msg("media generation tools registered")
-
-				// Wire up repositories for async video task creation
-				if afkTaskRepo != nil && sessionRepo != nil {
-					toolsExecutor.SetRepositories(afkTaskRepo, sessionRepo)
-					log.Info().Msg("AFK repositories wired to media tools for async task handling")
-				}
 			}
 		}
 	}
@@ -274,6 +281,25 @@ func run(cmd *cobra.Command, args []string) {
 		installExecutor := tools.NewInstallExecutor(engine, toolsExecutor)
 		// Set API base to local server
 		installExecutor.SetAPIBase(fmt.Sprintf("http://%s:%d", cfg.Server.Host, cfg.Server.Port))
+		// Always set a registry: builtin (default) + optional remote
+		builtinReg, err := skill.NewBuiltinRegistry()
+		if err != nil {
+			log.Warn().Err(err).Msg("failed to load builtin skill registry")
+		}
+		var reg skill.SkillRegistryClient
+		if builtinReg != nil && cfg.Skills.RegistryURL != "" {
+			reg = skill.NewCompositeRegistry(builtinReg, skill.NewRemoteRegistry(cfg.Skills.RegistryURL))
+			log.Info().Str("registry", cfg.Skills.RegistryURL).Msg("skill registry configured (builtin + remote)")
+		} else if builtinReg != nil {
+			reg = builtinReg
+			log.Info().Msg("skill registry configured (builtin only, set skills.registry_url for more)")
+		} else if cfg.Skills.RegistryURL != "" {
+			reg = skill.NewRemoteRegistry(cfg.Skills.RegistryURL)
+			log.Info().Str("registry", cfg.Skills.RegistryURL).Msg("skill registry configured (remote only)")
+		}
+		if reg != nil {
+			installExecutor.SetRegistry(reg)
+		}
 		installExecutor.RegisterBuiltInTools()
 		log.Info().Msg("install tools registered (skills, rules, MCP)")
 	}
@@ -374,6 +400,14 @@ func run(cmd *cobra.Command, args []string) {
 	go hub.Run()
 	server := gateway.NewServer(hub)
 
+	// Register sessions collaboration tools (sessions_list, sessions_history, sessions_send, sessions_spawn)
+	if db != nil && sessionRepo != nil {
+		messageRepo := repository.NewMessageRepository(db)
+		sessionsExecutor := tools.NewSessionsExecutor(engine, executor, sessionRepo, messageRepo, hub)
+		sessionsExecutor.RegisterBuiltInTools()
+		log.Info().Msg("sessions tools registered")
+	}
+
 	// Create async task notifier for WebSocket notifications
 	asyncTaskNotifier := gateway.NewAsyncTaskNotifier(hub)
 	log.Info().Msg("Async task notifier initialized")
@@ -388,6 +422,25 @@ func run(cmd *cobra.Command, args []string) {
 	if db != nil {
 		userRepo := repository.NewUserRepository(db)
 		server.SetUserRepository(&userRepoAdapter{repo: userRepo})
+	}
+
+	// Start IM adapters (telegram, matrix, discord, slack)
+	var startedAdapters []adapter.Adapter
+	for _, ac := range cfg.Adapters {
+		if !ac.Enabled || ac.Type == "websocket" {
+			continue
+		}
+		a, err := createAdapter(ac, executor, sessionAPI, chatProviders, cfg, engine, summaryService, memoryService)
+		if err != nil {
+			log.Warn().Err(err).Str("type", ac.Type).Msg("failed to create adapter, skipping")
+			continue
+		}
+		if err := a.Start(context.Background()); err != nil {
+			log.Warn().Err(err).Str("type", ac.Type).Msg("failed to start adapter, skipping")
+			continue
+		}
+		startedAdapters = append(startedAdapters, a)
+		log.Info().Str("type", ac.Type).Msg("adapter started")
 	}
 
 	activeSessions := make(map[string]string)
@@ -470,8 +523,10 @@ func run(cmd *cobra.Command, args []string) {
 				}
 			}
 			if p, exists := data["provider"]; exists {
-				if prov, ok := p.(string); ok && (prov == "zai" || prov == "qwen" || prov == "gemini") {
-					providerChoice = prov
+				if prov, ok := p.(string); ok {
+					if _, ok := chatProviders[prov]; ok {
+						providerChoice = prov
+					}
 				}
 			}
 			if pm, exists := data["plan_mode"]; exists {
@@ -543,10 +598,15 @@ func run(cmd *cobra.Command, args []string) {
 		}
 
 		// Generate session title summary for new chats (async, non-blocking)
+		// Use user's selected chat_provider so session title respects user preference (e.g. qwen vs zai)
 		if isNewSession && sessionID != "" && sessionAPI != nil {
-			go func(sid string, userContent string, uid string) {
+			var titleProvider provider.Provider
+			if cp, ok := chatProviders[providerChoice]; ok {
+				titleProvider = cp
+			}
+			go func(sid string, userContent string, uid string, p provider.Provider) {
 				ctx := context.Background()
-				title := engine.GenerateSessionTitle(ctx, userContent)
+				title := engine.GenerateSessionTitle(ctx, userContent, p)
 				if err := sessionAPI.UpdateSessionTitleDirect(ctx, sid, title); err != nil {
 					log.Warn().Err(err).Str("session_id", sid).Msg("failed to update session title")
 					return
@@ -558,7 +618,7 @@ func run(cmd *cobra.Command, args []string) {
 					Data:      map[string]interface{}{"title": title},
 					Timestamp: time.Now().Unix(),
 				})
-			}(sessionID, content, client.UserID)
+			}(sessionID, content, client.UserID, titleProvider)
 		}
 
 		// Save user message
@@ -786,11 +846,19 @@ func run(cmd *cobra.Command, args []string) {
 
 				// Send the user-friendly message
 				if userMessage != "" {
+					chatData := map[string]interface{}{"content": userMessage}
+					if resp.Usage.TotalTokens > 0 || resp.Usage.PromptTokens > 0 || resp.Usage.CompletionTokens > 0 {
+						chatData["usage"] = map[string]interface{}{
+							"prompt_tokens":     resp.Usage.PromptTokens,
+							"completion_tokens": resp.Usage.CompletionTokens,
+							"total_tokens":      resp.Usage.TotalTokens,
+						}
+					}
 					hub.SendToUser(client.UserID, &gateway.Message{
 						Type:      gateway.MessageTypeChat,
 						UserID:    client.UserID,
 						SessionID: sessionID,
-						Data:     map[string]interface{}{"content": userMessage},
+						Data:      chatData,
 						Timestamp: time.Now().Unix(),
 					})
 				}
@@ -811,11 +879,18 @@ func run(cmd *cobra.Command, args []string) {
 				if resp.Thinking != "" {
 					chatData["thinking"] = resp.Thinking
 				}
+				if resp.Usage.TotalTokens > 0 || resp.Usage.PromptTokens > 0 || resp.Usage.CompletionTokens > 0 {
+					chatData["usage"] = map[string]interface{}{
+						"prompt_tokens":     resp.Usage.PromptTokens,
+						"completion_tokens": resp.Usage.CompletionTokens,
+						"total_tokens":      resp.Usage.TotalTokens,
+					}
+				}
 				hub.SendToUser(client.UserID, &gateway.Message{
 					Type:      gateway.MessageTypeChat,
 					UserID:    client.UserID,
 					SessionID: sessionID,
-					Data:     chatData,
+					Data:      chatData,
 					Timestamp: time.Now().Unix(),
 				})
 
@@ -925,7 +1000,7 @@ func run(cmd *cobra.Command, args []string) {
 				chatProvidersList = append(chatProvidersList, name)
 			}
 			if len(chatProvidersList) == 0 {
-				chatProvidersList = []string{"zai", "qwen", "gemini"}
+				chatProvidersList = []string{"zai", "qwen", "gemini", "deepseek", "minimax", "minimax_intl", "ollama", "vllm"}
 			}
 			c.JSON(http.StatusOK, gin.H{
 				"vision_providers": visionProvidersList,
@@ -1083,6 +1158,7 @@ func run(cmd *cobra.Command, args []string) {
 			afkTasks := apiGroup.Group("/afk/tasks")
 			{
 				afkTasks.POST("", afkTaskAPI.CreateTask)
+				afkTasks.POST("/default-heartbeat", afkTaskAPI.CreateDefaultHeartbeatTask)
 				afkTasks.GET("", afkTaskAPI.ListTasks)
 				afkTasks.GET("/:id", afkTaskAPI.GetTask)
 				afkTasks.PATCH("/:id", afkTaskAPI.UpdateTask)
@@ -1193,6 +1269,16 @@ func run(cmd *cobra.Command, args []string) {
 		log.Info().Msg("AFK task scheduler stopped")
 	}
 
+	// Stop IM adapters
+	for _, a := range startedAdapters {
+		if err := a.Stop(context.Background()); err != nil {
+			log.Warn().Err(err).Msg("adapter stop error")
+		}
+	}
+	if len(startedAdapters) > 0 {
+		log.Info().Msg("IM adapters stopped")
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -1235,10 +1321,22 @@ func getProviderConfig(cfg *config.Config, name string) map[string]interface{} {
 		return cfg.Provider.ZAI
 	case "qwen":
 		return cfg.Provider.Qwen
+	case "gemini":
+		return cfg.Provider.Gemini
+	case "deepseek":
+		return cfg.Provider.DeepSeek
+	case "minimax":
+		return cfg.Provider.MiniMax
+	case "minimax_intl":
+		return cfg.Provider.MiniMaxIntl
 	case "openai":
 		return cfg.Provider.OpenAI
 	case "zhipu":
 		return cfg.Provider.Zhipu
+	case "ollama":
+		return cfg.Provider.Ollama
+	case "vllm":
+		return cfg.Provider.VLLM
 	default:
 		return nil
 	}
@@ -1341,4 +1439,223 @@ func (a *ossMediaImageUploaderAdapter) UploadImage(data []byte, filename, conten
 
 func newOSSMediaImageUploader(oss *gateway.OSSUploader) media.ImageUploader {
 	return &ossMediaImageUploaderAdapter{uploader: oss}
+}
+
+// createAdapter creates an IM adapter and wires the message handler
+func createAdapter(
+	ac config.AdapterConfig,
+	executor *agent.Executor,
+	sessionAPI *api.SessionAPI,
+	chatProviders map[string]provider.Provider,
+	cfg *config.Config,
+	engine *agent.Engine,
+	summaryService *agent.SummaryService,
+	memoryService *agent.MemoryService,
+) (adapter.Adapter, error) {
+	var a adapter.Adapter
+	switch ac.Type {
+	case "telegram":
+		token := getAdapterConfigString(ac.Config, "bot_token", "TELEGRAM_BOT_TOKEN")
+		if token == "" {
+			log.Warn().Str("type", ac.Type).Msg("adapter skipped: bot_token not configured")
+			return nil, fmt.Errorf("telegram: bot_token required (set TELEGRAM_BOT_TOKEN or config.bot_token)")
+		}
+		ta, err := adapter.NewTelegramAdapter(token)
+		if err != nil {
+			return nil, err
+		}
+		a = ta
+	case "matrix":
+		homeserver := getAdapterConfigString(ac.Config, "homeserver", "")
+		username := getAdapterConfigString(ac.Config, "bot_username", "MATRIX_BOT_USERNAME")
+		password := getAdapterConfigString(ac.Config, "bot_password", "MATRIX_BOT_PASSWORD")
+		if homeserver == "" || username == "" || password == "" {
+			log.Warn().Str("type", ac.Type).Msg("adapter skipped: homeserver/bot_username/bot_password not configured")
+			return nil, fmt.Errorf("matrix: homeserver, bot_username, bot_password required")
+		}
+		ma, err := adapter.NewMatrixAdapter(homeserver, username, password)
+		if err != nil {
+			return nil, err
+		}
+		a = ma
+	case "discord":
+		token := getAdapterConfigString(ac.Config, "bot_token", "DISCORD_BOT_TOKEN")
+		if token == "" {
+			log.Warn().Str("type", ac.Type).Msg("adapter skipped: bot_token not configured")
+			return nil, fmt.Errorf("discord: bot_token required (set DISCORD_BOT_TOKEN or config.bot_token)")
+		}
+		da, err := adapter.NewDiscordAdapter(token)
+		if err != nil {
+			return nil, err
+		}
+		a = da
+	case "slack":
+		token := getAdapterConfigString(ac.Config, "bot_token", "SLACK_BOT_TOKEN")
+		if token == "" {
+			log.Warn().Str("type", ac.Type).Msg("adapter skipped: bot_token not configured")
+			return nil, fmt.Errorf("slack: bot_token required (set SLACK_BOT_TOKEN or config.bot_token)")
+		}
+		sa, err := adapter.NewSlackAdapter(token)
+		if err != nil {
+			return nil, err
+		}
+		a = sa
+	default:
+		return nil, fmt.Errorf("unknown adapter type: %s", ac.Type)
+	}
+
+	handler := makeAdapterMessageHandler(a, executor, sessionAPI, chatProviders, cfg, engine, summaryService, memoryService)
+	a.SetMessageHandler(handler)
+	return a, nil
+}
+
+// makeAdapterMessageHandler creates a MessageHandler that runs the agent and sends response via the adapter
+func makeAdapterMessageHandler(
+	adp adapter.Adapter,
+	executor *agent.Executor,
+	sessionAPI *api.SessionAPI,
+	chatProviders map[string]provider.Provider,
+	cfg *config.Config,
+	engine *agent.Engine,
+	summaryService *agent.SummaryService,
+	memoryService *agent.MemoryService,
+) adapter.MessageHandler {
+	return func(ctx context.Context, msg *adapter.Message) error {
+		platform := string(adp.Platform())
+		platformUserID := msg.UserID
+		if platformUserID == "" {
+			platformUserID = "unknown"
+		}
+		sessionID := msg.SessionID
+		if sessionID == "" {
+			sessionID = uuid.New().String()
+		}
+		content := strings.TrimSpace(msg.Content)
+		if content == "" {
+			return nil
+		}
+
+		// Resolve destination for SendMessage (channel_id, chat_id, room_id)
+		destID := msg.Metadata["channel_id"]
+		if destID == "" {
+			destID = msg.Metadata["chat_id"]
+		}
+		if destID == "" {
+			destID = msg.Metadata["room_id"]
+		}
+		if destID == "" {
+			destID = sessionID
+		}
+
+		if sessionAPI != nil {
+			createReq := &api.CreateSessionRequest{
+				SessionID: sessionID,
+				UserID:    platformUserID,
+				Platform:  platform,
+				Title:     truncateRunes(content, 50),
+				Model:     "default",
+			}
+			if platform == "discord" || platform == "slack" {
+				// Group/channel sessions are non-main (sandbox applies)
+				createReq.IsMainSession = ptr(false)
+			}
+			if _, err := sessionAPI.GetOrCreateSessionDirect(ctx, createReq); err != nil {
+				log.Error().Err(err).Str("session_id", sessionID).Msg("failed to get or create session")
+				_ = adp.SendMessage(ctx, destID, sessionID, "抱歉，创建会话失败，请稍后重试。")
+				return err
+			}
+		}
+
+		_ = adp.SendTypingIndicator(ctx, destID)
+
+		providerChoice := cfg.Provider.Default
+		if cp, ok := chatProviders[providerChoice]; !ok || cp == nil {
+			providerChoice = "zai"
+		}
+		chatReq := &agent.ChatRequest{
+			SessionID: sessionID,
+			UserID:    platformUserID,
+			Messages:  []provider.Message{{Role: provider.RoleUser, Content: content}},
+		}
+		if cp, ok := chatProviders[providerChoice]; ok {
+			chatReq.ProviderOverride = cp
+		}
+
+		ctx = context.WithValue(ctx, "current_time", time.Now().Format("2006-01-02 15:04:05"))
+		ctx = context.WithValue(ctx, "user_id", platformUserID)
+		ctx = context.WithValue(ctx, "session_id", sessionID)
+
+		if summaryService != nil || memoryService != nil {
+			var contextParts []string
+			if summaryService != nil && sessionID != "" {
+				if summary, recentMsgs, err := summaryService.GetSummaryWithRecent(ctx, sessionID, 5); err == nil {
+					if summary != "" {
+						contextParts = append(contextParts, fmt.Sprintf("[对话摘要]\n%s", summary))
+					}
+					if len(recentMsgs) > 0 {
+						chatReq.Messages = recentMsgs
+					}
+				}
+			}
+			if memoryService != nil && platformUserID != "" {
+				query := content
+				if len(query) > 100 {
+					query = query[:100]
+				}
+				if memories, err := memoryService.RetrieveRelevantMemories(ctx, platformUserID, query, ""); err == nil {
+					if mt := memoryService.FormatMemoriesForPrompt(memories); mt != "" {
+						contextParts = append(contextParts, mt)
+					}
+				}
+			}
+			if len(contextParts) > 0 {
+				contextMsg := fmt.Sprintf("[参考信息]\n%s\n请基于以上信息回答用户。", strings.Join(contextParts, "\n\n"))
+				chatReq.Messages = append([]provider.Message{{Role: provider.RoleSystem, Content: contextMsg}}, chatReq.Messages...)
+			}
+		}
+
+		if sessionAPI != nil {
+			_ = sessionAPI.AddMessageToSession(ctx, sessionID, &api.AddMessageRequest{Role: "user", Content: content})
+		}
+
+		resp, err := executor.ExecuteWithToolsStream(ctx, chatReq, func(contentDelta, thinkingDelta string) {})
+		if err != nil {
+			log.Error().Err(err).Msg("adapter agent execution failed")
+			_ = adp.SendMessage(ctx, destID, sessionID, "抱歉，处理您的请求时出错了："+err.Error())
+			return err
+		}
+
+		response := resp.Content
+		if response == "" {
+			response = "（后端返回空响应）"
+		}
+
+		if sessionAPI != nil {
+			_ = sessionAPI.AddMessageToSession(ctx, sessionID, &api.AddMessageRequest{Role: "assistant", Content: response})
+		}
+
+		return adp.SendMessage(ctx, destID, sessionID, response)
+	}
+}
+
+func ptr(b bool) *bool { return &b }
+
+func getAdapterConfigString(config map[string]interface{}, key, envFallback string) string {
+	if config != nil {
+		if v, ok := config[key].(string); ok && v != "" {
+			expanded := os.Expand(v, func(k string) string {
+				if val := os.Getenv(k); val != "" {
+					return val
+				}
+				return "${" + k + "}"
+			})
+			if expanded != "" {
+				return expanded
+			}
+		}
+	}
+	if envFallback != "" {
+		return os.Getenv(envFallback)
+	}
+	return ""
 }

@@ -295,6 +295,36 @@
             cursor: not-allowed;
         }
 
+        .message-tokens {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            margin-left: auto;
+        }
+
+        .copy-message-btn {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            cursor: pointer;
+            padding: 4px;
+            border-radius: 4px;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+        }
+
+        .copy-message-btn:hover {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+        }
+
+        .copy-message-btn.copied {
+            color: var(--success-color);
+        }
+
+        .copy-message-btn.failed {
+            color: var(--error-color);
+        }
+
         .message-content {
             background: var(--bg-secondary);
             padding: 1rem;
@@ -985,6 +1015,7 @@
         let lastMessageWasPlanMode = false;  // Track if last sent message was plan mode (for execute button)
 
         // i18n (expand for full locale support)
+        const isZh = (document.documentElement.lang || navigator.language || 'zh').toLowerCase().startsWith('zh');
         const i18n = {
             modeChat: 'Chat',
             modeProgramming: 'Programming',
@@ -999,6 +1030,12 @@
             loadingSessions: 'Loading sessions...',
             noSessions: 'No conversations yet',
             noReply: '（暂无回复，请稍后重试或检查 Agent 服务是否运行）',  // fallback
+            tokensInput: isZh ? '输入' : 'Input',
+            tokensOutput: isZh ? '输出' : 'Output',
+            tokensTotal: 'tokens',
+            copySuccess: isZh ? '已复制' : 'Copied',
+            copyFailed: isZh ? '复制失败' : 'Failed',
+            copyMessage: isZh ? '复制消息' : 'Copy message',
         };
 
         // Configure marked for better markdown rendering
@@ -1514,6 +1551,8 @@
                     <div class="message-header">
                         <span class="message-role">Assistant</span>
                         <button class="regenerate-btn" onclick="regenerateResponse()" title="Regenerate response">🔄</button>
+                        <button class="copy-message-btn" onclick="copyMessageContent(this.closest('.message'))" title="${i18n.copyMessage}">📋</button>
+                        <span class="message-tokens"></span>
                     </div>
                     <div class="message-content">
                         <div class="streaming-content"></div>
@@ -1524,7 +1563,7 @@
             return msgDiv;
         }
 
-        function finalizeStreamingPlaceholder(content, thinking) {
+        function finalizeStreamingPlaceholder(content, thinking, usage) {
             if (!streamingPlaceholder) return;
             const contentEl = streamingPlaceholder.querySelector('.message-content');
             if (!contentEl) return;
@@ -1539,6 +1578,10 @@
                 btn.textContent = i18n.executePlan;
                 btn.onclick = () => executePlan(streamingPlaceholder);
                 contentEl.appendChild(btn);
+            }
+            const tokensEl = streamingPlaceholder.querySelector('.message-tokens');
+            if (tokensEl && usage && (usage.prompt_tokens > 0 || usage.completion_tokens > 0)) {
+                tokensEl.textContent = `${i18n.tokensInput} ${usage.prompt_tokens || 0} / ${i18n.tokensOutput} ${usage.completion_tokens || 0} ${i18n.tokensTotal}`;
             }
             streamingPlaceholder.classList.remove('streaming');
             const toggle = streamingPlaceholder.querySelector('.thinking-toggle');
@@ -1584,6 +1627,7 @@
                 case 'chat':
                     const content = data.data && data.data.content;
                     let thinking = data.data && data.data.thinking;
+                    const usage = data.data && data.data.usage ? data.data.usage : null;
                     if (!thinking && streamingThinkingBuffer) {
                         thinking = streamingThinkingBuffer;
                     }
@@ -1592,9 +1636,9 @@
                         loadSessions();
                     }
                     if (streamingPlaceholder) {
-                        finalizeStreamingPlaceholder((content && content.trim()) ? content : '（暂无回复，请稍后重试或检查 Agent 服务是否运行）', thinking || '');
+                        finalizeStreamingPlaceholder((content && content.trim()) ? content : i18n.noReply, thinking || '', usage);
                     } else {
-                        addMessage('assistant', (content && content.trim()) ? content : '（暂无回复，请稍后重试或检查 Agent 服务是否运行）', true, [], thinking || '');
+                        addMessage('assistant', (content && content.trim()) ? content : i18n.noReply, true, [], thinking || '', usage);
                     }
                     hideTypingIndicator();
                     break;
@@ -1647,19 +1691,24 @@
             }
         }
 
-        function addMessage(role, content, scroll = true, imageUrls = [], thinking = '') {
+        function addMessage(role, content, scroll = true, imageUrls = [], thinking = '', usage = null) {
             const msgDiv = document.createElement('div');
             msgDiv.className = `message ${role}`;
 
             let innerHTML = `<div class="message-avatar">${getAvatar(role)}</div>`;
             innerHTML += `<div class="message-wrapper">`;
 
-            // Add header with regenerate/resend button
+            // Add header with regenerate/resend button, copy button, and token display
             if (role === 'assistant') {
+                const tokensHtml = usage && (usage.prompt_tokens > 0 || usage.completion_tokens > 0)
+                    ? `<span class="message-tokens">${i18n.tokensInput} ${usage.prompt_tokens || 0} / ${i18n.tokensOutput} ${usage.completion_tokens || 0} ${i18n.tokensTotal}</span>`
+                    : '<span class="message-tokens"></span>';
                 innerHTML += `
                     <div class="message-header">
                         <span class="message-role">Assistant</span>
                         <button class="regenerate-btn" onclick="regenerateResponse()" title="Regenerate response">🔄</button>
+                        <button class="copy-message-btn" onclick="copyMessageContent(this.closest('.message'))" title="${i18n.copyMessage}">📋</button>
+                        ${tokensHtml}
                     </div>
                 `;
             } else if (role === 'user') {
@@ -1669,6 +1718,8 @@
                     <div class="message-header">
                         <span class="message-role">You</span>
                         <button class="regenerate-btn" onclick="resendUserMessage(this)" data-content="${contentData}" title="Resend message">🔄</button>
+                        <button class="copy-message-btn" onclick="copyMessageContent(this.closest('.message'))" title="${i18n.copyMessage}">📋</button>
+                        <span class="message-tokens"></span>
                     </div>
                 `;
             }
@@ -1806,6 +1857,49 @@
                 document.body.removeChild(textArea);
             });
         }
+
+        function copyMessageContent(msgElement) {
+            if (!msgElement) return;
+            const contentEl = msgElement.querySelector('.message-content');
+            if (!contentEl) return;
+            const clone = contentEl.cloneNode(true);
+            const thinkingBlock = clone.querySelector('.thinking-block');
+            if (thinkingBlock) thinkingBlock.remove();
+            const executeBtn = clone.querySelector('.execute-plan-btn');
+            if (executeBtn) executeBtn.remove();
+            const text = clone.innerText || clone.textContent || '';
+            const copyBtn = msgElement.querySelector('.copy-message-btn');
+            if (!copyBtn) return;
+
+            const showResult = (success) => {
+                copyBtn.textContent = success ? i18n.copySuccess : i18n.copyFailed;
+                copyBtn.classList.toggle('copied', success);
+                copyBtn.classList.toggle('failed', !success);
+                setTimeout(() => {
+                    copyBtn.innerHTML = '📋';
+                    copyBtn.classList.remove('copied', 'failed');
+                }, 2000);
+            };
+
+            navigator.clipboard.writeText(text).then(() => {
+                showResult(true);
+            }).catch(() => {
+                const textArea = document.createElement('textarea');
+                textArea.value = text;
+                textArea.style.position = 'fixed';
+                textArea.style.left = '-999999px';
+                document.body.appendChild(textArea);
+                textArea.select();
+                try {
+                    const ok = document.execCommand('copy');
+                    showResult(ok);
+                } catch (e) {
+                    showResult(false);
+                }
+                document.body.removeChild(textArea);
+            });
+        }
+        window.copyMessageContent = copyMessageContent;
 
         function getAvatar(role) {
             switch (role) {

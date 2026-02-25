@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/rocky/marstaff/internal/agent"
+	"github.com/rocky/marstaff/internal/skill"
 )
 
 // InstallExecutor handles installation tools for skills, rules, and MCP servers
@@ -15,6 +16,7 @@ type InstallExecutor struct {
 	engine     *agent.Engine
 	apiBase    string
 	httpClient *http.Client
+	registry   skill.SkillRegistryClient
 }
 
 // NewInstallExecutor creates a new install executor
@@ -31,11 +33,16 @@ func (e *InstallExecutor) SetAPIBase(apiBase string) {
 	e.apiBase = apiBase
 }
 
+// SetRegistry sets the skill registry for discovery (optional)
+func (e *InstallExecutor) SetRegistry(reg skill.SkillRegistryClient) {
+	e.registry = reg
+}
+
 // RegisterBuiltInTools registers all installation tools
 func (e *InstallExecutor) RegisterBuiltInTools() {
 	// Skill installation tools
 	e.engine.RegisterTool("install_skill",
-		"Install a new skill from markdown content or GitHub URL",
+		"Install a new skill from markdown content, GitHub URL, or registry_id (when registry is configured)",
 		map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
@@ -47,6 +54,10 @@ func (e *InstallExecutor) RegisterBuiltInTools() {
 					"type":        "string",
 					"description": "GitHub URL to fetch skill from (optional, alternative to content)",
 				},
+				"registry_id": map[string]interface{}{
+					"type":        "string",
+					"description": "Skill ID from registry (use with search_skills first; requires registry_url configured)",
+				},
 				"overwrite": map[string]interface{}{
 					"type":        "boolean",
 					"description": "Whether to overwrite if skill already exists (default: false)",
@@ -55,6 +66,23 @@ func (e *InstallExecutor) RegisterBuiltInTools() {
 		},
 		wrapHandler(e.toolInstallSkill),
 	)
+
+	if e.registry != nil {
+		e.engine.RegisterTool("search_skills",
+			"Search for skills in the remote registry. Returns id, name, description, install_url. Use install_skill with registry_id to install.",
+			map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"query": map[string]interface{}{
+						"type":        "string",
+						"description": "Search keyword (e.g., 'weather', 'calculator')",
+					},
+				},
+				"required": []string{"query"},
+			},
+			wrapHandler(e.toolSearchSkills),
+		)
+	}
 
 	e.engine.RegisterTool("uninstall_skill",
 		"Uninstall/remove a skill by ID",
@@ -410,12 +438,29 @@ func (e *InstallExecutor) apiRequest(ctx context.Context, method, path string, b
 
 func (e *InstallExecutor) toolInstallSkill(ctx context.Context, input string) (string, error) {
 	var params struct {
-		Content   string `json:"content"`
-		URL       string `json:"url"`
-		Overwrite bool   `json:"overwrite"`
+		Content    string `json:"content"`
+		URL        string `json:"url"`
+		RegistryID string `json:"registry_id"`
+		Overwrite  bool   `json:"overwrite"`
 	}
 	if err := json.Unmarshal([]byte(input), &params); err != nil {
 		return "", fmt.Errorf("failed to parse parameters: %w", err)
+	}
+
+	// If registry_id provided, fetch install_url from registry
+	if params.RegistryID != "" {
+		if e.registry == nil {
+			return "", fmt.Errorf("registry_id requires skills.registry_url to be configured")
+		}
+		meta, err := e.registry.GetByID(ctx, params.RegistryID)
+		if err != nil {
+			return "", fmt.Errorf("failed to get skill from registry: %w", err)
+		}
+		if meta.InstallURL != "" {
+			params.URL = meta.InstallURL
+		} else {
+			return "", fmt.Errorf("skill %s has no install_url in registry", params.RegistryID)
+		}
 	}
 
 	body := map[string]interface{}{
@@ -510,6 +555,41 @@ func (e *InstallExecutor) toolListSkills(ctx context.Context, input string) (str
 		}
 	}
 
+	return output.String(), nil
+}
+
+func (e *InstallExecutor) toolSearchSkills(ctx context.Context, input string) (string, error) {
+	if e.registry == nil {
+		return "", fmt.Errorf("search_skills requires skills.registry_url to be configured")
+	}
+
+	var params struct {
+		Query string `json:"query"`
+	}
+	if err := json.Unmarshal([]byte(input), &params); err != nil {
+		return "", fmt.Errorf("failed to parse parameters: %w", err)
+	}
+	if params.Query == "" {
+		return "", fmt.Errorf("query is required")
+	}
+
+	skills, err := e.registry.Search(ctx, params.Query)
+	if err != nil {
+		return "", fmt.Errorf("registry search failed: %w", err)
+	}
+
+	if len(skills) == 0 {
+		return fmt.Sprintf("No skills found for query '%s'", params.Query), nil
+	}
+
+	var output strings.Builder
+	output.WriteString(fmt.Sprintf("Found %d skills for '%s':\n\n", len(skills), params.Query))
+	for _, s := range skills {
+		output.WriteString(fmt.Sprintf("- **%s** (id: %s): %s\n", s.Name, s.ID, s.Description))
+		if s.InstallURL != "" {
+			output.WriteString(fmt.Sprintf("  Install with: install_skill(registry_id=\"%s\")\n", s.ID))
+		}
+	}
 	return output.String(), nil
 }
 

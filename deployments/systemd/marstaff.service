@@ -1,0 +1,14 @@
+[Unit]
+Description=Marstaff AI Agent Gateway
+After=network.target mysql.service
+
+[Service]
+Type=simple
+User=marstaff
+WorkingDirectory=/opt/marstaff
+ExecStart=/opt/marstaff/bin/gateway -c /opt/marstaff/configs/config.yaml
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

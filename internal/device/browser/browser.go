@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"image"
+	"strings"
 	"image/draw"
 	_ "image/jpeg"
 	_ "image/png"
@@ -375,6 +376,11 @@ func (d *Device) Platform() types.Platform {
 func (d *Device) Navigate(ctx context.Context, url string) error {
 	if !d.connected {
 		return fmt.Errorf("device not connected")
+	}
+
+	// Chrome requires full URL with scheme; normalize bare hostnames
+	if url != "" && !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
+		url = "https://" + url
 	}
 
 	log.Debug().Str("url", url).Msg("navigating")

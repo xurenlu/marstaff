@@ -18,10 +18,14 @@ import (
 //   - timeout (int, optional): Command timeout in seconds (default: from config)
 // Returns: The command output
 func (e *Executor) toolRunCommand(ctx context.Context, params map[string]interface{}) (string, error) {
-	// Extract parameters
 	command, err := getString(params, "command", true)
 	if err != nil {
 		return "", err
+	}
+
+	// Sandbox: non-main sessions run in Docker
+	if useSandbox, workDir := e.shouldUseSandbox(ctx); useSandbox {
+		return e.sandboxExecutor.RunCommand(ctx, workDir, command)
 	}
 
 	timeoutVal, err := getInt(params, "timeout", false, e.validator.GetConfig().Limits.CommandTimeout)

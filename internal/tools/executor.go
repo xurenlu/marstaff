@@ -9,6 +9,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/rocky/marstaff/internal/agent"
+	"github.com/rocky/marstaff/internal/contextkeys"
 	"github.com/rocky/marstaff/internal/media"
 	"github.com/rocky/marstaff/internal/model"
 	"github.com/rocky/marstaff/internal/repository"
@@ -24,6 +25,8 @@ type Executor struct {
 	videoTool         *media.GenerateVideoTool
 	afkTaskRepo       *repository.AFKTaskRepository
 	sessionRepo       *repository.SessionRepository
+	sandboxMode       string       // "off" or "non_main"
+	sandboxExecutor   *SandboxExecutor
 }
 
 // ExecutorContext holds context for tool execution
@@ -202,6 +205,39 @@ func (e *Executor) SetRepositories(afkTaskRepo *repository.AFKTaskRepository, se
 	if e.videoTool != nil {
 		e.videoTool.SetAsyncTaskCallback(e.createAsyncAFKTask)
 	}
+}
+
+// SetSandbox configures Docker sandbox for non-main sessions
+func (e *Executor) SetSandbox(mode, image string) {
+	e.sandboxMode = mode
+	if mode == "non_main" {
+		e.sandboxExecutor = NewSandboxExecutor(image)
+	}
+}
+
+// shouldUseSandbox returns true if the current session should run in sandbox, and the work dir to use
+func (e *Executor) shouldUseSandbox(ctx context.Context) (bool, string) {
+	if e.sandboxMode != "non_main" || e.sandboxExecutor == nil || e.sessionRepo == nil {
+		return false, ""
+	}
+	sessionID, _ := ctx.Value(contextkeys.SessionID).(string)
+	if sessionID == "" {
+		return false, ""
+	}
+	session, err := e.sessionRepo.GetByID(ctx, sessionID)
+	if err != nil || session == nil || session.IsMainSession {
+		return false, ""
+	}
+	workDir := session.WorkDir
+	if workDir == "" {
+		if dirs := e.validator.GetConfig().WorkingDirectories; len(dirs) > 0 {
+			workDir = dirs[0]
+		}
+	}
+	if workDir == "" {
+		workDir = "."
+	}
+	return true, workDir
 }
 
 // createAsyncAFKTask creates an AFK task for async video generation

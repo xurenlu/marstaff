@@ -1,0 +1,8 @@
+# Lightweight sandbox image for non-main session tool execution
+# Usage: docker run --rm -v <workdir>:/workspace -w /workspace alpine:latest sh -c "<command>"
+# This Dockerfile provides a minimal image; alpine:latest is used by default.
+# For custom sandbox with additional tools (e.g. git, findutils):
+FROM alpine:latest
+RUN apk add --no-cache coreutils findutils
+# Default workdir for mounted volume
+WORKDIR /workspace

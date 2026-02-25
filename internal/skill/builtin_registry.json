@@ -1,0 +1,52 @@
+{
+  "skills": [
+    {
+      "id": "calculator",
+      "name": "Calculator",
+      "description": "Perform mathematical calculations and unit conversions",
+      "install_url": "https://raw.githubusercontent.com/rocky/marstaff/main/skills/calculator/SKILL.md",
+      "version": "1.0.0",
+      "author": "Marstaff"
+    },
+    {
+      "id": "weather",
+      "name": "Weather",
+      "description": "Get current weather and forecasts for any location",
+      "install_url": "https://raw.githubusercontent.com/rocky/marstaff/main/skills/weather/SKILL.md",
+      "version": "1.0.0",
+      "author": "Marstaff"
+    },
+    {
+      "id": "todo",
+      "name": "Todo",
+      "description": "Manage todo items: add, list, update, complete tasks",
+      "install_url": "https://raw.githubusercontent.com/rocky/marstaff/main/skills/todo/SKILL.md",
+      "version": "1.0.0",
+      "author": "Marstaff"
+    },
+    {
+      "id": "web_search",
+      "name": "Web Search",
+      "description": "Open Google search for queries and research",
+      "install_url": "https://raw.githubusercontent.com/rocky/marstaff/main/skills/web_search/SKILL.md",
+      "version": "1.0.0",
+      "author": "Marstaff"
+    },
+    {
+      "id": "file_ops",
+      "name": "File Operations",
+      "description": "Read, write, list, and search files in workspace",
+      "install_url": "https://raw.githubusercontent.com/rocky/marstaff/main/skills/file_ops/SKILL.md",
+      "version": "1.0.0",
+      "author": "Marstaff"
+    },
+    {
+      "id": "git_workflow",
+      "name": "Git Workflow",
+      "description": "Git operations: status, commit, push, pull, branch, merge",
+      "install_url": "https://raw.githubusercontent.com/rocky/marstaff/main/skills/git_workflow/SKILL.md",
+      "version": "1.0.0",
+      "author": "Marstaff"
+    }
+  ]
+}

@@ -18,6 +18,7 @@ type StreamResult struct {
 	Content   string
 	Thinking  string
 	ToolCalls []ToolCall
+	Usage     Usage
 }
 
 // streamToolCall is used to accumulate partial tool calls from stream
@@ -40,6 +41,7 @@ func ParseSSEStream(stream io.ReadCloser, onChunk func(StreamDelta)) (*StreamRes
 
 	var content, thinking string
 	toolCallsByIndex := make(map[int]*ToolCall)
+	var usage Usage
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -59,13 +61,17 @@ func ParseSSEStream(stream io.ReadCloser, onChunk func(StreamDelta)) (*StreamRes
 			Choices []struct {
 				Delta struct {
 					Content   string           `json:"content"`
-					Thinking  string          `json:"thinking"`
+					Thinking  string           `json:"thinking"`
 					ToolCalls []streamToolCall `json:"tool_calls"`
 				} `json:"delta"`
 			} `json:"choices"`
+			Usage *Usage `json:"usage"`
 		}
 		if err := json.Unmarshal([]byte(payload), &chunk); err != nil {
 			continue
+		}
+		if chunk.Usage != nil && (chunk.Usage.PromptTokens > 0 || chunk.Usage.CompletionTokens > 0) {
+			usage = *chunk.Usage
 		}
 		if len(chunk.Choices) == 0 {
 			continue
@@ -110,5 +116,6 @@ func ParseSSEStream(stream io.ReadCloser, onChunk func(StreamDelta)) (*StreamRes
 		Content:   content,
 		Thinking:  thinking,
 		ToolCalls: toolCalls,
+		Usage:     usage,
 	}, scanner.Err()
 }

@@ -21,6 +21,11 @@ deps:
 
 build: build-gateway
 
+build-onboard:
+	@echo "Building onboard CLI..."
+	@mkdir -p $(BINARY_DIR)
+	$(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BINARY_DIR)/onboard $(CMD_DIR)/onboard/main.go
+
 build-gateway:
 	@echo "Building Marstaff server..."
 	@mkdir -p $(BINARY_DIR)
@@ -73,12 +78,18 @@ migrate-down:
 	@echo "Running database migrations down..."
 	@echo "Please run manually: mysql -u root -p marstaff < migrations/001_init_schema.down.sql"
 
+onboard: build-onboard
+	@echo "Running onboard wizard..."
+	./$(BINARY_DIR)/onboard
+
 help:
 	@echo "Available targets:"
 	@echo "  all           - Install dependencies and build"
 	@echo "  deps          - Install dependencies"
 	@echo "  build         - Build server binary"
 	@echo "  build-gateway - Build server binary"
+	@echo "  build-onboard - Build onboard CLI"
+	@echo "  onboard       - Run interactive config wizard"
 	@echo "  clean         - Remove build artifacts"
 	@echo "  test          - Run tests"
 	@echo "  test-coverage - Run tests with coverage"

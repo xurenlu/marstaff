@@ -17,10 +17,18 @@ import (
 //   - depth (int, optional): Maximum depth for recursive listing (default: unlimited)
 // Returns: A formatted list of directory contents
 func (e *Executor) toolListDir(ctx context.Context, params map[string]interface{}) (string, error) {
-	// Extract parameters
 	path, err := getString(params, "path", true)
 	if err != nil {
 		return "", err
+	}
+
+	// Sandbox: non-main sessions run in Docker
+	if useSandbox, workDir := e.shouldUseSandbox(ctx); useSandbox {
+		cmd := "ls -la '" + path + "'"
+		if getBool(params, "recursive", false) {
+			cmd = "ls -R '" + path + "'"
+		}
+		return e.sandboxExecutor.RunCommand(ctx, workDir, cmd)
 	}
 
 	recursive := getBool(params, "recursive", false)

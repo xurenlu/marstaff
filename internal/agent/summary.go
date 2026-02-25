@@ -178,10 +178,15 @@ func (s *SummaryService) GetSummaryWithRecent(ctx context.Context, sessionID str
 		return "", nil, fmt.Errorf("failed to get session: %w", err)
 	}
 
-	// Get recent messages
+	// Get recent messages (GetLastNBySessionID returns DESC order; reverse to ASC for API)
 	messages, err := s.messageRepo.GetLastNBySessionID(ctx, sessionID, recentCount)
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to get recent messages: %w", err)
+	}
+
+	// Reverse to chronological order (API requires assistant+tool_calls to be followed by tool messages)
+	for i, j := 0, len(messages)-1; i < j; i, j = i+1, j-1 {
+		messages[i], messages[j] = messages[j], messages[i]
 	}
 
 	// Convert to provider messages

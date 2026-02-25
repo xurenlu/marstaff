@@ -15,15 +15,22 @@ import (
 //   - content (string, required): The content to write
 // Returns: A success message
 func (e *Executor) toolWriteFile(ctx context.Context, params map[string]interface{}) (string, error) {
-	// Extract parameters
 	path, err := getString(params, "path", true)
 	if err != nil {
 		return "", err
 	}
-
 	content, err := getString(params, "content", true)
 	if err != nil {
 		return "", err
+	}
+
+	// Sandbox: non-main sessions run in Docker
+	if useSandbox, workDir := e.shouldUseSandbox(ctx); useSandbox {
+		err := e.sandboxExecutor.WriteFile(ctx, workDir, path, content)
+		if err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("Successfully wrote %d bytes to %s", len(content), path), nil
 	}
 
 	// Validate path for write operation (uses session work_dir from ctx when in edit mode)

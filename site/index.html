@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Marstaff — Go 版 AI Agent 平台</title>
+  <meta name="description" content="可扩展的智能助手框架，支持多模态对话、工具调用、设备控制与离场任务。">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="noise"></div>
+
+  <header class="header">
+    <a href="/" class="logo">
+      <span class="logo-mark">M</span>
+      <span class="logo-text">marstaff</span>
+    </a>
+    <nav class="nav">
+      <a href="#features">特性</a>
+      <a href="#scenarios">场景</a>
+      <a href="#download">获取</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="hero-badge">Go 1.25+ · 自托管</div>
+      <h1 class="hero-title">
+        <span class="line">你的 AI 助手，</span>
+        <span class="line accent">真正听你指挥</span>
+      </h1>
+      <p class="hero-desc">
+        截图直接问、帮你操作电脑、睡觉时也能帮你盯着事儿 —— 一个助手全搞定。数据在你自己手里，想用哪个 AI 就换哪个，不被谁绑架。
+      </p>
+      <div class="hero-cta">
+        <a href="#download" class="btn btn-primary">立即下载</a>
+      </div>
+    </section>
+
+    <section id="scenarios" class="scenarios">
+      <h2 class="section-title">人不在，AI 替你盯着</h2>
+      <p class="section-subtitle">离场任务：设定条件，到点或达标就动。不是提醒，是替你干活。</p>
+      <div class="scenario-grid">
+        <article class="scenario-card">
+          <span class="scenario-icon">✈️</span>
+          <h3>机票神价监控</h3>
+          <p>设定「北京→上海、转机≤4 小时、总价≤1000 元」—— 一旦出现符合条件的机票，立刻推飞书、企业微信或邮件。不用天天刷携程，神价来了你第一个知道。</p>
+        </article>
+        <article class="scenario-card">
+          <span class="scenario-icon">📈</span>
+          <h3>股票 / 基金提醒</h3>
+          <p>监控某只股票：跌到目标价、涨超 5%、或触及止损线，立即通知。你睡觉，AI 盯盘。到点推你，该加仓加仓，该跑路跑路。</p>
+        </article>
+        <article class="scenario-card">
+          <span class="scenario-icon">📧</span>
+          <h3>邮件跟进自动催促</h3>
+          <p>某个 follow-up 中的邮件，对方 15 天没回复？自动发邮件跟进催促。不用记着谁该催了，AI 替你盯着，到点就发，省心省力。</p>
+        </article>
+        <article class="scenario-card">
+          <span class="scenario-icon">📝</span>
+          <h3>央行利率分析自动发文</h3>
+          <p>为博客官网预先准备两篇文章：一篇分析央行为何降息，一篇分析为何加息。一旦新闻公布官方结果，根据是加息还是降息自动发布对应分析文章，热点来了你第一个发。</p>
+        </article>
+        <article class="scenario-card">
+          <span class="scenario-icon">🛒</span>
+          <h3>抢购 / 秒杀提醒</h3>
+          <p>某商品上架、库存补货、或降价到目标价？定时抓取页面，条件满足立刻推你。618、双十一，不用蹲点刷新，到点叫你。</p>
+        </article>
+        <article class="scenario-card">
+          <span class="scenario-icon">🛍️</span>
+          <h3>1688 自动砍价</h3>
+          <p>自动上 1688 搜索某款商品，检查规格参数是否符合要求，并和客服砍价。自备多套砍价说辞轮番上阵，砍价成功后立刻通知你。省下的钱和时间，都是你的。</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="features" class="features">
+      <h2 class="section-title">为什么选 Marstaff？</h2>
+      <p class="section-subtitle">不是玩具，是能干活的生产力工具</p>
+      <div class="feature-grid">
+        <article class="feature-card">
+          <span class="feature-icon">⚡</span>
+          <h3>想用谁就用谁</h3>
+          <p>通义、DeepSeek、Gemini、Claude、Ollama 本地模型……一个配置切换，不被单一厂商绑架。</p>
+        </article>
+        <article class="feature-card">
+          <span class="feature-icon">🖼</span>
+          <h3>截图直接问</h3>
+          <p>界面看不懂？代码有 bug？文档太长？截图丢给 AI，秒懂。真正的多模态，不是摆设。</p>
+        </article>
+        <article class="feature-card">
+          <span class="feature-icon">📱</span>
+          <h3>在哪聊都行</h3>
+          <p>Web、飞书、企业微信、Discord、Slack —— 你习惯哪个，就接哪个。一个后端，全平台同步。</p>
+        </article>
+        <article class="feature-card">
+          <span class="feature-icon">🧩</span>
+          <h3>技能随便装</h3>
+          <p>SKILL.md 格式，像插件一样扩展。内置技能市场，搜到即装，让 AI 会算账、查天气、跑工作流。</p>
+        </article>
+        <article class="feature-card">
+          <span class="feature-icon">⏰</span>
+          <h3>人不在也能干</h3>
+          <p>定时任务、股票监控、日志分析、文件变更……你睡觉，AI 干活。到点推飞书、企业微信或邮件。</p>
+        </article>
+        <article class="feature-card">
+          <span class="feature-icon">🔧</span>
+          <h3>真能操作电脑</h3>
+          <p>读文件、跑命令、Git 操作、浏览器自动化、文生图/视频。不是只会聊，是能动手。</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="download" class="download">
+      <h2 class="section-title">马上开始</h2>
+      <p class="download-desc">根据你的平台下载，解压后双击即可运行。</p>
+      <div class="download-buttons">
+        <a id="download-mac" href="#" class="btn btn-large btn-secondary download-platform-btn" data-platform="darwin-arm64" data-label="macOS">
+          <span class="download-platform-icon">🍎</span>
+          <span>下载 macOS 版</span>
+        </a>
+        <a id="download-win" href="#" class="btn btn-large btn-secondary download-platform-btn" data-platform="windows-amd64.exe" data-label="Windows">
+          <span class="download-platform-icon">🪟</span>
+          <span>下载 Windows 版</span>
+        </a>
+        <a id="download-linux" href="#" class="btn btn-large btn-secondary download-platform-btn" data-platform="linux-amd64" data-label="Linux">
+          <span class="download-platform-icon">🐧</span>
+          <span>下载 Linux 版</span>
+        </a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <p>Marstaff · Go 版 AI Agent 平台 · <a href="https://github.com/rocky/marstaff/blob/main/CHANGELOG.md">v1.8.0-rc1</a></p>
+    <p class="footer-meta">自托管 · 数据在你手中</p>
+  </footer>
+
+  <script>
+    (function() {
+      var sections = document.querySelectorAll('.features, .scenarios, .download');
+      var observer = new IntersectionObserver(function(entries) {
+        entries.forEach(function(entry) {
+          if (entry.isIntersecting) entry.target.classList.add('visible');
+        });
+      }, { threshold: 0.15, rootMargin: '0px 0px -50px 0px' });
+      sections.forEach(function(s) { observer.observe(s); });
+    })();
+
+    (function() {
+      var base = 'https://github.com/rocky/marstaff/releases/latest/download';
+      var ua = navigator.userAgent || navigator.appVersion || '';
+      var detected = 'linux-amd64';
+
+      if (/Mac|iPhone|iPad|iPod/.test(ua) || (navigator.platform || '').indexOf('Mac') >= 0) {
+        detected = 'darwin-arm64';
+      } else if (/Win|Windows/.test(ua) || (navigator.platform || '').indexOf('Win') >= 0) {
+        detected = 'windows-amd64.exe';
+      } else if (/Linux/.test(ua) || (navigator.platform || '').indexOf('Linux') >= 0) {
+        detected = 'linux-amd64';
+      }
+
+      var btns = document.querySelectorAll('.download-platform-btn');
+      btns.forEach(function(btn) {
+        var platform = btn.getAttribute('data-platform');
+        var url = base + '/marstaff-' + platform;
+        btn.href = url;
+        btn.download = 'marstaff-' + platform;
+        if (platform === detected) {
+          btn.classList.remove('btn-secondary');
+          btn.classList.add('btn-primary');
+        }
+      });
+    })();
+  </script>
+</body>
+</html>

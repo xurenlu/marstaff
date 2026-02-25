@@ -59,6 +59,41 @@
             background-clip: text;
         }
 
+        .headline {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 10px;
+            background: linear-gradient(90deg, #cd5c5c, #f4a460, #daa520, #cd853f, #b8860b, #cd5c5c);
+            background-size: 200% auto;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            opacity: 0;
+            transform: translateY(10px);
+            transition: opacity 0.5s ease, transform 0.5s ease;
+        }
+
+        .headline.flash {
+            animation: marsShimmer 1.5s ease-out forwards;
+        }
+
+        .headline.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        @keyframes marsShimmer {
+            0% {
+                background-position: 0% center;
+            }
+            50% {
+                background-position: 100% center;
+            }
+            100% {
+                background-position: 100% center;
+            }
+        }
+
         .tagline {
             color: var(--text-secondary);
             font-size: 1.2rem;
@@ -204,6 +239,10 @@
                 font-size: 2rem;
             }
 
+            .headline {
+                font-size: 1.1rem;
+            }
+
             .tagline {
                 font-size: 1rem;
             }
@@ -218,10 +257,24 @@
     <div class="container">
         <div class="logo">
             <h1>Marstaff</h1>
+            <p class="headline" id="headline">你的 AI 助手，真正听你指挥</p>
         </div>
         <p class="tagline">选择模式开始使用 / Choose your mode</p>
 
         <div class="mode-cards">
+            <!-- AFK Mode Card -->
+            <div class="mode-card afk" onclick="selectMode('afk')">
+                <div class="mode-icon">⏰</div>
+                <h2>挂机 App</h2>
+                <p>Manage and monitor AFK/idle agents running background tasks.</p>
+                <ul class="feature-list">
+                    <li>查看挂机任务</li>
+                    <li>监控运行状态</li>
+                    <li>任务管理</li>
+                    <li>定时任务</li>
+                </ul>
+            </div>
+
             <!-- Chat Mode Card -->
             <div class="mode-card chat" onclick="selectMode('chat')">
                 <div class="mode-icon">💬</div>
@@ -247,19 +300,6 @@
                     <li>技术任务</li>
                 </ul>
             </div>
-
-            <!-- AFK Mode Card -->
-            <div class="mode-card afk" onclick="selectMode('afk')">
-                <div class="mode-icon">⏰</div>
-                <h2>挂机 App</h2>
-                <p>Manage and monitor AFK/idle agents running background tasks.</p>
-                <ul class="feature-list">
-                    <li>查看挂机任务</li>
-                    <li>监控运行状态</li>
-                    <li>任务管理</li>
-                    <li>定时任务</li>
-                </ul>
-            </div>
         </div>
 
         <footer class="footer">
@@ -279,6 +319,19 @@
                 window.location.href = '/afk';
             }
         }
+
+        // Trigger headline flash animation after 1 second
+        document.addEventListener('DOMContentLoaded', function() {
+            setTimeout(function() {
+                const headline = document.getElementById('headline');
+                if (headline) {
+                    headline.classList.add('visible');
+                    setTimeout(function() {
+                        headline.classList.add('flash');
+                    }, 100);
+                }
+            }, 1000);
+        });
     </script>
 </body>
 </html>

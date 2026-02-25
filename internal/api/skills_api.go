@@ -3,10 +3,12 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
@@ -157,15 +159,28 @@ func (api *SkillsAPI) InstallSkill(c *gin.Context) {
 	var content string
 
 	if req.URL != "" {
-		// Download from URL
-		// For security, only allow GitHub URLs or localhost
-		if !strings.HasPrefix(req.URL, "https://github.com/") && !strings.HasPrefix(req.URL, "http://localhost") {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Only GitHub URLs are supported"})
+		// Download from URL - allow https (GitHub raw, registry APIs, etc.)
+		if !strings.HasPrefix(req.URL, "https://") && !strings.HasPrefix(req.URL, "http://localhost") {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Only HTTPS and localhost URLs are supported"})
 			return
 		}
-		// TODO: Implement URL fetching
-		c.JSON(http.StatusNotImplemented, gin.H{"error": "URL installation not yet implemented"})
-		return
+		client := &http.Client{Timeout: 30 * time.Second}
+		resp, err := client.Get(req.URL)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to fetch URL: " + err.Error()})
+			return
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "URL returned status " + resp.Status})
+			return
+		}
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read URL content"})
+			return
+		}
+		content = string(body)
 	} else if req.Content != "" {
 		content = req.Content
 	} else {
