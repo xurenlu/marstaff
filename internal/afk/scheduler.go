@@ -83,23 +83,45 @@ func (s *Scheduler) checkAndExecuteTasks(ctx context.Context) {
 
 	now := time.Now()
 
-	// Get tasks scheduled for execution
+	// 1. Cron/scheduled tasks (next_execution_time based)
 	tasks, err := s.taskRepo.GetPendingTasks(ctx, now)
 	if err != nil {
 		log.Error().Err(err).Msg("failed to get pending tasks")
+	} else {
+		for _, task := range tasks {
+			go s.executeTask(ctx, task)
+		}
+		if len(tasks) > 0 {
+			log.Info().Int("count", len(tasks)).Msg("executing pending cron AFK tasks")
+		}
+	}
+
+	// 2. AI-driven / heartbeat tasks (CheckInterval based)
+	aiTasks, err := s.taskRepo.GetByTypeAndStatus(ctx, model.AFKTaskTypeAIDriven, model.AFKTaskStatusActive)
+	if err != nil {
+		log.Error().Err(err).Msg("failed to get AI-driven tasks")
 		return
 	}
-
-	if len(tasks) == 0 {
-		return
+	for _, task := range aiTasks {
+		if s.shouldExecuteHeartbeatTask(task, now) {
+			go s.executeTask(ctx, task)
+			log.Info().Str("task_id", task.ID).Str("task_name", task.Name).Msg("executing heartbeat/AI-driven task")
+		}
 	}
+}
 
-	log.Info().Int("count", len(tasks)).Msg("executing pending AFK tasks")
-
-	for _, task := range tasks {
-		// Execute in background to avoid blocking
-		go s.executeTask(ctx, task)
+// shouldExecuteHeartbeatTask returns true if the AI-driven task is due (LastExecutionTime + CheckInterval <= now)
+func (s *Scheduler) shouldExecuteHeartbeatTask(task *model.AFKTask, now time.Time) bool {
+	interval := task.TriggerConfig.CheckInterval
+	if interval <= 0 {
+		interval = 30 // default 30 minutes
 	}
+	threshold := time.Duration(interval) * time.Minute
+
+	if task.LastExecutionTime == nil {
+		return true // never executed, run now
+	}
+	return now.Sub(*task.LastExecutionTime) >= threshold
 }
 
 // checkAsyncTasks checks the status of async tasks (video generation, etc.)

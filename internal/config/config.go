@@ -16,8 +16,20 @@ type Config struct {
 	OSS       OSSConfig       `mapstructure:"oss"`
 	Workspace WorkspaceConfig `mapstructure:"workspace"`
 	Skills    SkillsConfig    `mapstructure:"skills"`
+	Security  SecurityConfig  `mapstructure:"security"`
 	Adapters  []AdapterConfig `mapstructure:"adapters"`
 	Log       LogConfig       `mapstructure:"log"`
+}
+
+// SecurityConfig holds security-related settings
+type SecurityConfig struct {
+	Sandbox SandboxConfig `mapstructure:"sandbox"`
+}
+
+// SandboxConfig controls Docker sandbox for non-main sessions
+type SandboxConfig struct {
+	Mode  string `mapstructure:"mode"`  // "off" (default), "non_main" (run non-main sessions in Docker)
+	Image string `mapstructure:"image"` // Docker image (default: alpine:latest)
 }
 
 // WorkspaceConfig holds workspace configuration for programming mode
@@ -52,8 +64,14 @@ type ProviderConfig struct {
 	Default  string                 `mapstructure:"default"`
 	ZAI      map[string]interface{} `mapstructure:"zai"`
 	Qwen     map[string]interface{} `mapstructure:"qwen"`
+	Gemini   map[string]interface{} `mapstructure:"gemini"`
+	DeepSeek map[string]interface{} `mapstructure:"deepseek"`
+	MiniMax  map[string]interface{} `mapstructure:"minimax"`
+	MiniMaxIntl map[string]interface{} `mapstructure:"minimax_intl"`
 	OpenAI   map[string]interface{} `mapstructure:"openai"`
 	Zhipu    map[string]interface{} `mapstructure:"zhipu"`
+	Ollama   map[string]interface{} `mapstructure:"ollama"`
+	VLLM     map[string]interface{} `mapstructure:"vllm"`
 	Fallback []string               `mapstructure:"fallback"`
 }
 
@@ -76,8 +94,9 @@ type OSSConfig struct {
 
 // SkillsConfig holds skills configuration
 type SkillsConfig struct {
-	Path    string `mapstructure:"path"`
-	AutoLoad bool   `mapstructure:"auto_load"`
+	Path        string `mapstructure:"path"`
+	AutoLoad    bool   `mapstructure:"auto_load"`
+	RegistryURL string `mapstructure:"registry_url"` // Optional: URL for remote skill discovery (e.g. ClawHub)
 }
 
 // AdapterConfig holds IM adapter configuration
@@ -124,6 +143,12 @@ func Load(configPath string) (*Config, error) {
 	expandEnvInProviderConfig(config.Provider.ZAI)
 	expandEnvInProviderConfig(config.Provider.OpenAI)
 	expandEnvInProviderConfig(config.Provider.Zhipu)
+	expandEnvInProviderConfig(config.Provider.Gemini)
+	expandEnvInProviderConfig(config.Provider.DeepSeek)
+	expandEnvInProviderConfig(config.Provider.MiniMax)
+	expandEnvInProviderConfig(config.Provider.MiniMaxIntl)
+	expandEnvInProviderConfig(config.Provider.Ollama)
+	expandEnvInProviderConfig(config.Provider.VLLM)
 
 	// Expand environment variables in media configs
 	expandEnvInProviderConfig(config.Media.Wanxiang26)
@@ -197,5 +222,11 @@ func setDefaults(c *Config) {
 	}
 	if c.Log.Output == "" {
 		c.Log.Output = "stdout"
+	}
+	if c.Security.Sandbox.Mode == "" {
+		c.Security.Sandbox.Mode = "off"
+	}
+	if c.Security.Sandbox.Mode == "non_main" && c.Security.Sandbox.Image == "" {
+		c.Security.Sandbox.Image = "alpine:latest"
 	}
 }

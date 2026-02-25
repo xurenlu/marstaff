@@ -51,7 +51,8 @@ type CreateSessionRequest struct {
 	WorkDir          string  `json:"work_dir,omitempty"`          // edit mode: restrict file/command ops to this dir
 	WorkingDirectory string  `json:"working_directory,omitempty"` // alias for work_dir
 	ProjectID        string  `json:"project_id,omitempty"`        // project association (programming mode)
-	Mode             string  `json:"mode,omitempty"`              // "chat" | "programming"
+	Mode             string  `json:"mode,omitempty"`               // "chat" | "programming"
+	IsMainSession    *bool   `json:"is_main_session,omitempty"`   // true=direct chat (default); false=group/channel (sandbox applies)
 }
 
 // CreateSessionResponse is a response for creating a session
@@ -93,6 +94,11 @@ func (api *SessionAPI) CreateSession(c *gin.Context) {
 		UserID: user.ID,
 		Title:  req.Title,
 		Model:  req.Model,
+	}
+	if req.IsMainSession != nil {
+		session.IsMainSession = *req.IsMainSession
+	} else {
+		session.IsMainSession = req.Platform == "web"
 	}
 
 	if req.ParentID != "" {
@@ -698,6 +704,11 @@ func (api *SessionAPI) CreateSessionDirect(ctx context.Context, req *CreateSessi
 		UserID: user.ID,
 		Title:  req.Title,
 		Model:  req.Model,
+	}
+	if req.IsMainSession != nil {
+		session.IsMainSession = *req.IsMainSession
+	} else {
+		session.IsMainSession = req.Platform == "web"
 	}
 
 	if req.ParentID != "" {

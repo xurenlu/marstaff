@@ -17,10 +17,14 @@ import (
 //   - limit (int, optional): The maximum number of bytes to read (default: read entire file)
 // Returns: The file contents as a string
 func (e *Executor) toolReadFile(ctx context.Context, params map[string]interface{}) (string, error) {
-	// Extract parameters
 	path, err := getString(params, "path", true)
 	if err != nil {
 		return "", err
+	}
+
+	// Sandbox: non-main sessions run in Docker (offset/limit not supported in sandbox)
+	if useSandbox, workDir := e.shouldUseSandbox(ctx); useSandbox {
+		return e.sandboxExecutor.ReadFile(ctx, workDir, path)
 	}
 
 	offset, err := getInt(params, "offset", false, 0)

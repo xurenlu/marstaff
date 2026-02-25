@@ -38,7 +38,11 @@ provider:
     api_key: "${MINIMAX_API_KEY}"
     base_url: "https://api.minimax.chat/v1"
     model: "abab6.5s-chat"
-    group_id: "${MINIMAX_GROUP_ID}"  # Optional
+    group_id: "${MINIMAX_GROUP_ID}"  # 中国版可选
+  minimax_intl:
+    api_key: "${MINIMAX_API_KEY}"
+    # base_url 默认 https://api.minimaxi.com/v1 国际版
+    model: "abab6.5s-chat"
   gemini:
     api_key: "${GEMINI_API_KEY}"
     base_url: "https://generativelanguage.googleapis.com/v1beta/openai"
@@ -51,6 +55,14 @@ provider:
     api_key: "${ZHIPU_API_KEY}"
     base_url: "https://open.bigmodel.cn/api/paas/v4"
     model: "glm-4-flash"
+  ollama:
+    base_url: "http://localhost:11434/v1"
+    model: "llama3.2"
+    # api_key optional (Ollama does not validate, use "ollama" as placeholder)
+  vllm:
+    base_url: "http://localhost:8000/v1"
+    model: "meta-llama/Llama-2-7b-chat-hf"
+    # api_key optional (vLLM typically does not validate)
   fallback:
     - "qwen"
 
@@ -81,6 +93,14 @@ adapters:
       homeserver: "https://matrix.org"
       bot_username: "${MATRIX_BOT_USERNAME}"
       bot_password: "${MATRIX_BOT_PASSWORD}"
+  - type: "discord"
+    enabled: false
+    config:
+      bot_token: "${DISCORD_BOT_TOKEN}"
+  - type: "slack"
+    enabled: false
+    config:
+      bot_token: "${SLACK_BOT_TOKEN}"
   - type: "websocket"
     enabled: true
     config:
@@ -98,6 +118,14 @@ afk:
 skills:
   path: "./skills"
   auto_load: true
+  # registry_url: ""  # Optional: remote skill discovery. Builtin registry (calculator, weather) is always available.
+  # ClawHub-compatible: use JSON API returning {"skills": [...]} with id, name, description, install_url (or tagline/homepage)
+
+# Security: sandbox for non-main sessions (e.g. group/channel sessions)
+security:
+  sandbox:
+    mode: "off"   # "off" | "non_main" (run non-main sessions in Docker sandbox)
+    image: "alpine:latest"  # Docker image for sandbox (requires Docker)
 
 log:
   level: "debug"   # 排查时用 debug，生产用 info

@@ -257,7 +257,12 @@ func (e *TaskExecutor) executeCustomAction(ctx context.Context, task *model.AFKT
 func (e *TaskExecutor) buildAIPrompt(task *model.AFKTask) string {
 	var prompt strings.Builder
 
-	prompt.WriteString(task.TriggerConfig.AIPrompt)
+	aiPrompt := strings.TrimSpace(task.TriggerConfig.AIPrompt)
+	if aiPrompt == "" {
+		// Default heartbeat prompt when AIPrompt is empty
+		aiPrompt = "检查是否有待办事项需要处理，或是否有需要关注的事项。如有需要，请执行相应操作。"
+	}
+	prompt.WriteString(aiPrompt)
 
 	if len(task.TriggerConfig.ContextMessages) > 0 {
 		prompt.WriteString("\n\nContext:\n")

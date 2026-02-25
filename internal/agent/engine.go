@@ -121,12 +121,16 @@ func (e *Engine) Chat(ctx context.Context, req *ChatRequest) (*ChatResponse, err
 	}
 
 	// Create provider request (no tools in plan mode)
+	tools := e.getProviderTools(req)
 	providerReq := provider.ChatCompletionRequest{
 		Model:       req.Model,
 		Messages:    messages,
-		Tools:       e.getProviderTools(req),
+		Tools:       tools,
 		Temperature: req.Temperature,
 		Thinking:    req.Thinking,
+	}
+	if len(tools) > 0 {
+		providerReq.ToolChoice = "auto"
 	}
 
 	p := e.provider
@@ -165,8 +169,9 @@ func (e *Engine) Chat(ctx context.Context, req *ChatRequest) (*ChatResponse, err
 	return response, nil
 }
 
-// GenerateSessionTitle generates a short summary (≤15 chars) of user message for session title
-func (e *Engine) GenerateSessionTitle(ctx context.Context, userContent string) string {
+// GenerateSessionTitle generates a short summary (≤15 chars) of user message for session title.
+// providerOverride: when non-nil, uses this provider (e.g. user's selected chat_provider) instead of engine default.
+func (e *Engine) GenerateSessionTitle(ctx context.Context, userContent string, providerOverride provider.Provider) string {
 	if userContent == "" {
 		return "新对话"
 	}
@@ -185,7 +190,11 @@ func (e *Engine) GenerateSessionTitle(ctx context.Context, userContent string) s
 		Tools:       nil,
 		Temperature: 0.3,
 	}
-	completion, err := e.provider.CreateChatCompletion(ctx, providerReq)
+	p := e.provider
+	if providerOverride != nil {
+		p = providerOverride
+	}
+	completion, err := p.CreateChatCompletion(ctx, providerReq)
 	if err != nil {
 		// Use rune-based truncation for logging
 		n := 50
@@ -223,7 +232,26 @@ type StreamChunkCallback func(contentDelta, thinkingDelta string)
 
 // ChatStreamWithCallback processes a chat request with streaming response.
 // Calls onChunk for each content and thinking delta. Returns full response when done.
+// When tools are present and provider is Qwen, uses non-streaming for the first call to avoid
+// Qwen's streaming+tool_calls compatibility issues (empty response).
 func (e *Engine) ChatStreamWithCallback(ctx context.Context, req *ChatRequest, onChunk StreamChunkCallback) (*ChatResponse, error) {
+	tools := e.getProviderTools(req)
+	p := e.provider
+	if req.ProviderOverride != nil {
+		p = req.ProviderOverride
+	}
+	useNonStreaming := len(tools) > 0 && p.Name() == "qwen"
+	if useNonStreaming {
+		resp, err := e.Chat(ctx, req)
+		if err != nil {
+			return nil, err
+		}
+		if onChunk != nil && (resp.Content != "" || resp.Thinking != "") {
+			onChunk(resp.Content, resp.Thinking)
+		}
+		return resp, nil
+	}
+
 	messages, err := e.buildContext(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build context: %w", err)
@@ -232,16 +260,15 @@ func (e *Engine) ChatStreamWithCallback(ctx context.Context, req *ChatRequest, o
 	providerReq := provider.ChatCompletionRequest{
 		Model:       req.Model,
 		Messages:    messages,
-		Tools:       e.getProviderTools(req),
+		Tools:       tools,
 		Temperature: req.Temperature,
 		Stream:      true,
 		Thinking:    req.Thinking,
 	}
-
-	p := e.provider
-	if req.ProviderOverride != nil {
-		p = req.ProviderOverride
+	if len(tools) > 0 {
+		providerReq.ToolChoice = "auto"
 	}
+
 	stream, err := p.CreateChatCompletionStream(ctx, providerReq)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create stream: %w", err)
@@ -259,9 +286,10 @@ func (e *Engine) ChatStreamWithCallback(ctx context.Context, req *ChatRequest, o
 	}
 
 	resp := &ChatResponse{
-		Content:  result.Content,
-		Thinking: result.Thinking,
+		Content:   result.Content,
+		Thinking:  result.Thinking,
 		ToolCalls: result.ToolCalls,
+		Usage:     result.Usage,
 	}
 
 	if e.memory != nil && req.SessionID != "" && resp.Content != "" {
@@ -304,17 +332,81 @@ func (e *Engine) buildContext(ctx context.Context, req *ChatRequest) ([]provider
 		}
 
 		// Check if we need to generate a summary after this request
-		go e.checkAndSummarize(ctx, req.SessionID)
+		// Pass ProviderOverride so summary uses user's selected chat provider (not config default)
+		go e.checkAndSummarize(ctx, req.SessionID, req.ProviderOverride)
 	}
 
 	// Add current messages
 	messages = append(messages, req.Messages...)
 
+	// Sanitize: API requires assistant+tool_calls to be followed by tool messages.
+	// Strip tool_calls from any assistant message not followed by matching tool responses.
+	messages = sanitizeMessagesForToolCalls(messages)
+
 	return messages, nil
 }
 
-// checkAndSummarize checks if conversation needs summarization and generates it if needed
-func (e *Engine) checkAndSummarize(ctx context.Context, sessionID string) {
+// sanitizeMessagesForToolCalls ensures every assistant message with tool_calls
+// is followed by tool messages. If not, strips tool_calls AND the following
+// tool messages to avoid API 400 (tool messages require preceding tool_calls).
+// Also drops leading orphaned tool messages (e.g. from history truncation).
+func sanitizeMessagesForToolCalls(messages []provider.Message) []provider.Message {
+	// Drop leading tool messages (history truncation can leave them without preceding assistant+tool_calls)
+	start := 0
+	for start < len(messages) && messages[start].Role == provider.RoleTool {
+		start++
+	}
+	if start > 0 {
+		log.Debug().Int("dropped", start).Msg("dropped leading orphaned tool messages for API compatibility")
+	}
+	messages = messages[start:]
+
+	result := make([]provider.Message, 0, len(messages))
+	for i := 0; i < len(messages); i++ {
+		msg := messages[i]
+		if msg.Role != provider.RoleAssistant || len(msg.ToolCalls) == 0 {
+			if msg.Role == provider.RoleTool {
+				// Orphaned tool message (e.g. mid-history truncation), drop it
+				continue
+			}
+			result = append(result, msg)
+			continue
+		}
+		// Collect tool_call_ids that need responses
+		needIDs := make(map[string]bool)
+		for _, tc := range msg.ToolCalls {
+			needIDs[tc.ID] = true
+		}
+		// Check if following messages are tool responses for these IDs
+		j := i + 1
+		for j < len(messages) && messages[j].Role == provider.RoleTool {
+			delete(needIDs, messages[j].ToolCallID)
+			j++
+		}
+		if len(needIDs) > 0 {
+			// Incomplete: strip tool_calls from assistant and DROP the following
+			// tool messages. Orphaned tool messages cause "tool must follow
+			// tool_calls" API errors (Qwen, OpenAI-compatible).
+			assistantCopy := msg
+			assistantCopy.ToolCalls = nil
+			result = append(result, assistantCopy)
+			// Skip the tool messages we're dropping (i+1 .. j-1)
+			i = j - 1
+			log.Debug().Int("index", i).Msg("stripped orphaned tool_calls and following tool messages for API compatibility")
+		} else {
+			// Complete: keep assistant + tool messages
+			for k := i; k < j; k++ {
+				result = append(result, messages[k])
+			}
+			i = j - 1
+		}
+	}
+	return result
+}
+
+// checkAndSummarize checks if conversation needs summarization and generates it if needed.
+// providerOverride: when non-nil, uses this provider (e.g. user's selected chat_provider) instead of engine default.
+func (e *Engine) checkAndSummarize(ctx context.Context, sessionID string, providerOverride provider.Provider) {
 	if sessionID == "" || e.memory == nil {
 		return
 	}
@@ -342,8 +434,8 @@ func (e *Engine) checkAndSummarize(ctx context.Context, sessionID string) {
 		return // Not enough new messages yet
 	}
 
-	// Generate summary
-	summary := e.summarizeConversation(ctx, sessionID)
+	// Generate summary (use providerOverride when available to respect user's chat_provider choice)
+	summary := e.summarizeConversation(ctx, sessionID, providerOverride)
 	if summary != "" {
 		if err := e.memory.sessionRepo.UpdateSummary(ctx, sessionID, summary); err != nil {
 			log.Warn().Err(err).Str("session_id", sessionID).Msg("failed to update conversation summary")
@@ -351,8 +443,9 @@ func (e *Engine) checkAndSummarize(ctx context.Context, sessionID string) {
 	}
 }
 
-// summarizeConversation generates a summary of the conversation history
-func (e *Engine) summarizeConversation(ctx context.Context, sessionID string) string {
+// summarizeConversation generates a summary of the conversation history.
+// providerOverride: when non-nil, uses this provider instead of engine default.
+func (e *Engine) summarizeConversation(ctx context.Context, sessionID string, providerOverride provider.Provider) string {
 	// Get all messages for the session
 	messages, err := e.memory.messageRepo.GetAllBySessionID(ctx, sessionID)
 	if err != nil || len(messages) == 0 {
@@ -390,7 +483,11 @@ func (e *Engine) summarizeConversation(ctx context.Context, sessionID string) st
 		MaxTokens:   500,
 	}
 
-	completion, err := e.provider.CreateChatCompletion(ctx, req)
+	p := e.provider
+	if providerOverride != nil {
+		p = providerOverride
+	}
+	completion, err := p.CreateChatCompletion(ctx, req)
 	if err != nil {
 		log.Warn().Err(err).Str("session_id", sessionID).Msg("failed to generate conversation summary")
 		return ""
@@ -551,9 +648,11 @@ func (m *PersistentMemory) SaveMessages(ctx context.Context, sessionID string, m
 	var dbMessages []*model.Message
 	for _, msg := range messages {
 		dbMessages = append(dbMessages, &model.Message{
-			SessionID: sessionID,
-			Role:      model.MessageRole(msg.Role),
-			Content:   msg.Content,
+			SessionID:  sessionID,
+			Role:       model.MessageRole(msg.Role),
+			Content:    msg.Content,
+			ToolCalls:  convertToolCalls(msg.ToolCalls),
+			ToolCallID: msg.ToolCallID,
 		})
 	}
 
@@ -562,6 +661,25 @@ func (m *PersistentMemory) SaveMessages(ctx context.Context, sessionID string, m
 	}
 
 	return nil
+}
+
+// convertToolCalls converts provider ToolCalls to model ToolCalls
+func convertToolCalls(calls []provider.ToolCall) model.ToolCalls {
+	if calls == nil {
+		return nil
+	}
+	result := make(model.ToolCalls, len(calls))
+	for i, tc := range calls {
+		result[i] = model.ToolCall{
+			ID:   tc.ID,
+			Type: tc.Type,
+			Function: model.ToolCallFunction{
+				Name:      tc.Function.Name,
+				Arguments: tc.Function.Arguments,
+			},
+		}
+	}
+	return result
 }
 
 // GetHistory retrieves message history for a session
@@ -578,12 +696,36 @@ func (m *PersistentMemory) GetHistory(ctx context.Context, sessionID string, lim
 	result := make([]provider.Message, len(messages))
 	for i, msg := range messages {
 		result[i] = provider.Message{
-			Role:    provider.MessageRole(msg.Role),
-			Content: msg.Content,
+			Role:       provider.MessageRole(msg.Role),
+			Content:    msg.Content,
+			ToolCalls:  convertModelToolCalls(msg.ToolCalls),
+			ToolCallID: msg.ToolCallID,
 		}
 	}
 
 	return result, nil
+}
+
+// convertModelToolCalls converts model ToolCalls to provider ToolCalls
+func convertModelToolCalls(calls model.ToolCalls) []provider.ToolCall {
+	if calls == nil {
+		return nil
+	}
+	result := make([]provider.ToolCall, len(calls))
+	for i, tc := range calls {
+		result[i] = provider.ToolCall{
+			ID:   tc.ID,
+			Type: tc.Type,
+			Function: struct {
+				Name      string `json:"name"`
+				Arguments string `json:"arguments"`
+			}{
+				Name:      tc.Function.Name,
+				Arguments: tc.Function.Arguments,
+			},
+		}
+	}
+	return result
 }
 
 // GetHistoryWithSummary retrieves both message history and session summary
@@ -600,17 +742,22 @@ func (m *PersistentMemory) GetHistoryWithSummary(ctx context.Context, sessionID 
 		summary = session.Summary
 	}
 
-	// Get recent messages
-	messages, err := m.messageRepo.GetBySessionID(ctx, sessionID, limit)
+	// Get recent messages (GetLastNBySessionID returns DESC; reverse to ASC for correct tool_calls ordering)
+	messages, err := m.messageRepo.GetLastNBySessionID(ctx, sessionID, limit)
 	if err != nil {
 		return nil, "", err
+	}
+	for i, j := 0, len(messages)-1; i < j; i, j = i+1, j-1 {
+		messages[i], messages[j] = messages[j], messages[i]
 	}
 
 	result := make([]provider.Message, len(messages))
 	for i, msg := range messages {
 		result[i] = provider.Message{
-			Role:    provider.MessageRole(msg.Role),
-			Content: msg.Content,
+			Role:       provider.MessageRole(msg.Role),
+			Content:    msg.Content,
+			ToolCalls:  convertModelToolCalls(msg.ToolCalls),
+			ToolCallID: msg.ToolCallID,
 		}
 	}
 

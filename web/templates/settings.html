@@ -292,13 +292,13 @@
         <a href="javascript:history.go(-1)" class="back-link">← 返回对话</a>
         <h1>设置</h1>
 
-        <div class="nav-tabs">
-            <button class="nav-tab active" onclick="switchTab('general')">通用设置</button>
-            <button class="nav-tab" onclick="switchTab('skills')">技能管理</button>
-            <button class="nav-tab" onclick="switchTab('rules')">规则管理</button>
-            <button class="nav-tab" onclick="switchTab('mcp')">MCP 服务器</button>
-            <button class="nav-tab" onclick="switchTab('notifications')">通知设置</button>
-            <button class="nav-tab" onclick="switchTab('projects')">项目管理</button>
+        <div class="nav-tabs" id="navTabs">
+            <button class="nav-tab active" data-tab="general">通用设置</button>
+            <button class="nav-tab" data-tab="skills">技能管理</button>
+            <button class="nav-tab" data-tab="rules">规则管理</button>
+            <button class="nav-tab" data-tab="mcp">MCP 服务器</button>
+            <button class="nav-tab" data-tab="notifications">通知设置</button>
+            <button class="nav-tab" data-tab="projects">项目管理</button>
         </div>
 
         <!-- General Settings Tab -->
@@ -325,6 +325,27 @@
                     <label for="chat_gemini">
                         <strong>Gemini 系列</strong> (gemini-2.0-flash-exp)
                         <div class="hint">Google Gemini，实验性支持</div>
+                    </label>
+                </div>
+                <div class="option-row">
+                    <input type="radio" name="chat_provider" id="chat_deepseek" value="deepseek">
+                    <label for="chat_deepseek">
+                        <strong>DeepSeek 系列</strong> (deepseek-chat)
+                        <div class="hint">性价比高，推理能力强，支持 function calling</div>
+                    </label>
+                </div>
+                <div class="option-row">
+                    <input type="radio" name="chat_provider" id="chat_minimax" value="minimax">
+                    <label for="chat_minimax">
+                        <strong>MiniMax 中国版</strong> (abab6.5s-chat)
+                        <div class="hint">api.minimax.chat，需配置 group_id</div>
+                    </label>
+                </div>
+                <div class="option-row">
+                    <input type="radio" name="chat_provider" id="chat_minimax_intl" value="minimax_intl">
+                    <label for="chat_minimax_intl">
+                        <strong>MiniMax 国际版</strong> (abab6.5s-chat)
+                        <div class="hint">api.minimaxi.com，海外用户</div>
                     </label>
                 </div>
                 <button class="save-btn" id="saveChatBtn">保存</button>
@@ -688,17 +709,56 @@ This skill does something useful..." style="width: 100%; padding: 0.75rem; backg
         document.documentElement.setAttribute('data-theme', savedTheme);
 
         // Tab switching
-        function switchTab(tabName) {
+        function showTab(tabName) {
+            const btn = document.querySelector('.nav-tab[data-tab="' + tabName + '"]');
+            if (!btn) return;
             document.querySelectorAll('.nav-tab').forEach(tab => tab.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+            btn.classList.add('active');
+            const panel = document.getElementById('tab-' + tabName);
+            if (panel) panel.classList.add('active');
 
-            document.querySelector(`.nav-tab[onclick="switchTab('${tabName}')"]`).classList.add('active');
-            document.getElementById(`tab-${tabName}`).classList.add('active');
+            // Load data for specific tabs
+            if (tabName === 'skills' && typeof loadSkills === 'function') loadSkills();
+            if (tabName === 'rules' && typeof loadRules === 'function') loadRules();
+            if (tabName === 'mcp' && typeof loadMcpServers === 'function') loadMcpServers();
+            if (tabName === 'projects' && typeof loadProjects === 'function') loadProjects();
         }
+        document.getElementById('navTabs').addEventListener('click', function(e) {
+            const btn = e.target.closest('.nav-tab');
+            if (!btn || !btn.dataset.tab) return;
+            showTab(btn.dataset.tab);
+        });
+        // Handle hash on load (e.g. /settings#projects)
+        const hashTab = window.location.hash.slice(1);
+        if (hashTab) showTab(hashTab);
 
         // ===== CHAT PROVIDER SETTINGS =====
         const savedChatProvider = localStorage.getItem('marstaff_chat_provider') || 'zai';
-        document.querySelector(`input[name="chat_provider"][value="${savedChatProvider}"]`).checked = true;
+        const chatProviderEl = document.querySelector(`input[name="chat_provider"][value="${savedChatProvider}"]`);
+        if (chatProviderEl) chatProviderEl.checked = true;
+
+        fetch(`${API_BASE}/api/settings?t=${Date.now()}`)
+            .then(r => r.ok ? r.json() : null)
+            .then(data => {
+                if (data) {
+                    if (data.chat_providers) {
+                        const providers = data.chat_providers;
+                        ['zai', 'qwen', 'gemini', 'deepseek', 'minimax', 'minimax_intl'].forEach(name => {
+                            const el = document.getElementById(`chat_${name}`);
+                            if (el && !providers.includes(name)) el.closest('.option-row')?.remove();
+                        });
+                    }
+                    if (data.vision_providers) {
+                        const providers = data.vision_providers;
+                        const qwenEl = document.getElementById('vision_qwen');
+                        const zaiEl = document.getElementById('vision_zai');
+                        if (!providers.includes('qwen')) qwenEl?.closest('.option-row')?.remove();
+                        if (!providers.includes('zai')) zaiEl?.closest('.option-row')?.remove();
+                    }
+                }
+            })
+            .catch(() => {});
 
         document.getElementById('saveChatBtn').addEventListener('click', () => {
             const val = document.querySelector('input[name="chat_provider"]:checked')?.value || 'zai';
@@ -710,20 +770,7 @@ This skill does something useful..." style="width: 100%; padding: 0.75rem; backg
 
         // ===== VISION SETTINGS =====
         const saved = localStorage.getItem('marstaff_vision_provider') || 'qwen';
-        document.querySelector(`input[name="vision_provider"][value="${saved}"]`).checked = true;
-
-        fetch(`${API_BASE}/api/settings?t=${Date.now()}`)
-            .then(r => r.ok ? r.json() : null)
-            .then(data => {
-                if (data && data.vision_providers) {
-                    const providers = data.vision_providers;
-                    const qwenEl = document.getElementById('vision_qwen');
-                    const zaiEl = document.getElementById('vision_zai');
-                    if (!providers.includes('qwen')) qwenEl?.closest('.option-row')?.remove();
-                    if (!providers.includes('zai')) zaiEl?.closest('.option-row')?.remove();
-                }
-            })
-            .catch(() => {});
+        document.querySelector(`input[name="vision_provider"][value="${saved}"]`)?.checked = true;
 
         document.getElementById('saveVisionBtn').addEventListener('click', () => {
             const val = document.querySelector('input[name="vision_provider"]:checked')?.value || 'qwen';
@@ -991,9 +1038,6 @@ This skill does something useful..." style="width: 100%; padding: 0.75rem; backg
         // ===== SKILLS MANAGEMENT =====
         let skills = [];
 
-        // Load skills when tab is first opened
-        document.querySelector('.nav-tab[onclick="switchTab(\'skills\')"]').addEventListener('click', loadSkills);
-
         async function loadSkills() {
             try {
                 const response = await fetch(`${API_BASE}/api/skills`);
@@ -1174,8 +1218,6 @@ This skill does something useful..." style="width: 100%; padding: 0.75rem; backg
         // ===== RULES MANAGEMENT =====
         let rules = [];
 
-        document.querySelector('.nav-tab[onclick="switchTab(\'rules\')"]').addEventListener('click', loadRules);
-
         async function loadRules() {
             try {
                 const response = await fetch(`${API_BASE}/api/rules?user_id=default`);
@@ -1338,8 +1380,6 @@ This skill does something useful..." style="width: 100%; padding: 0.75rem; backg
 
         // ===== MCP SERVERS MANAGEMENT =====
         let mcpServers = [];
-
-        document.querySelector('.nav-tab[onclick="switchTab(\'mcp\')"]').addEventListener('click', loadMcpServers);
 
         async function loadMcpServers() {
             try {

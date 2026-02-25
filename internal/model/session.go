@@ -18,9 +18,10 @@ type Session struct {
 	SystemPrompt string         `gorm:"type:text" json:"system_prompt,omitempty"`
 	Summary      string         `gorm:"type:text" json:"summary,omitempty"` // Compressed conversation summary
 	Metadata     string         `gorm:"type:json;default:NULL" json:"metadata,omitempty"`
-	IsAFKMode    bool           `gorm:"default:false" json:"is_afk_mode"`       // Whether session is in AFK mode
-	AFKSince     *time.Time     `json:"afk_since,omitempty"`                   // When AFK mode started
-	PendingTasks int            `gorm:"default:0" json:"pending_tasks"`         // Number of pending async tasks
+	IsAFKMode      bool       `gorm:"default:false" json:"is_afk_mode"`       // Whether session is in AFK mode
+	AFKSince       *time.Time `json:"afk_since,omitempty"`                   // When AFK mode started
+	PendingTasks   int        `gorm:"default:0" json:"pending_tasks"`         // Number of pending async tasks
+	IsMainSession  bool       `gorm:"default:true" json:"is_main_session"`    // true=user's direct chat; false=group/channel (sandbox applies when non-main)
 	CreatedAt    time.Time      `json:"created_at"`
 	UpdatedAt    time.Time      `json:"updated_at"`
 	DeletedAt    gorm.DeletedAt `gorm:"index" json:"-"`

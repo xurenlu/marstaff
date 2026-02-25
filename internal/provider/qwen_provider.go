@@ -72,6 +72,7 @@ func (p *QwenProvider) CreateChatCompletion(ctx context.Context, req ChatComplet
 		TopP        float64        `json:"top_p,omitempty"`
 		Stream      bool           `json:"stream,omitempty"`
 		Tools       []Tool         `json:"tools,omitempty"`
+		ToolChoice  interface{}    `json:"tool_choice,omitempty"`
 	}
 
 	qwenReq := QwenRequest{
@@ -81,6 +82,7 @@ func (p *QwenProvider) CreateChatCompletion(ctx context.Context, req ChatComplet
 		TopP:        req.TopP,
 		Stream:      req.Stream,
 		Tools:       req.Tools,
+		ToolChoice:  req.ToolChoice,
 	}
 
 	for _, msg := range req.Messages {
@@ -177,6 +179,7 @@ func (p *QwenProvider) CreateChatCompletionStream(ctx context.Context, req ChatC
 		TopP        float64        `json:"top_p,omitempty"`
 		Stream      bool           `json:"stream,omitempty"`
 		Tools       []Tool         `json:"tools,omitempty"`
+		ToolChoice  interface{}    `json:"tool_choice,omitempty"`
 	}
 
 	qwenReq := QwenRequest{
@@ -186,6 +189,7 @@ func (p *QwenProvider) CreateChatCompletionStream(ctx context.Context, req ChatC
 		TopP:        req.TopP,
 		Stream:      req.Stream,
 		Tools:       req.Tools,
+		ToolChoice:  req.ToolChoice,
 	}
 
 	for _, msg := range req.Messages {

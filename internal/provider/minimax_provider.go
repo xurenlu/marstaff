@@ -250,6 +250,37 @@ func (p *MiniMaxProvider) SupportedModels() []string {
 	}
 }
 
+// minimaxIntlWrapper wraps MiniMaxProvider to identify as international version
+type minimaxIntlWrapper struct {
+	*MiniMaxProvider
+}
+
+func (p *minimaxIntlWrapper) Name() string {
+	return "minimax_intl"
+}
+
+// NewMiniMaxIntlProvider creates MiniMax provider for international (api.minimaxi.com)
+func NewMiniMaxIntlProvider(config map[string]interface{}) (Provider, error) {
+	cfg := copyConfig(config)
+	if _, ok := cfg["base_url"]; !ok {
+		cfg["base_url"] = "https://api.minimaxi.com/v1"
+	}
+	p, err := NewMiniMaxProvider(cfg)
+	if err != nil {
+		return nil, err
+	}
+	return &minimaxIntlWrapper{p.(*MiniMaxProvider)}, nil
+}
+
+func copyConfig(m map[string]interface{}) map[string]interface{} {
+	out := make(map[string]interface{}, len(m))
+	for k, v := range m {
+		out[k] = v
+	}
+	return out
+}
+
 func init() {
 	RegisterProvider("minimax", NewMiniMaxProvider)
+	RegisterProvider("minimax_intl", NewMiniMaxIntlProvider)
 }

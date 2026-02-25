@@ -22,18 +22,27 @@ var errMaxResultsReached = errors.New("maximum search results reached")
 //   - recursive (bool, optional): Whether to search recursively (default: true)
 // Returns: A list of matching files
 func (e *Executor) toolSearchFiles(ctx context.Context, params map[string]interface{}) (string, error) {
-	// Extract parameters
 	pattern, err := getString(params, "pattern", true)
 	if err != nil {
 		return "", err
 	}
-
 	searchPath, err := getString(params, "path", false)
 	if err != nil {
 		return "", err
 	}
 	if searchPath == "" {
 		searchPath = "."
+	}
+
+	// Sandbox: non-main sessions run in Docker
+	if useSandbox, workDir := e.shouldUseSandbox(ctx); useSandbox {
+		// find with -name pattern; escape single quotes in pattern
+		escaped := strings.ReplaceAll(pattern, "'", "'\"'\"'")
+		cmd := "find '" + searchPath + "' -name '" + escaped + "'"
+		if !getBool(params, "recursive", true) {
+			cmd += " -maxdepth 1"
+		}
+		return e.sandboxExecutor.RunCommand(ctx, workDir, cmd)
 	}
 
 	recursive := getBool(params, "recursive", true)
