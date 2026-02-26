@@ -101,6 +101,7 @@ type ChatRequest struct {
 	PlanMode         bool // when true, LLM outputs plan only, no tool execution
 	Thinking         *provider.ThinkingParams // Thinking mode (for Zhipu GLM, etc.)
 	ProviderOverride provider.Provider       // when set (e.g. for vision), use this provider instead of default
+	SkipHistory      bool // when true, do not load history (caller already provided full context, e.g. from summary service)
 }
 
 // ChatResponse is the response from chat completion
@@ -158,12 +159,12 @@ func (e *Engine) Chat(ctx context.Context, req *ChatRequest) (*ChatResponse, err
 		response.ToolCalls = completion.Choices[0].Message.ToolCalls
 	}
 
-	// Save to memory
-	if e.memory != nil && req.SessionID != "" {
-		e.memory.SaveMessages(ctx, req.SessionID, append(req.Messages, provider.Message{
+	// Save assistant response to memory (user messages are saved by caller)
+	if e.memory != nil && req.SessionID != "" && response.Content != "" {
+		e.memory.SaveMessages(ctx, req.SessionID, provider.Message{
 			Role:    provider.RoleAssistant,
 			Content: response.Content,
-		})...)
+		})
 	}
 
 	return response, nil
@@ -292,11 +293,12 @@ func (e *Engine) ChatStreamWithCallback(ctx context.Context, req *ChatRequest, o
 		Usage:     result.Usage,
 	}
 
+	// Save assistant response to memory (user messages are saved by caller)
 	if e.memory != nil && req.SessionID != "" && resp.Content != "" {
-		e.memory.SaveMessages(ctx, req.SessionID, append(req.Messages, provider.Message{
+		e.memory.SaveMessages(ctx, req.SessionID, provider.Message{
 			Role:    provider.RoleAssistant,
 			Content: resp.Content,
-		})...)
+		})
 	}
 
 	return resp, nil
@@ -316,7 +318,8 @@ func (e *Engine) buildContext(ctx context.Context, req *ChatRequest) ([]provider
 	}
 
 	// Add conversation history (with summary if available)
-	if e.memory != nil && req.SessionID != "" {
+	// Skip when SkipHistory=true: caller (e.g. gateway with summary service) already provided full context
+	if e.memory != nil && req.SessionID != "" && !req.SkipHistory {
 		history, summary, err := e.memory.GetHistoryWithSummary(ctx, req.SessionID, e.summaryConfig.KeepRecent)
 		if err != nil {
 			log.Warn().Err(err).Msg("failed to get history, continuing without it")
@@ -330,9 +333,9 @@ func (e *Engine) buildContext(ctx context.Context, req *ChatRequest) ([]provider
 			}
 			messages = append(messages, history...)
 		}
-
-		// Check if we need to generate a summary after this request
-		// Pass ProviderOverride so summary uses user's selected chat provider (not config default)
+	}
+	// Always check if we need to generate a summary after this request
+	if e.memory != nil && req.SessionID != "" {
 		go e.checkAndSummarize(ctx, req.SessionID, req.ProviderOverride)
 	}
 
@@ -502,25 +505,36 @@ func (e *Engine) summarizeConversation(ctx context.Context, sessionID string, pr
 // buildSystemPrompt builds the system prompt with available skills
 func (e *Engine) buildSystemPrompt(ctx context.Context, req *ChatRequest) string {
 	skills := e.skillRegistry.ListEnabled()
-
-	if len(skills) == 0 {
-		return "You are a helpful AI assistant."
-	}
+	tools := e.GetToolCount()
 
 	var prompt strings.Builder
-	prompt.WriteString("You are a helpful AI assistant with the following skills available:\n\n")
+	// Start with clear identity - this is a local agent with AI capabilities
+	prompt.WriteString("You are Marstaff, a local AI agent platform. You have access to various tools and skills that run locally.\n\n")
 
-	for _, s := range skills {
-		meta := s.Metadata()
-		prompt.WriteString(fmt.Sprintf("- **%s**: %s\n", meta.Name, meta.Description))
+	// When users ask about capabilities, emphasize these are LOCAL tools/skills
+	if len(skills) > 0 || tools > 0 {
+		prompt.WriteString("**Important**: When users ask what you can do or what capabilities you have, clearly explain that these are **local tools and skills** available in this agent platform - NOT capabilities of the cloud AI service. You are an AI assistant helping to orchestrate these local capabilities.\n\n")
 	}
 
-	prompt.WriteString("\nUse these skills when appropriate to help the user.")
-	prompt.WriteString("\n\nWhen a user asks for something that requires a skill, explain what you're going to do before doing it.")
+	if len(skills) == 0 {
+		prompt.WriteString("You are a helpful AI assistant.")
+	} else {
+		prompt.WriteString("**Available skills in this local agent:**\n\n")
+		for _, s := range skills {
+			meta := s.Metadata()
+			prompt.WriteString(fmt.Sprintf("- **%s**: %s\n", meta.Name, meta.Description))
+		}
+		if tools > 0 {
+			prompt.WriteString(fmt.Sprintf("\nPlus %d additional tools for file operations, media processing, device control, etc.\n", tools))
+		}
+		prompt.WriteString("\nUse these local skills and tools when appropriate to help the user.")
+		prompt.WriteString("\n\nWhen a user asks for something that requires a skill or tool, explain what you're going to do before doing it.")
+	}
 
 	// Plan mode: output plan only, no tool execution
 	if req != nil && req.PlanMode {
 		prompt.WriteString("\n\n**PLAN MODE**: You are in plan mode. Output a clear, step-by-step plan for the user's request. Do NOT execute any tools or take actions. Wait for the user to confirm before proceeding.")
+		prompt.WriteString("\n\nFor screen automation tasks (open webpage, search, click result, extract content): include steps like: 1) Connect device (device_browser_connect), 2) Navigate (device_browser_navigate), 3) Screenshot (device_screen_snapshot), 4) Analyze (device_screen_analyze), 5) Tap/Input (device_browser_tap, device_browser_input_to), 6) Wait (device_screen_wait), 7) Extract content (device_browser_get_text), 8) Summarize.")
 	}
 
 	// Inject todo list into context when available
@@ -537,6 +551,18 @@ func (e *Engine) buildSystemPrompt(ctx context.Context, req *ChatRequest) string
 	// Add current time context
 	if currentTime := ctx.Value("current_time"); currentTime != nil {
 		prompt.WriteString(fmt.Sprintf("\n\nCurrent time: %s", currentTime))
+	}
+
+	// Browser workflow: when user asks to analyze/identify webpage content (e.g. hot news, headlines)
+	if _, hasNav := e.tools["device_browser_navigate"]; hasNav {
+		prompt.WriteString("\n\n**Browser content analysis**: When user asks to view a webpage and identify/analyze its content (e.g. hot news, headlines, trends): 1) device_browser_navigate to the URL, 2) device_browser_get_text or device_browser_get_html with selector 'body' to extract full page content, 3) analyze the returned text. Do NOT rely on screenshot for text extraction; use get_text/get_html.")
+		prompt.WriteString(" For search-result tasks (e.g. Baidu search, click first non-ad result): use device_screen_analyze with task_hint 'identify ad labels, find first non-ad result link' to distinguish ads from organic results, then device_browser_tap at the element center.")
+	}
+
+
+	// Screen automation: when screen tools are available, guide decision loop
+	if _, hasAnalyze := e.tools["device_screen_analyze"]; hasAnalyze {
+		prompt.WriteString("\n\n**Screen automation**: When device_screen_analyze returns elements with bounds and center coordinates, use device_browser_tap (or device_android_tap/device_windows_tap) with the center (x,y) to click. Flow: device_screen_snapshot → device_screen_analyze → tap/input at coordinates → device_screen_wait → repeat until goal reached. For search result pages, use task_hint in device_screen_analyze to identify non-ad results (e.g. 'find first non-ad link'). Prefer device_browser_get_text for final content extraction.")
 	}
 
 	return prompt.String()
@@ -781,6 +807,9 @@ func (m *PersistentMemory) CreateSession(ctx context.Context, userID, title, mod
 
 // GetSession retrieves a session
 func (m *PersistentMemory) GetSession(ctx context.Context, sessionID string) (*model.Session, error) {
+	if sessionID == "" {
+		return nil, nil
+	}
 	return m.sessionRepo.GetByID(ctx, sessionID)
 }
 
