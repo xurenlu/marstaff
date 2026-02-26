@@ -145,13 +145,13 @@ func (e *InstallExecutor) RegisterBuiltInTools() {
 
 	// Rule management tools
 	e.engine.RegisterTool("create_rule",
-		"Create a new system prompt rule",
+		"Create a new custom rule that will be injected into the system prompt. Users can say 'create a rule: always respond in Chinese' or '创建规则：用中文回答'. After creating, use activate_rule to enable it.",
 		map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
 				"name": map[string]interface{}{
 					"type":        "string",
-					"description": "Rule name",
+					"description": "Rule name (e.g., 'Chinese Only', 'Code Review Style')",
 				},
 				"description": map[string]interface{}{
 					"type":        "string",
@@ -159,7 +159,7 @@ func (e *InstallExecutor) RegisterBuiltInTools() {
 				},
 				"content": map[string]interface{}{
 					"type":        "string",
-					"description": "The actual system prompt/rule content",
+					"description": "The actual rule content that will be added to system prompt (e.g., 'Always respond in Chinese', 'When reviewing code, focus on security issues')",
 				},
 				"category": map[string]interface{}{
 					"type":        "string",
@@ -172,7 +172,7 @@ func (e *InstallExecutor) RegisterBuiltInTools() {
 	)
 
 	e.engine.RegisterTool("update_rule",
-		"Update an existing rule",
+		"Update an existing rule. Use list_rules to see available rules.",
 		map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
@@ -207,7 +207,7 @@ func (e *InstallExecutor) RegisterBuiltInTools() {
 	)
 
 	e.engine.RegisterTool("delete_rule",
-		"Delete a rule by ID",
+		"Delete a rule by ID. Use list_rules to see available rules.",
 		map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
@@ -222,7 +222,7 @@ func (e *InstallExecutor) RegisterBuiltInTools() {
 	)
 
 	e.engine.RegisterTool("activate_rule",
-		"Set a rule as the active rule for the user",
+		"Activate a rule to inject it into the system prompt. Only one rule can be active at a time. Users can say 'activate Chinese Only rule' or '激活中文规则'.",
 		map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
@@ -237,7 +237,7 @@ func (e *InstallExecutor) RegisterBuiltInTools() {
 	)
 
 	e.engine.RegisterTool("list_rules",
-		"List all rules for a user",
+		"List all rules. Users can say 'list rules' or '查看所有规则'. Shows which rule is currently active.",
 		map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
