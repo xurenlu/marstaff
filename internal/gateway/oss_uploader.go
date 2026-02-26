@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"mime/multipart"
+	"net/http"
 	"strings"
 	"time"
 
@@ -221,4 +222,87 @@ func (u *OSSUploader) UploadVideoFile(data []byte, filename string) (*UploadResp
 // UploadImageFile uploads an image file to OSS
 func (u *OSSUploader) UploadImageFile(data []byte, filename string) (*UploadResponse, error) {
 	return u.UploadBytes(data, filename, "image/jpeg")
+}
+
+// DownloadAndUploadVideo downloads a video from URL and uploads it to OSS
+// Returns the OSS URL and a channel that signals completion
+func (u *OSSUploader) DownloadAndUploadVideo(videoURL string) (string, <-chan *UploadResult) {
+	resultChan := make(chan *UploadResult, 1)
+
+	go func() {
+		defer close(resultChan)
+
+		log.Info().Str("source_url", videoURL).Msg("starting video download from DashScope")
+
+		// Download video from URL
+		client := &http.Client{
+			Timeout: 120 * time.Second,
+			Transport: &http.Transport{
+				DisableKeepAlives: true,
+			},
+		}
+
+		resp, err := client.Get(videoURL)
+		if err != nil {
+			log.Error().Err(err).Str("url", videoURL).Msg("failed to download video")
+			resultChan <- &UploadResult{Error: err.Error()}
+			return
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			err := fmt.Errorf("download failed with status %d", resp.StatusCode)
+			log.Error().Err(err).Str("url", videoURL).Int("status", resp.StatusCode).Msg("failed to download video")
+			resultChan <- &UploadResult{Error: err.Error()}
+			return
+		}
+
+		// Read video data
+		data, err := io.ReadAll(resp.Body)
+		if err != nil {
+			log.Error().Err(err).Str("url", videoURL).Msg("failed to read video data")
+			resultChan <- &UploadResult{Error: err.Error()}
+			return
+		}
+
+		log.Info().
+			Str("source_url", videoURL).
+			Int("size_bytes", len(data)).
+			Msg("video downloaded successfully, uploading to OSS")
+
+		// Generate filename
+		timestamp := time.Now().Format("20060102_150405")
+		filename := fmt.Sprintf("videos/%s.mp4", timestamp)
+
+		// Upload to OSS
+		uploadResp, err := u.UploadVideoFile(data, filename)
+		if err != nil {
+			log.Error().Err(err).Str("filename", filename).Msg("failed to upload video to OSS")
+			resultChan <- &UploadResult{Error: err.Error()}
+			return
+		}
+
+		log.Info().
+			Str("oss_url", uploadResp.URL).
+			Str("filename", uploadResp.Filename).
+			Int64("size", uploadResp.Size).
+			Msg("video uploaded to OSS successfully")
+
+		resultChan <- &UploadResult{
+			URL:      uploadResp.URL,
+			Filename: uploadResp.Filename,
+			Size:     uploadResp.Size,
+		}
+	}()
+
+	// Return a placeholder URL immediately - will be updated when upload completes
+	return videoURL, resultChan
+}
+
+// UploadResult represents the result of an async upload operation
+type UploadResult struct {
+	URL      string
+	Filename string
+	Size     int64
+	Error    string
 }

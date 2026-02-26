@@ -770,7 +770,8 @@ This skill does something useful..." style="width: 100%; padding: 0.75rem; backg
 
         // ===== VISION SETTINGS =====
         const saved = localStorage.getItem('marstaff_vision_provider') || 'qwen';
-        document.querySelector(`input[name="vision_provider"][value="${saved}"]`)?.checked = true;
+        const visionEl = document.querySelector(`input[name="vision_provider"][value="${saved}"]`);
+        if (visionEl) visionEl.checked = true;
 
         document.getElementById('saveVisionBtn').addEventListener('click', () => {
             const val = document.querySelector('input[name="vision_provider"]:checked')?.value || 'qwen';

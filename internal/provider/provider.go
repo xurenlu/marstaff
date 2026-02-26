@@ -15,13 +15,24 @@ const (
 	RoleTool      MessageRole = "tool"
 )
 
+// ImageURLStruct is the struct for ImageURL (for construction from other packages)
+type ImageURLStruct struct {
+	URL string `json:"url"` // data:image/png;base64,... or https://...
+}
+
 // ContentPart represents a part of multimodal message content
 type ContentPart struct {
 	Type     string `json:"type,omitempty"` // "text" or "image_url"
 	Text     string `json:"text,omitempty"`
-	ImageURL *struct {
-		URL string `json:"url"` // data:image/png;base64,... or https://...
-	} `json:"image_url,omitempty"`
+	ImageURL *ImageURLStruct `json:"image_url,omitempty"`
+}
+
+// NewImageURLPart creates a ContentPart for an image URL (for vision APIs)
+func NewImageURLPart(url string) ContentPart {
+	return ContentPart{
+		Type:     "image_url",
+		ImageURL: &ImageURLStruct{URL: url},
+	}
 }
 
 // Message represents a chat message

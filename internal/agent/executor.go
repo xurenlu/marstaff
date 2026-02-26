@@ -155,7 +155,7 @@ func (e *Executor) ExecuteWithToolsStream(ctx context.Context, req *ChatRequest,
 		return resp, nil
 	}
 
-	maxIterations := 5
+	maxIterations := 15 // allow more steps for screen automation (snapshot→analyze→tap→wait loop)
 	iteration := 0
 
 	for len(resp.ToolCalls) > 0 && iteration < maxIterations {

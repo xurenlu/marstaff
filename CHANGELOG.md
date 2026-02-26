@@ -7,9 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.11.0-rc1] - 2025-02-25
+
+### Added
+
+- **视觉屏幕自动化**：新增 device_screen_snapshot、device_screen_analyze、device_screen_wait 工具，支持基于 Vision 的「看屏决策」自动化流程；与 plan 模式结合，用户可先获得执行计划再确认执行；maxIterations 提升至 15 以支持多步截图→分析→点击→等待循环
+
 ### Fixed
 
 - **摘要生成 provider 错误**：Engine.checkAndSummarize / summarizeConversation 此前始终使用 config 默认 provider（zai），现已改为使用用户选择的 chat_provider（如 qwen），避免用户选择 qwen 时仍向 z.ai 发请求
+
+## [1.10.0-rc5] - 2025-02-25
+
+### Fixed
+
+- **设置页标签无法切换**：修复 `Invalid left-hand side in assignment` 语法错误，vision_provider 的 `?.checked = true` 改为先取元素再赋值
 
 ## [1.10.0-rc4] - 2025-02-25
 

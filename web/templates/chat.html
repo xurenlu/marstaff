@@ -1033,6 +1033,8 @@
             tokensInput: isZh ? '输入' : 'Input',
             tokensOutput: isZh ? '输出' : 'Output',
             tokensTotal: 'tokens',
+            latency: isZh ? '耗时' : 'Latency',
+            seconds: isZh ? '秒' : 's',
             copySuccess: isZh ? '已复制' : 'Copied',
             copyFailed: isZh ? '复制失败' : 'Failed',
             copyMessage: isZh ? '复制消息' : 'Copy message',
@@ -1298,9 +1300,55 @@
             });
         });
 
-        // Initialize
-        init();
+        // === NOTIFICATION SUPPORT ===
+        let notificationPermission = 'default';
 
+        // Request notification permission
+        async function requestNotificationPermission() {
+            if ('Notification' in window) {
+                if (Notification.permission === 'granted') {
+                    notificationPermission = 'granted';
+                    return true;
+                }
+                if (Notification.permission !== 'denied') {
+                    const permission = await Notification.requestPermission();
+                    notificationPermission = permission;
+                    return permission === 'granted';
+                }
+                notificationPermission = 'denied';
+            }
+            return false;
+        }
+
+        // Show system notification
+        function showNotification(title, body, icon, onClick) {
+            if ('Notification' in window && notificationPermission === 'granted') {
+                const options = {
+                    body: body,
+                    icon: icon || '/static/icon-192.png',
+                    badge: '/static/icon-72.png',
+                    tag: 'marstaff-task',
+                    requireInteraction: false
+                };
+
+                const notification = new Notification(title, options);
+
+                // Handle notification click
+                if (onClick) {
+                    notification.onclick = () => {
+                        onClick();
+                        notification.close();
+                    };
+                }
+
+                // Auto-close after 10 seconds
+                setTimeout(() => {
+                    notification.close();
+                }, 10000);
+            }
+        }
+
+        // === INITIALIZATION ===
         async function init() {
             // Single-user mode: fixed user ID (must be set before initializeMode)
             userId = 'default';
@@ -1308,12 +1356,18 @@
             // Initialize mode from URL
             initializeMode();
 
+            // Request notification permission
+            await requestNotificationPermission();
+
             // Connect to WebSocket
             connect();
 
             // Load sessions
             await loadSessions();
         }
+
+        // Initialize (must be called after all variables and functions are declared)
+        init();
 
         async function loadSessions() {
             try {
@@ -1407,7 +1461,34 @@
                         const imageUrls = (msg.content_parts || [])
                             .filter(p => p.type === 'image_url' && p.image_url && p.image_url.url)
                             .map(p => p.image_url.url);
-                        addMessage(role, msg.content, false, imageUrls);
+
+                        // Check if message contains video or image URL ([视频: url] or [图片: url])
+                        const videoMatch = msg.content.match(/\[视频:\s*(https?:\/\/[^\]]+)\]/);
+                        const imageMatch = msg.content.match(/\[图片:\s*(https?:\/\/[^\]]+)\]/);
+                        const mediaMatch = videoMatch || imageMatch;
+                        let extraHtml = '';
+                        if (mediaMatch) {
+                            const mediaUrl = mediaMatch[1];
+                            const isVideo = !!videoMatch;
+                            if (isVideo) {
+                                extraHtml = `<video src="${escapeHtml(mediaUrl)}" controls style="max-width: 100%; border-radius: 8px; margin-top: 8px;"></video>`;
+                                extraHtml += `<a href="${escapeHtml(mediaUrl)}" target="_blank" style="display: inline-block; margin-top: 8px; padding: 8px 16px; background: #4CAF50; color: white; text-decoration: none; border-radius: 6px; font-size: 14px; font-weight: 500;">📥 下载视频</a>`;
+                            } else {
+                                extraHtml = `<img src="${escapeHtml(mediaUrl)}" style="max-width: 100%; border-radius: 8px; margin-top: 8px;" alt="Generated result">`;
+                            }
+                        }
+
+                        // Clean up the media URL from content if present
+                        let cleanContent = msg.content;
+                        if (mediaMatch) {
+                            cleanContent = msg.content.replace(/\[(视频|图片):\s*[^\]]+\]/, '').trim();
+                        }
+
+                        if (extraHtml) {
+                            addMessageWithHtml(role, cleanContent, extraHtml, false);
+                        } else {
+                            addMessage(role, cleanContent, false, imageUrls);
+                        }
                     });
                 } else {
                     // Show welcome message for empty sessions
@@ -1455,6 +1536,9 @@
                 console.error('Failed to delete session:', error);
             }
         }
+
+        let currentClientId = null;
+        let processedMessageIds = new Set();
 
         function connect() {
             ws = new WebSocket(WS_URL + '?user_id=' + userId);
@@ -1563,7 +1647,7 @@
             return msgDiv;
         }
 
-        function finalizeStreamingPlaceholder(content, thinking, usage) {
+        function finalizeStreamingPlaceholder(content, thinking, usage, latency) {
             if (!streamingPlaceholder) return;
             const contentEl = streamingPlaceholder.querySelector('.message-content');
             if (!contentEl) return;
@@ -1580,8 +1664,16 @@
                 contentEl.appendChild(btn);
             }
             const tokensEl = streamingPlaceholder.querySelector('.message-tokens');
-            if (tokensEl && usage && (usage.prompt_tokens > 0 || usage.completion_tokens > 0)) {
-                tokensEl.textContent = `${i18n.tokensInput} ${usage.prompt_tokens || 0} / ${i18n.tokensOutput} ${usage.completion_tokens || 0} ${i18n.tokensTotal}`;
+            if (tokensEl) {
+                let tokenText = '';
+                if (usage && (usage.prompt_tokens > 0 || usage.completion_tokens > 0)) {
+                    tokenText = `${i18n.tokensInput} ${usage.prompt_tokens || 0} / ${i18n.tokensOutput} ${usage.completion_tokens || 0} ${i18n.tokensTotal}`;
+                }
+                if (latency) {
+                    if (tokenText) tokenText += ' | ';
+                    tokenText += `${i18n.latency} ${latency} ${i18n.seconds}`;
+                }
+                tokensEl.textContent = tokenText;
             }
             streamingPlaceholder.classList.remove('streaming');
             const toggle = streamingPlaceholder.querySelector('.thinking-toggle');
@@ -1623,11 +1715,34 @@
         }
 
         function handleWebSocketMessage(data) {
+            // Save current client_id from status message
+            if (data.type === 'status' && data.data && data.data.client_id) {
+                currentClientId = data.data.client_id;
+                console.log('Connected as:', currentClientId);
+                return;
+            }
+
+            // Generate unique message ID for deduplication
+            const messageId = `${data.type}_${data.timestamp || Date.now()}_${JSON.stringify(data.data || '').slice(0, 50)}`;
+
+            // Check if this message was already processed (avoid duplicates from multiple tabs)
+            if (processedMessageIds.has(messageId)) {
+                return;
+            }
+            processedMessageIds.add(messageId);
+
+            // Clean up old message IDs (keep last 100)
+            if (processedMessageIds.size > 100) {
+                const firstId = processedMessageIds.values().next().value;
+                processedMessageIds.delete(firstId);
+            }
+
             switch (data.type) {
                 case 'chat':
                     const content = data.data && data.data.content;
                     let thinking = data.data && data.data.thinking;
                     const usage = data.data && data.data.usage ? data.data.usage : null;
+                    const latency = data.data && data.data.latency ? data.data.latency : null;
                     if (!thinking && streamingThinkingBuffer) {
                         thinking = streamingThinkingBuffer;
                     }
@@ -1636,9 +1751,9 @@
                         loadSessions();
                     }
                     if (streamingPlaceholder) {
-                        finalizeStreamingPlaceholder((content && content.trim()) ? content : i18n.noReply, thinking || '', usage);
+                        finalizeStreamingPlaceholder((content && content.trim()) ? content : i18n.noReply, thinking || '', usage, latency);
                     } else {
-                        addMessage('assistant', (content && content.trim()) ? content : i18n.noReply, true, [], thinking || '', usage);
+                        addMessage('assistant', (content && content.trim()) ? content : i18n.noReply, true, [], thinking || '', usage, latency);
                     }
                     hideTypingIndicator();
                     break;
@@ -1665,11 +1780,6 @@
                     }
                     hideTypingIndicator();
                     break;
-                case 'status':
-                    if (data.data && data.data.client_id) {
-                        console.log('Connected as:', data.data.client_id);
-                    }
-                    break;
                 case 'open_search':
                     if (data.data && data.data.url) {
                         // Open Google search in a new tab
@@ -1688,10 +1798,139 @@
                         }
                     }
                     break;
+                case 'async_task_completed':
+                    // Video/image generation completed
+                    if (data.data && data.data.task) {
+                        const task = data.data.task;
+                        const resultUrl = task.result_url;  // URL is inside task object
+                        const taskType = task.task_type || 'unknown';  // task_type is inside task object
+                        const isFinal = data.data.is_final !== false;
+
+                        console.log('Received task completed:', { task, resultUrl, taskType, isFinal });
+
+                        let messageContent = `✅ 任务完成: ${task.name || 'Async Task'}`;
+                        if (!isFinal) {
+                            messageContent += `\n\n⏳ 视频正在上传到更快的存储服务器...`;
+                        }
+
+                        // Add the media element (video player or image)
+                        const mediaHtml = formatMediaResult(resultUrl, taskType);
+
+                        addMessageWithHtml('assistant', messageContent, mediaHtml);
+
+                        // Send system notification when task is complete
+                        if (isFinal) {
+                            const isVideo = taskType === 'video_generation' ||
+                                           resultUrl.includes('.mp4') ||
+                                           resultUrl.includes('.mov') ||
+                                           resultUrl.includes('.webm');
+                            const notificationTitle = isVideo ? '🎬 视频生成完成' : '✅ 任务完成';
+                            const notificationBody = task.name || '您的异步任务已完成';
+                            showNotification(notificationTitle, notificationBody, null, () => {
+                                // Focus on the chat window when notification is clicked
+                                window.focus();
+                                // Scroll to the latest message
+                                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                            });
+                        }
+                    }
+                    hideTypingIndicator();
+                    break;
+                case 'async_task_url_updated':
+                    // Video URL updated after OSS upload
+                    if (data.data && data.data.task && data.data.success) {
+                        const task = data.data.task;
+                        const newUrl = task.result_url;  // URL is inside task object
+                        const taskType = task.task_type || 'unknown';  // task_type is inside task object
+
+                        console.log('Received URL update:', { task, newUrl, taskType });
+
+                        // Update the last assistant message with new URL
+                        const messages = messagesContainer.querySelectorAll('.message.assistant');
+                        if (messages.length > 0) {
+                            const lastMsg = messages[messages.length - 1];
+                            const contentEl = lastMsg.querySelector('.message-content');
+
+                            // Check if this is the right message (contains uploading text or task name)
+                            if (contentEl && (contentEl.textContent.includes('⏳ 视频正在上传') || contentEl.textContent.includes(task.name))) {
+                                // Remove the "uploading" indicator
+                                const uploadingText = contentEl.querySelector('.uploading-indicator');
+                                if (uploadingText) uploadingText.remove();
+
+                                // Update message content and add video player
+                                const messageContent = `✅ 任务完成: ${task.name || 'Async Task'}`;
+                                const mediaHtml = formatMediaResult(newUrl, taskType);
+
+                                // Update content: keep existing content but replace uploading text with final video
+                                contentEl.innerHTML = formatMessage(messageContent) + mediaHtml;
+
+                                // Add download link
+                                const downloadLink = document.createElement('a');
+                                downloadLink.href = newUrl;
+                                downloadLink.target = '_blank';  // Open in new tab
+                                downloadLink.textContent = '📥 下载视频';
+                                downloadLink.style.cssText = 'display: inline-block; margin-top: 8px; padding: 8px 16px; background: #4CAF50; color: white; text-decoration: none; border-radius: 6px; font-size: 14px; font-weight: 500;';
+                                downloadLink.addEventListener('click', (e) => {
+                                    e.preventDefault();
+                                    // Create a temporary link to trigger download
+                                    const tempLink = document.createElement('a');
+                                    tempLink.href = newUrl;
+                                    tempLink.download = `video_${Date.now()}.mp4`;
+                                    tempLink.target = '_blank';
+                                    document.body.appendChild(tempLink);
+                                    tempLink.click();
+                                    document.body.removeChild(tempLink);
+                                });
+                                contentEl.appendChild(downloadLink);
+
+                                renderMathAndDiagrams(lastMsg);
+
+                                // Scroll to bottom
+                                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+
+                                console.log('Video URL updated successfully:', newUrl);
+
+                                // Send system notification when upload is complete (video is now ready)
+                                const isVideo = taskType === 'video_generation' ||
+                                               newUrl.includes('.mp4') ||
+                                               newUrl.includes('.mov') ||
+                                               newUrl.includes('.webm');
+                                if (isVideo) {
+                                    showNotification('🎬 视频已准备好', '点击查看视频：' + (task.name || ''), null, () => {
+                                        window.focus();
+                                        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                                    });
+                                }
+                            }
+                        }
+                    }
+                    break;
+                case 'async_task_upload_failed':
+                    // Video upload to OSS failed, but original URL still works
+                    if (data.data && data.data.task) {
+                        console.log('Video upload to OSS failed, keeping original URL:', data.data.task.result_url);
+                    }
+                    break;
+                case 'async_task_failed':
+                    // Video/image generation failed
+                    if (data.data && data.data.task) {
+                        const task = data.data.task;
+                        const errorMsg = task.error_message || 'Unknown error';  // error_message is inside task object
+                        addMessage('error', `❌ 任务失败: ${task.name || 'Async Task'}\n\n原因: ${errorMsg}`);
+                    }
+                    hideTypingIndicator();
+                    break;
+                case 'afk_status_changed':
+                    // AFK mode status changed (update UI if needed)
+                    if (data.data) {
+                        console.log('AFK status changed:', data.data);
+                        // Could update UI to show AFK indicator if needed
+                    }
+                    break;
             }
         }
 
-        function addMessage(role, content, scroll = true, imageUrls = [], thinking = '', usage = null) {
+        function addMessage(role, content, scroll = true, imageUrls = [], thinking = '', usage = null, latency = null) {
             const msgDiv = document.createElement('div');
             msgDiv.className = `message ${role}`;
 
@@ -1700,9 +1939,15 @@
 
             // Add header with regenerate/resend button, copy button, and token display
             if (role === 'assistant') {
-                const tokensHtml = usage && (usage.prompt_tokens > 0 || usage.completion_tokens > 0)
-                    ? `<span class="message-tokens">${i18n.tokensInput} ${usage.prompt_tokens || 0} / ${i18n.tokensOutput} ${usage.completion_tokens || 0} ${i18n.tokensTotal}</span>`
-                    : '<span class="message-tokens"></span>';
+                let tokenText = '';
+                if (usage && (usage.prompt_tokens > 0 || usage.completion_tokens > 0)) {
+                    tokenText = `${i18n.tokensInput} ${usage.prompt_tokens || 0} / ${i18n.tokensOutput} ${usage.completion_tokens || 0} ${i18n.tokensTotal}`;
+                }
+                if (latency) {
+                    if (tokenText) tokenText += ' | ';
+                    tokenText += `${i18n.latency} ${latency} ${i18n.seconds}`;
+                }
+                const tokensHtml = `<span class="message-tokens">${tokenText}</span>`;
                 innerHTML += `
                     <div class="message-header">
                         <span class="message-role">Assistant</span>
@@ -1760,6 +2005,41 @@
             }
 
             // Render math and mermaid diagrams
+            renderMathAndDiagrams(msgDiv);
+
+            if (scroll) {
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            }
+        }
+
+        // addMessageWithHtml adds a message with additional HTML content (e.g., video player, image)
+        function addMessageWithHtml(role, content, extraHtml = '', scroll = true) {
+            const msgDiv = document.createElement('div');
+            msgDiv.className = `message ${role}`;
+
+            let innerHTML = `<div class="message-avatar">${getAvatar(role)}</div>`;
+            innerHTML += `<div class="message-wrapper">`;
+
+            // Add header for assistant messages
+            if (role === 'assistant') {
+                innerHTML += `
+                    <div class="message-header">
+                        <span class="message-role">Assistant</span>
+                        <button class="regenerate-btn" onclick="regenerateResponse()" title="Regenerate response">🔄</button>
+                        <button class="copy-message-btn" onclick="copyMessageContent(this.closest('.message'))" title="${i18n.copyMessage}">📋</button>
+                        <span class="message-tokens"></span>
+                    </div>
+                `;
+            }
+
+            let contentHtml = formatMessage(content || '');
+            innerHTML += `<div class="message-content">${contentHtml}${extraHtml}</div>`;
+            innerHTML += `</div>`;
+
+            msgDiv.innerHTML = innerHTML;
+            messagesContainer.appendChild(msgDiv);
+
+            // Render math and diagrams
             renderMathAndDiagrams(msgDiv);
 
             if (scroll) {
@@ -1922,6 +2202,27 @@
                 let html = div.innerHTML;
                 html = html.replace(/\n/g, '<br>');
                 return html;
+            }
+        }
+
+        // formatMediaResult formats a media result (video/image) based on task type
+        function formatMediaResult(url, taskType) {
+            // Check if URL is valid
+            if (!url || url.trim() === '') {
+                return '<div style="color: #888; font-style: italic; margin-top: 8px;">视频加载中...</div>';
+            }
+
+            // Determine if it's a video (by task type or URL extension)
+            const isVideo = taskType === 'video_generation' ||
+                           url.includes('.mp4') ||
+                           url.includes('.mov') ||
+                           url.includes('.webm') ||
+                           url.includes('.gif');
+
+            if (isVideo) {
+                return `<video src="${escapeHtml(url)}" controls style="max-width: 100%; border-radius: 8px; margin-top: 8px;" onerror="this.parentElement.innerHTML='<div style=\\'color: #e74c3c; margin-top: 8px;\\'>视频加载失败，URL 可能无效</div>'"></video>`;
+            } else {
+                return `<img src="${escapeHtml(url)}" style="max-width: 100%; border-radius: 8px; margin-top: 8px;" alt="Generated result" onerror="this.style.display='none'; this.parentElement.innerHTML+='<div style=\\'color: #e74c3c; margin-top: 8px;\\'>图片加载失败</div>'">`;
             }
         }
 
