@@ -130,10 +130,15 @@ func (e *InstallExecutor) RegisterBuiltInTools() {
 	)
 
 	e.engine.RegisterTool("list_skills",
-		"List all installed skills",
+		"List installed skills. By default shows only enabled skills that are actually available. Use show_all=true to see all skills including disabled ones.",
 		map[string]interface{}{
-			"type":       "object",
-			"properties": map[string]interface{}{},
+			"type": "object",
+			"properties": map[string]interface{}{
+				"show_all": map[string]interface{}{
+					"type":        "boolean",
+					"description": "Set to true to show all skills including disabled ones (default: false - only enabled skills)",
+				},
+			},
 		},
 		wrapHandler(e.toolListSkills),
 	)
@@ -543,9 +548,45 @@ func (e *InstallExecutor) toolListSkills(ctx context.Context, input string) (str
 		return "No skills found", nil
 	}
 
-	var output strings.Builder
-	output.WriteString(fmt.Sprintf("Found %d skills:\n\n", len(skills)))
+	// Parse params for show_all option
+	var params struct {
+		ShowAll bool `json:"show_all"`
+	}
+	if input != "" {
+		if err := json.Unmarshal([]byte(input), &params); err != nil {
+			// Ignore parse errors, use default
+		}
+	}
+
+	var enabledSkills []interface{}
+	var allSkills []interface{}
+
 	for _, s := range skills {
+		if skill, ok := s.(map[string]interface{}); ok {
+			allSkills = append(allSkills, skill)
+			if enabled, ok := skill["enabled"].(bool); ok && enabled {
+				enabledSkills = append(enabledSkills, skill)
+			}
+		}
+	}
+
+	// Default to showing only enabled skills
+	skillsToShow := enabledSkills
+	if params.ShowAll {
+		skillsToShow = allSkills
+	}
+
+	var output strings.Builder
+	if params.ShowAll {
+		output.WriteString(fmt.Sprintf("Found %d skills (%d enabled):\n\n", len(allSkills), len(enabledSkills)))
+	} else {
+		output.WriteString(fmt.Sprintf("Found %d enabled skills:\n\n", len(enabledSkills)))
+		if len(allSkills) > len(enabledSkills) {
+			output.WriteString("(Use show_all=true to see all skills including disabled ones)\n\n")
+		}
+	}
+
+	for _, s := range skillsToShow {
 		if skill, ok := s.(map[string]interface{}); ok {
 			name := skill["name"]
 			desc := skill["description"]
