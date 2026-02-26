@@ -44,6 +44,9 @@ type MCPServer struct {
 	CreatedAt   time.Time      `json:"created_at"`
 	UpdatedAt   time.Time      `json:"updated_at"`
 	DeletedAt   gorm.DeletedAt `gorm:"index" json:"-"`
+
+	// Relationships
+	Tools []*MCPTool `gorm:"foreignKey:ServerID" json:"tools,omitempty"`
 }
 
 // BeforeCreate creates a UUID before inserting
