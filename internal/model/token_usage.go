@@ -2,6 +2,8 @@ package model
 
 import (
 	"time"
+
+	"gorm.io/gorm"
 )
 
 // TokenUsage represents token usage tracking for AI model calls
@@ -15,10 +17,22 @@ type TokenUsage struct {
 	CompletionTokens uint           `gorm:"type:int unsigned;default:0" json:"completion_tokens"`
 	TotalTokens      uint           `gorm:"type:int unsigned;default:0" json:"total_tokens"`
 	EstimatedCost    float64        `gorm:"type:decimal(10,6);default:0" json:"estimated_cost"`
-	Metadata         string         `gorm:"type:json;default:'{}'" json:"metadata,omitempty"` // latency, error info, etc.
+	Metadata         string         `gorm:"type:json" json:"metadata,omitempty"` // latency, error info, etc.
 	CreatedAt        time.Time      `gorm:"index:idx_created_at;index:idx_created_date" json:"created_at"`
 	DeletedAt        *time.Time     `gorm:"index" json:"-"`
 
 	// Relationships
 	Session *Session `gorm:"foreignKey:SessionID" json:"-"`
+}
+
+// BeforeSave normalizes JSON columns before create/update
+func (t *TokenUsage) BeforeSave(tx *gorm.DB) error {
+	return t.normalizeJSONColumns()
+}
+
+func (t *TokenUsage) normalizeJSONColumns() error {
+	if t.Metadata == "" {
+		t.Metadata = "{}"
+	}
+	return nil
 }
