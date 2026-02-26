@@ -45,6 +45,13 @@ type VideoGenerationRequest struct {
 	Style          string  `json:"style,omitempty"`          // Optional: style preset
 	NegativePrompt string  `json:"negative_prompt,omitempty"` // Optional: things to avoid
 	Seed           *int    `json:"seed,omitempty"`           // Optional: seed for reproducible results
+	FPS            string  `json:"fps,omitempty"`            // Optional: FPS (e.g., "24", "25", "30", "50")
+	AudioURL       string  `json:"audio_url,omitempty"`      // Optional: URL of audio file to include in video
+	Audio          bool    `json:"audio,omitempty"`          // Optional: whether to generate audio
+	PromptExtend   bool    `json:"prompt_extend,omitempty"`  // Optional: whether to extend prompt automatically
+	ShotType       string  `json:"shot_type,omitempty"`      // Optional: shot type ("single" or "multi")
+	Watermark      bool    `json:"watermark,omitempty"`      // Optional: whether to add watermark
+	Template       string  `json:"template,omitempty"`       // Optional: template ID for predefined styles
 }
 
 // VideoGenerationResponse is the response from video generation

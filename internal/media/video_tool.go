@@ -41,12 +41,19 @@ type AsyncTaskCreatedCallback func(ctx context.Context, task AsyncTaskInfo) erro
 // GenerateVideoTool generates videos from text prompts
 // Parameters:
 //   - prompt (string, required): Text description of the video to generate
-//   - duration (int, optional): Duration in seconds (default: 5, max: 30)
+//   - duration (int, optional): Duration in seconds (default: 5, max: 15 for Wanxiang 2.6)
 //   - aspect_ratio (string, optional): Aspect ratio - "16:9", "9:16", "1:1" (default: "16:9")
-//   - resolution (string, optional): Resolution - "720p", "1080p" (default: "720p")
+//   - resolution (string, optional): Resolution - "720p", "1080p", "480p" (default: "720p")
+//   - fps (string, optional): Frame rate - "24", "25", "30", "50" (default: "30")
 //   - style (string, optional): Style preset
 //   - negative_prompt (string, optional): Things to avoid in the video
 //   - seed (int, optional): Seed for reproducible results
+//   - audio (bool, optional): Whether to generate audio (default: false)
+//   - audio_url (string, optional): URL of audio file to include
+//   - prompt_extend (bool, optional): Whether to extend prompt automatically (default: false)
+//   - shot_type (string, optional): Shot type - "single" or "multi" (default: "single")
+//   - watermark (bool, optional): Whether to add watermark (default: false)
+//   - template (string, optional): Template ID for predefined styles
 //
 // Returns: JSON formatted response with video URLs or status information
 type GenerateVideoTool struct {
@@ -94,8 +101,8 @@ func (t *GenerateVideoTool) Execute(ctx context.Context, params map[string]inter
 	if duration < 1 {
 		duration = 5
 	}
-	if duration > 30 {
-		duration = 30 // Limit to 30 seconds
+	if duration > 15 {
+		duration = 15 // Wanxiang 2.6 max is 15 seconds
 	}
 
 	aspectRatio, _ := getStringParam(params, "aspect_ratio", false)
@@ -108,6 +115,11 @@ func (t *GenerateVideoTool) Execute(ctx context.Context, params map[string]inter
 		resolution = "720p"
 	}
 
+	fps, _ := getStringParam(params, "fps", false)
+	if fps == "" {
+		fps = "30"
+	}
+
 	style, _ := getStringParam(params, "style", false)
 	negativePrompt, _ := getStringParam(params, "negative_prompt", false)
 	seed, _ := getIntParam(params, "seed", false, 0)
@@ -117,11 +129,33 @@ func (t *GenerateVideoTool) Execute(ctx context.Context, params map[string]inter
 		seedPtr = &seed
 	}
 
+	// Extract new Wanxiang 2.6 parameters
+	audioURL, _ := getStringParam(params, "audio_url", false)
+	template, _ := getStringParam(params, "template", false)
+	shotType, _ := getStringParam(params, "shot_type", false)
+
+	// Boolean parameters
+	audio := false
+	if audioVal, ok := params["audio"].(bool); ok {
+		audio = audioVal
+	}
+	promptExtend := false
+	if peVal, ok := params["prompt_extend"].(bool); ok {
+		promptExtend = peVal
+	}
+	watermark := false
+	if wVal, ok := params["watermark"].(bool); ok {
+		watermark = wVal
+	}
+
 	log.Info().
 		Str("prompt", prompt).
 		Int("duration", duration).
 		Str("aspect_ratio", aspectRatio).
 		Str("resolution", resolution).
+		Str("fps", fps).
+		Bool("audio", audio).
+		Bool("prompt_extend", promptExtend).
 		Msg("generating videos")
 
 	// Create generation request
@@ -130,9 +164,16 @@ func (t *GenerateVideoTool) Execute(ctx context.Context, params map[string]inter
 		Duration:       duration,
 		AspectRatio:    aspectRatio,
 		Resolution:     resolution,
+		FPS:            fps,
 		Style:          style,
 		NegativePrompt: negativePrompt,
 		Seed:           seedPtr,
+		AudioURL:       audioURL,
+		Audio:          audio,
+		PromptExtend:   promptExtend,
+		ShotType:       shotType,
+		Watermark:      watermark,
+		Template:       template,
 	}
 
 	// Generate videos

@@ -267,6 +267,17 @@
         </div>
     </div>
 
+    <!-- View Task Modal -->
+    <div id="viewModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Task Details</h2>
+                <button class="close-btn" onclick="closeViewModal()">&times;</button>
+            </div>
+            <div id="viewModalContent"></div>
+        </div>
+    </div>
+
     <!-- Create Task Modal -->
     <div id="createModal" class="modal">
         <div class="modal-content">
@@ -594,10 +605,93 @@
             try {
                 const res = await fetch(`${API_BASE}/api/afk/tasks/${taskId}?user_id=default`);
                 const task = await res.json();
-                alert(JSON.stringify(task, null, 2));
+
+                const statusClass = `status-${task.status}`;
+                const typeLabel = {
+                    'scheduled': 'Scheduled',
+                    'ai_driven': 'AI Analysis',
+                    'event_based': 'Event Watch',
+                    'async': 'Async Task'
+                }[task.task_type] || task.task_type;
+
+                let content = `
+                    <div class="form-group">
+                        <label>Task Name</label>
+                        <div style="padding: 0.75rem; background: var(--bg-tertiary); border-radius: 8px;">
+                            ${escapeHtml(task.name)}
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Status</label>
+                        <span class="task-status ${statusClass}">${task.status}</span>
+                    </div>
+                    <div class="form-group">
+                        <label>Task Type</label>
+                        <div>${escapeHtml(typeLabel)}</div>
+                    </div>
+                    <div class="form-group">
+                        <label>Description</label>
+                        <div style="padding: 0.75rem; background: var(--bg-tertiary); border-radius: 8px;">
+                            ${task.description ? escapeHtml(task.description) : 'N/A'}
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Execution Count</label>
+                        <div>${task.execution_count || 0}</div>
+                    </div>
+                    <div class="form-group">
+                        <label>Next Execution</label>
+                        <div>${task.next_execution_time ? new Date(task.next_execution_time).toLocaleString() : 'N/A'}</div>
+                    </div>
+                `;
+
+                // Add chat entry link if task has session_id
+                if (task.session_id) {
+                    content += `
+                        <div class="form-group">
+                            <label>Chat Session</label>
+                            <a href="/?session_id=${escapeHtml(task.session_id)}" class="btn btn-primary" style="display: inline-block; text-decoration: none;">
+                                💬 进入聊天 (Enter Chat)
+                            </a>
+                        </div>
+                    `;
+                }
+
+                // Add trigger config details
+                if (task.trigger_config) {
+                    content += `
+                        <div class="form-group">
+                            <label>Trigger Configuration</label>
+                            <pre style="padding: 0.75rem; background: var(--bg-tertiary); border-radius: 8px; overflow-x: auto; max-height: 200px;">${JSON.stringify(task.trigger_config, null, 2)}</pre>
+                        </div>
+                    `;
+                }
+
+                // Add action config details
+                if (task.action_config) {
+                    content += `
+                        <div class="form-group">
+                            <label>Action Configuration</label>
+                            <pre style="padding: 0.75rem; background: var(--bg-tertiary); border-radius: 8px; overflow-x: auto; max-height: 200px;">${JSON.stringify(task.action_config, null, 2)}</pre>
+                        </div>
+                    `;
+                }
+
+                content += `
+                    <div style="display: flex; gap: 1rem; margin-top: 1.5rem;">
+                        <button type="button" class="btn btn-secondary" onclick="closeViewModal()">Close</button>
+                    </div>
+                `;
+
+                document.getElementById('viewModalContent').innerHTML = content;
+                document.getElementById('viewModal').classList.add('active');
             } catch (error) {
                 alert('Error: ' + error.message);
             }
+        }
+
+        function closeViewModal() {
+            document.getElementById('viewModal').classList.remove('active');
         }
 
         function openSettings() {
@@ -613,13 +707,22 @@
 
         // Close modal on escape key
         document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') closeCreateModal();
+            if (e.key === 'Escape') {
+                closeCreateModal();
+                closeViewModal();
+            }
         });
 
         // Close modal on backdrop click
         document.getElementById('createModal').addEventListener('click', (e) => {
             if (e.target === document.getElementById('createModal')) {
                 closeCreateModal();
+            }
+        });
+
+        document.getElementById('viewModal').addEventListener('click', (e) => {
+            if (e.target === document.getElementById('viewModal')) {
+                closeViewModal();
             }
         });
     </script>
