@@ -38,6 +38,7 @@ const (
 	MessageTypeSessionTitle MessageType = "session_title" // session title/summary updated
 	MessageTypeAFKTaskStatus  MessageType = "afk_task_status"  // AFK task status update
 	MessageTypeAFKNotification MessageType = "afk_notification" // AFK task notification
+	MessageTypeCancel      MessageType = "cancel"     // cancel current request
 )
 
 // Message represents a WebSocket message

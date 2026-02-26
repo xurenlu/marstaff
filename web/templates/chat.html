@@ -142,12 +142,53 @@
             border-right: 1px solid var(--border-color);
             display: flex;
             flex-direction: column;
-            transition: background 0.3s, border-color 0.3s;
+            transition: background 0.3s, border-color 0.3s, width 0.3s, padding 0.3s, opacity 0.3s;
+            position: relative;
+        }
+
+        .sidebar.collapsed {
+            width: 0;
+            padding: 0;
+            overflow: hidden;
+            opacity: 0;
+        }
+
+        .sidebar-toggle {
+            position: absolute;
+            left: 280px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 24px;
+            height: 48px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: 0 8px 8px 0;
+            border-left: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10;
+            transition: background 0.2s, left 0.3s;
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+        }
+
+        .sidebar-toggle:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+
+        .sidebar.collapsed + .sidebar-toggle {
+            left: 0;
         }
 
         .sidebar-header {
             padding: 1rem;
             border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
         }
 
         .new-chat-btn {
@@ -164,6 +205,21 @@
 
         .new-chat-btn:hover {
             background: var(--bg-hover);
+        }
+
+        .sidebar-collapse-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            cursor: pointer;
+            padding: 4px 8px;
+            font-size: 1rem;
+            transition: color 0.2s;
+            flex-shrink: 0;
+        }
+
+        .sidebar-collapse-btn:hover {
+            color: var(--text-primary);
         }
 
         .sessions {
@@ -690,6 +746,23 @@
             display: none;
         }
 
+        .typing-cancel-btn {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 0.3rem 0.6rem;
+            cursor: pointer;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            transition: all 0.2s;
+            margin-left: 0.5rem;
+        }
+
+        .typing-cancel-btn:hover {
+            background: var(--bg-hover);
+            color: var(--error-color);
+        }
+
         .typing-dots {
             display: inline-flex;
             gap: 4px;
@@ -862,6 +935,10 @@
                 <button type="button" id="modeProgramming" data-mode="programming">Programming</button>
                 <button type="button" id="modeAfk" data-mode="afk">AFK</button>
             </div>
+            <button class="theme-toggle" id="tokenStatsBtn" title="Token使用统计">
+                <span>📊</span>
+                <span>Token统计</span>
+            </button>
             <a href="/settings" class="theme-toggle" style="text-decoration:none" title="设置">⚙️</a>
             <button class="theme-toggle" id="themeToggle" title="Toggle theme">
                 <span id="themeIcon">🌙</span>
@@ -875,14 +952,16 @@
     </div>
 
     <div class="main">
-        <div class="sidebar">
+        <div class="sidebar" id="sidebar">
             <div class="sidebar-header">
                 <button class="new-chat-btn" id="newChatBtn">+ New Chat</button>
+                <button class="sidebar-collapse-btn" id="sidebarCollapseBtn" title="Collapse sidebar">«</button>
             </div>
             <div class="sessions" id="sessions">
                 <div class="loading-sessions">Loading sessions...</div>
             </div>
         </div>
+        <button class="sidebar-toggle" id="sidebarToggle" title="Expand sidebar">»</button>
 
         <div class="chat">
             <div class="workspace-bar" id="workspaceBar">
@@ -1061,6 +1140,35 @@
                 theme: 'dark',
                 securityLevel: 'loose'
             });
+        }
+
+        // Sidebar collapse/expand functionality
+        const sidebar = document.getElementById('sidebar');
+        const sidebarToggle = document.getElementById('sidebarToggle');
+        const sidebarCollapseBtn = document.getElementById('sidebarCollapseBtn');
+
+        // Load saved sidebar state or default to expanded
+        let sidebarCollapsed = localStorage.getItem('marstaff_sidebar_collapsed') === 'true';
+        updateSidebarState();
+
+        sidebarToggle.addEventListener('click', () => {
+            sidebarCollapsed = false;
+            updateSidebarState();
+            localStorage.setItem('marstaff_sidebar_collapsed', 'false');
+        });
+
+        sidebarCollapseBtn.addEventListener('click', () => {
+            sidebarCollapsed = true;
+            updateSidebarState();
+            localStorage.setItem('marstaff_sidebar_collapsed', 'true');
+        });
+
+        function updateSidebarState() {
+            if (sidebarCollapsed) {
+                sidebar.classList.add('collapsed');
+            } else {
+                sidebar.classList.remove('collapsed');
+            }
         }
 
         // Theme management
@@ -1589,15 +1697,41 @@
                 let streamEl = document.createElement('div');
                 streamEl.className = 'thinking-stream';
                 streamEl.textContent = streamingThinkingBuffer;
-                typingIndicator.innerHTML = '<span class="typing-dots"><span></span><span></span><span></span></span><span>AI is thinking...</span>';
+                typingIndicator.innerHTML = '<span class="typing-dots"><span></span><span></span><span></span></span><span>AI is thinking...</span><button class="typing-cancel-btn" id="cancelBtn">Cancel</button>';
                 typingIndicator.appendChild(streamEl);
                 // Auto-scroll to bottom
                 streamEl.scrollTop = streamEl.scrollHeight;
             } else {
                 const text = message || 'AI is thinking...';
-                typingIndicator.innerHTML = '<span class="typing-dots"><span></span><span></span><span></span></span><span>' + escapeHtml(text) + '</span>';
+                typingIndicator.innerHTML = '<span class="typing-dots"><span></span><span></span><span></span></span><span>' + escapeHtml(text) + '</span><button class="typing-cancel-btn" id="cancelBtn">Cancel</button>';
             }
             typingIndicator.style.display = 'flex';
+
+            // Add click handler to cancel button
+            const cancelBtn = document.getElementById('cancelBtn');
+            if (cancelBtn) {
+                cancelBtn.onclick = cancelCurrentRequest;
+            }
+        }
+
+        function cancelCurrentRequest() {
+            if (!ws || ws.readyState !== WebSocket.OPEN) return;
+
+            // Send cancel message
+            ws.send(JSON.stringify({
+                type: 'cancel',
+                user_id: userId,
+                session_id: sessionId
+            }));
+
+            // Hide typing indicator
+            hideTypingIndicator();
+
+            // Remove streaming placeholder if exists
+            if (streamingPlaceholder) {
+                streamingPlaceholder.remove();
+                streamingPlaceholder = null;
+            }
         }
 
         function appendThinkingChunk(delta) {
@@ -2494,6 +2628,581 @@
 
         // Make deleteSession global
         window.deleteSession = deleteSession;
+
+        // ============== Token Statistics ==============
+        const tokenStatsModal = document.createElement('div');
+        tokenStatsModal.id = 'tokenStatsModal';
+        tokenStatsModal.className = 'modal';
+        tokenStatsModal.innerHTML = `
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>Token使用统计</h2>
+                    <button class="modal-close" id="closeTokenStats">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="token-stats-controls">
+                        <select id="tokenTimeRange">
+                            <option value="today">今天</option>
+                            <option value="week">最近7天</option>
+                            <option value="month" selected>最近30天</option>
+                            <option value="custom">自定义</option>
+                        </select>
+                        <select id="tokenGrouping">
+                            <option value="hour">按小时</option>
+                            <option value="day" selected>按天</option>
+                            <option value="week">按周</option>
+                            <option value="month">按月</option>
+                        </select>
+                        <select id="tokenProvider">
+                            <option value="" selected>全部提供商</option>
+                        </select>
+                        <select id="tokenModel">
+                            <option value="" selected>全部模型</option>
+                        </select>
+                        <button id="refreshTokenStats">刷新</button>
+                    </div>
+                    <div class="token-stats-summary">
+                        <div class="stat-card">
+                            <div class="stat-label">总Token数</div>
+                            <div class="stat-value" id="totalTokens">-</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">输入Token</div>
+                            <div class="stat-value" id="promptTokens">-</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">输出Token</div>
+                            <div class="stat-value" id="completionTokens">-</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">预估费用</div>
+                            <div class="stat-value" id="estimatedCost">-</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">调用次数</div>
+                            <div class="stat-value" id="callCount">-</div>
+                        </div>
+                    </div>
+                    <div class="token-stats-tabs">
+                        <button class="tab-btn active" data-tab="chart">图表</button>
+                        <button class="tab-btn" data-tab="byProvider">按提供商</button>
+                        <button class="tab-btn" data-tab="byModel">按模型</button>
+                        <button class="tab-btn" data-tab="recent">最近记录</button>
+                    </div>
+                    <div class="token-stats-tab-content">
+                        <div class="tab-pane active" id="tab-chart">
+                            <canvas id="tokenChart"></canvas>
+                        </div>
+                        <div class="tab-pane" id="tab-byProvider">
+                            <table class="stats-table">
+                                <thead>
+                                    <tr>
+                                        <th>提供商</th>
+                                        <th>总Token</th>
+                                        <th>输入Token</th>
+                                        <th>输出Token</th>
+                                        <th>预估费用</th>
+                                        <th>调用次数</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="byProviderTable"></tbody>
+                            </table>
+                        </div>
+                        <div class="tab-pane" id="tab-byModel">
+                            <table class="stats-table">
+                                <thead>
+                                    <tr>
+                                        <th>提供商</th>
+                                        <th>模型</th>
+                                        <th>总Token</th>
+                                        <th>输入Token</th>
+                                        <th>输出Token</th>
+                                        <th>预估费用</th>
+                                        <th>调用次数</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="byModelTable"></tbody>
+                            </table>
+                        </div>
+                        <div class="tab-pane" id="tab-recent">
+                            <table class="stats-table">
+                                <thead>
+                                    <tr>
+                                        <th>时间</th>
+                                        <th>提供商</th>
+                                        <th>模型</th>
+                                        <th>类型</th>
+                                        <th>Token</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="recentTable"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(tokenStatsModal);
+
+        // Add modal styles
+        const modalStyle = document.createElement('style');
+        modalStyle.textContent = `
+            .modal {
+                display: none;
+                position: fixed;
+                z-index: 1000;
+                left: 0;
+                top: 0;
+                width: 100%;
+                height: 100%;
+                background-color: rgba(0, 0, 0, 0.5);
+            }
+            .modal.show {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+            .modal-content {
+                background: var(--bg-secondary);
+                border: 1px solid var(--border-color);
+                border-radius: 12px;
+                width: 90%;
+                max-width: 900px;
+                max-height: 90vh;
+                overflow: hidden;
+                display: flex;
+                flex-direction: column;
+            }
+            .modal-header {
+                padding: 1rem 1.5rem;
+                border-bottom: 1px solid var(--border-color);
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            }
+            .modal-header h2 {
+                font-size: 1.2rem;
+                margin: 0;
+            }
+            .modal-close {
+                background: none;
+                border: none;
+                font-size: 1.5rem;
+                cursor: pointer;
+                color: var(--text-secondary);
+                padding: 0;
+                width: 30px;
+                height: 30px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                border-radius: 4px;
+            }
+            .modal-close:hover {
+                background: var(--bg-tertiary);
+                color: var(--text-primary);
+            }
+            .modal-body {
+                padding: 1.5rem;
+                overflow-y: auto;
+                flex: 1;
+            }
+            .token-stats-controls {
+                display: flex;
+                gap: 0.5rem;
+                margin-bottom: 1rem;
+                flex-wrap: wrap;
+            }
+            .token-stats-controls select,
+            .token-stats-controls button {
+                padding: 0.5rem;
+                border-radius: 6px;
+                border: 1px solid var(--border-color);
+                background: var(--bg-tertiary);
+                color: var(--text-primary);
+                cursor: pointer;
+            }
+            .token-stats-controls button {
+                background: var(--bg-hover);
+            }
+            .token-stats-controls button:hover {
+                background: var(--bg-tertiary);
+            }
+            .token-stats-summary {
+                display: flex;
+                gap: 1rem;
+                margin-bottom: 1.5rem;
+                flex-wrap: wrap;
+            }
+            .stat-card {
+                flex: 1;
+                min-width: 120px;
+                background: var(--bg-tertiary);
+                border: 1px solid var(--border-color);
+                border-radius: 8px;
+                padding: 1rem;
+                text-align: center;
+            }
+            .stat-label {
+                font-size: 0.8rem;
+                color: var(--text-secondary);
+                margin-bottom: 0.5rem;
+            }
+            .stat-value {
+                font-size: 1.2rem;
+                font-weight: 600;
+            }
+            .token-stats-tabs {
+                display: flex;
+                gap: 0.5rem;
+                margin-bottom: 1rem;
+                border-bottom: 1px solid var(--border-color);
+            }
+            .tab-btn {
+                padding: 0.5rem 1rem;
+                background: none;
+                border: none;
+                color: var(--text-secondary);
+                cursor: pointer;
+                border-bottom: 2px solid transparent;
+                transition: all 0.2s;
+            }
+            .tab-btn:hover {
+                color: var(--text-primary);
+            }
+            .tab-btn.active {
+                color: var(--text-primary);
+                border-bottom-color: var(--text-primary);
+            }
+            .token-stats-tab-content {
+                position: relative;
+            }
+            .tab-pane {
+                display: none;
+            }
+            .tab-pane.active {
+                display: block;
+            }
+            .stats-table {
+                width: 100%;
+                border-collapse: collapse;
+            }
+            .stats-table th,
+            .stats-table td {
+                padding: 0.75rem;
+                text-align: left;
+                border-bottom: 1px solid var(--border-color);
+            }
+            .stats-table th {
+                background: var(--bg-tertiary);
+                font-weight: 600;
+                font-size: 0.9rem;
+                color: var(--text-secondary);
+            }
+            .stats-table tr:hover {
+                background: var(--bg-tertiary);
+            }
+            #tokenChart {
+                width: 100%;
+                height: 300px;
+            }
+            .chart-placeholder {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                height: 300px;
+                color: var(--text-secondary);
+            }
+        `;
+        document.head.appendChild(modalStyle);
+
+        // Token stats functionality
+        const tokenStatsBtn = document.getElementById('tokenStatsBtn');
+        const closeTokenStats = document.getElementById('closeTokenStats');
+        let tokenChartInstance = null;
+
+        tokenStatsBtn.addEventListener('click', () => {
+            tokenStatsModal.classList.add('show');
+            loadTokenStats();
+        });
+
+        closeTokenStats.addEventListener('click', () => {
+            tokenStatsModal.classList.remove('show');
+        });
+
+        tokenStatsModal.addEventListener('click', (e) => {
+            if (e.target === tokenStatsModal) {
+                tokenStatsModal.classList.remove('show');
+            }
+        });
+
+        // Tab switching
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+                btn.classList.add('active');
+                document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+            });
+        });
+
+        // Refresh button
+        document.getElementById('refreshTokenStats').addEventListener('click', loadTokenStats);
+
+        async function loadTokenStats() {
+            const timeRange = document.getElementById('tokenTimeRange').value;
+            const grouping = document.getElementById('tokenGrouping').value;
+            const provider = document.getElementById('tokenProvider').value;
+            const model = document.getElementById('tokenModel').value;
+
+            // Calculate time range
+            const now = new Date();
+            let startTime;
+            switch(timeRange) {
+                case 'today':
+                    startTime = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                    break;
+                case 'week':
+                    startTime = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+                    break;
+                case 'month':
+                    startTime = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+                    break;
+                default:
+                    startTime = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+            }
+
+            const endTime = now;
+
+            // Load total stats
+            try {
+                const totalParams = new URLSearchParams({
+                    start_time: startTime.toISOString(),
+                    end_time: endTime.toISOString()
+                });
+                if (provider) totalParams.append('provider', provider);
+                if (model) totalParams.append('model', model);
+
+                const totalRes = await fetch(`/api/token/stats/total?${totalParams}`);
+                if (totalRes.ok) {
+                    const totalData = await totalRes.json();
+                    document.getElementById('totalTokens').textContent = formatNumber(totalData.total_tokens || 0);
+                    document.getElementById('promptTokens').textContent = formatNumber(totalData.prompt_tokens || 0);
+                    document.getElementById('completionTokens').textContent = formatNumber(totalData.completion_tokens || 0);
+                    document.getElementById('estimatedCost').textContent = '$' + (totalData.estimated_cost || 0).toFixed(4);
+                    document.getElementById('callCount').textContent = formatNumber(totalData.call_count || 0);
+                }
+            } catch (e) {
+                console.error('Failed to load total stats:', e);
+            }
+
+            // Load time series stats for chart
+            try {
+                const statsParams = new URLSearchParams({
+                    start_time: startTime.toISOString(),
+                    end_time: endTime.toISOString(),
+                    grouping: grouping
+                });
+                if (provider) statsParams.append('provider', provider);
+                if (model) statsParams.append('model', model);
+
+                const statsRes = await fetch(`/api/token/stats?${statsParams}`);
+                if (statsRes.ok) {
+                    const statsData = await statsRes.json();
+                    renderTokenChart(statsData.stats || []);
+                }
+            } catch (e) {
+                console.error('Failed to load stats:', e);
+            }
+
+            // Load by provider
+            try {
+                const providerParams = new URLSearchParams({
+                    start_time: startTime.toISOString(),
+                    end_time: endTime.toISOString()
+                });
+                if (provider) providerParams.append('provider', provider);
+                if (model) providerParams.append('model', model);
+
+                const providerRes = await fetch(`/api/token/stats/by-provider?${providerParams}`);
+                if (providerRes.ok) {
+                    const providerData = await providerRes.json();
+                    renderByProviderTable(providerData.stats || []);
+                }
+            } catch (e) {
+                console.error('Failed to load provider stats:', e);
+            }
+
+            // Load by model
+            try {
+                const modelParams = new URLSearchParams({
+                    start_time: startTime.toISOString(),
+                    end_time: endTime.toISOString()
+                });
+                if (provider) modelParams.append('provider', provider);
+                if (model) modelParams.append('model', model);
+
+                const modelRes = await fetch(`/api/token/stats/by-model?${modelParams}`);
+                if (modelRes.ok) {
+                    const modelData = await modelRes.json();
+                    renderByModelTable(modelData.stats || []);
+                }
+            } catch (e) {
+                console.error('Failed to load model stats:', e);
+            }
+
+            // Load recent records
+            try {
+                const recentParams = new URLSearchParams({ limit: 50 });
+                if (provider) recentParams.append('provider', provider);
+                if (model) recentParams.append('model', model);
+
+                const recentRes = await fetch(`/api/token/recent?${recentParams}`);
+                if (recentRes.ok) {
+                    const recentData = await recentRes.json();
+                    renderRecentTable(recentData.records || []);
+                }
+            } catch (e) {
+                console.error('Failed to load recent records:', e);
+            }
+        }
+
+        function renderTokenChart(stats) {
+            const canvas = document.getElementById('tokenChart');
+            const ctx = canvas.getContext('2d');
+
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            if (stats.length === 0) {
+                canvas.innerHTML = '<div class="chart-placeholder">暂无数据</div>';
+                return;
+            }
+
+            // Group data by date and aggregate
+            const aggregated = {};
+            stats.forEach(s => {
+                if (!aggregated[s.date]) {
+                    aggregated[s.date] = { prompt: 0, completion: 0, total: 0 };
+                }
+                aggregated[s.date].prompt += s.prompt_tokens;
+                aggregated[s.date].completion += s.completion_tokens;
+                aggregated[s.date].total += s.total_tokens;
+            });
+
+            const labels = Object.keys(aggregated).sort();
+            const promptData = labels.map(l => aggregated[l].prompt);
+            const completionData = labels.map(l => aggregated[l].completion);
+            const totalData = labels.map(l => aggregated[l].total);
+
+            // Find max value for scaling
+            const maxValue = Math.max(...totalData, 1);
+
+            // Draw chart
+            const padding = 40;
+            const chartWidth = canvas.width - padding * 2;
+            const chartHeight = canvas.height - padding * 2;
+            const barWidth = chartWidth / labels.length / 3;
+
+            ctx.fillStyle = getComputedStyle(document.body).getPropertyValue('--text-primary').trim() || '#e0e0e0';
+            ctx.font = '12px sans-serif';
+
+            // Draw bars
+            labels.forEach((label, i) => {
+                const x = padding + i * (chartWidth / labels.length);
+                const promptHeight = (promptData[i] / maxValue) * chartHeight;
+                const completionHeight = (completionData[i] / maxValue) * chartHeight;
+
+                // Draw prompt bar (blue)
+                ctx.fillStyle = '#4a9eff';
+                ctx.fillRect(x, padding + chartHeight - promptHeight, barWidth - 2, promptHeight);
+
+                // Draw completion bar (green)
+                ctx.fillStyle = '#4caf50';
+                ctx.fillRect(x + barWidth, padding + chartHeight - completionHeight, barWidth - 2, completionHeight);
+
+                // Draw label (skip some if too many)
+                if (labels.length <= 20 || i % Math.ceil(labels.length / 20) === 0) {
+                    ctx.save();
+                    ctx.translate(x + barWidth, padding + chartHeight + 15);
+                    ctx.rotate(-Math.PI / 4);
+                    ctx.textAlign = 'right';
+                    ctx.fillText(label.substring(5), 0, 0);
+                    ctx.restore();
+                }
+            });
+
+            // Draw legend
+            ctx.fillStyle = '#4a9eff';
+            ctx.fillRect(padding, 10, 15, 15);
+            ctx.fillStyle = getComputedStyle(document.body).getPropertyValue('--text-primary').trim() || '#e0e0e0';
+            ctx.fillText('输入Token', padding + 20, 22);
+
+            ctx.fillStyle = '#4caf50';
+            ctx.fillRect(padding + 100, 10, 15, 15);
+            ctx.fillStyle = getComputedStyle(document.body).getPropertyValue('--text-primary').trim() || '#e0e0e0';
+            ctx.fillText('输出Token', padding + 120, 22);
+        }
+
+        function renderByProviderTable(stats) {
+            const tbody = document.getElementById('byProviderTable');
+            tbody.innerHTML = stats.map(s => `
+                <tr>
+                    <td>${escapeHtml(s.provider)}</td>
+                    <td>${formatNumber(s.total_tokens)}</td>
+                    <td>${formatNumber(s.prompt_tokens)}</td>
+                    <td>${formatNumber(s.completion_tokens)}</td>
+                    <td>$${(s.estimated_cost || 0).toFixed(4)}</td>
+                    <td>${formatNumber(s.call_count)}</td>
+                </tr>
+            `).join('');
+        }
+
+        function renderByModelTable(stats) {
+            const tbody = document.getElementById('byModelTable');
+            tbody.innerHTML = stats.map(s => `
+                <tr>
+                    <td>${escapeHtml(s.provider)}</td>
+                    <td>${escapeHtml(s.model)}</td>
+                    <td>${formatNumber(s.total_tokens)}</td>
+                    <td>${formatNumber(s.prompt_tokens)}</td>
+                    <td>${formatNumber(s.completion_tokens)}</td>
+                    <td>$${(s.estimated_cost || 0).toFixed(4)}</td>
+                    <td>${formatNumber(s.call_count)}</td>
+                </tr>
+            `).join('');
+        }
+
+        function renderRecentTable(records) {
+            const tbody = document.getElementById('recentTable');
+            tbody.innerHTML = records.slice(0, 50).map(r => {
+                const date = new Date(r.created_at);
+                return `
+                    <tr>
+                        <td>${date.toLocaleString('zh-CN')}</td>
+                        <td>${escapeHtml(r.provider)}</td>
+                        <td>${escapeHtml(r.model)}</td>
+                        <td>${escapeHtml(r.call_type)}</td>
+                        <td>${formatNumber(r.total_tokens)}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function formatNumber(num) {
+            if (num >= 1000000) {
+                return (num / 1000000).toFixed(1) + 'M';
+            } else if (num >= 1000) {
+                return (num / 1000).toFixed(1) + 'K';
+            }
+            return num.toLocaleString();
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
     </script>
 </body>
 </html>

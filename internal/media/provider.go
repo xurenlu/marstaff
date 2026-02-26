@@ -38,20 +38,22 @@ type GeneratedImage struct {
 
 // VideoGenerationRequest is a request for video generation
 type VideoGenerationRequest struct {
-	Prompt         string  `json:"prompt"`                   // Required: text description of the video
-	Duration       int     `json:"duration,omitempty"`       // Optional: duration in seconds (default: 5)
-	AspectRatio    string  `json:"aspect_ratio,omitempty"`   // Optional: aspect ratio (e.g., "16:9", "9:16")
-	Resolution     string  `json:"resolution,omitempty"`     // Optional: resolution (e.g., "720p", "1080p")
-	Style          string  `json:"style,omitempty"`          // Optional: style preset
-	NegativePrompt string  `json:"negative_prompt,omitempty"` // Optional: things to avoid
-	Seed           *int    `json:"seed,omitempty"`           // Optional: seed for reproducible results
-	FPS            string  `json:"fps,omitempty"`            // Optional: FPS (e.g., "24", "25", "30", "50")
-	AudioURL       string  `json:"audio_url,omitempty"`      // Optional: URL of audio file to include in video
-	Audio          bool    `json:"audio,omitempty"`          // Optional: whether to generate audio
-	PromptExtend   bool    `json:"prompt_extend,omitempty"`  // Optional: whether to extend prompt automatically
-	ShotType       string  `json:"shot_type,omitempty"`      // Optional: shot type ("single" or "multi")
-	Watermark      bool    `json:"watermark,omitempty"`      // Optional: whether to add watermark
-	Template       string  `json:"template,omitempty"`       // Optional: template ID for predefined styles
+	Prompt         string                 `json:"prompt"`                   // Required: text description of the video
+	Duration       int                    `json:"duration,omitempty"`       // Optional: duration in seconds (default: 5)
+	AspectRatio    string                 `json:"aspect_ratio,omitempty"`   // Optional: aspect ratio (e.g., "16:9", "9:16")
+	Resolution     string                 `json:"resolution,omitempty"`     // Optional: resolution (e.g., "720p", "1080p")
+	Style          string                 `json:"style,omitempty"`          // Optional: style preset
+	NegativePrompt string                 `json:"negative_prompt,omitempty"` // Optional: things to avoid
+	Seed           *int                   `json:"seed,omitempty"`           // Optional: seed for reproducible results
+	FPS            string                 `json:"fps,omitempty"`            // Optional: FPS (e.g., "24", "25", "30", "50")
+	AudioURL       string                 `json:"audio_url,omitempty"`      // Optional: URL of audio file to include in video
+	Audio          bool                   `json:"audio,omitempty"`          // Optional: whether to generate audio
+	PromptExtend   bool                   `json:"prompt_extend,omitempty"`  // Optional: whether to extend prompt automatically
+	ShotType       string                 `json:"shot_type,omitempty"`      // Optional: shot type ("single" or "multi")
+	Watermark      bool                   `json:"watermark,omitempty"`      // Optional: whether to add watermark
+	Template       string                 `json:"template,omitempty"`       // Optional: template ID for predefined styles
+	ImageURL       string                 `json:"image_url,omitempty"`      // Optional: first frame image URL for video continuation
+	ExtendedParams map[string]interface{} `json:"-"`                        // Optional: provider-specific parameters (face_control, camera_control, etc.)
 }
 
 // VideoGenerationResponse is the response from video generation

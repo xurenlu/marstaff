@@ -310,6 +310,11 @@ func (p *Wanxiang26Provider) GenerateVideo(ctx context.Context, req VideoGenerat
 		input.Template = req.Template
 	}
 
+	// Add image_url for image-to-video (video continuation)
+	if req.ImageURL != "" {
+		input.ImageURL = req.ImageURL
+	}
+
 	// Build parameters
 	params := Wanxiang26Parameters{
 		Size:           size,
