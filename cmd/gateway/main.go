@@ -146,6 +146,12 @@ func run(cmd *cobra.Command, args []string) {
 		todoRepo = repository.NewTodoRepository(db)
 	}
 
+	// Create rule repository
+	var ruleRepo *repository.RuleRepository
+	if db != nil {
+		ruleRepo = repository.NewRuleRepository(db)
+	}
+
 	// Create session repository (needed for AFK async tasks)
 	var sessionRepo *repository.SessionRepository
 	if db != nil {
@@ -164,6 +170,7 @@ func run(cmd *cobra.Command, args []string) {
 		SkillsPath: cfg.Skills.Path,
 		DB:         db,
 		TodoRepo:   todoRepo,
+		RuleRepo:   ruleRepo,
 	})
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to create engine")

@@ -23,6 +23,7 @@ type Engine struct {
 	tools           map[string]ToolDefinition
 	sessionAPI      *api.SessionAPI
 	todoRepo        *repository.TodoRepository
+	ruleRepo        *repository.RuleRepository
 	summaryConfig   SummaryConfig // Configuration for conversation summarization
 }
 
@@ -48,6 +49,7 @@ type Config struct {
 	SkillsPath string
 	DB         *gorm.DB
 	TodoRepo   *repository.TodoRepository
+	RuleRepo   *repository.RuleRepository
 }
 
 // NewEngine creates a new agent engine
@@ -66,6 +68,7 @@ func NewEngine(cfg *Config) (*Engine, error) {
 		skillRegistry: skillRegistry,
 		memory:       memory,
 		tools:        make(map[string]ToolDefinition),
+		ruleRepo:     cfg.RuleRepo,
 		summaryConfig: SummaryConfig{
 			TriggerCount: 20, // Summarize after 20 messages
 			KeepRecent:   6,  // Keep 6 recent messages in full
@@ -78,6 +81,7 @@ func NewEngine(cfg *Config) (*Engine, error) {
 	if cfg.TodoRepo != nil {
 		engine.todoRepo = cfg.TodoRepo
 	}
+	// ruleRepo is already set from cfg.RuleRepo above
 
 	// Load skills
 	if cfg.SkillsPath != "" {
@@ -518,6 +522,13 @@ func (e *Engine) buildSystemPrompt(ctx context.Context, req *ChatRequest) string
 	prompt.WriteString("- Search for new skills: \"搜索天气相关技能\" or \"search skills for weather\"\n")
 	prompt.WriteString("- Install new skills: \"安装天气技能\" or \"install weather skill\"\n\n")
 
+	// Rule management capabilities - tell users they can manage custom rules
+	prompt.WriteString("**Rule Management**: Users can ask you to:\n")
+	prompt.WriteString("- List rules: \"查看所有规则\" or \"list rules\"\n")
+	prompt.WriteString("- Create rules: \"创建规则：用中文回答\" or \"create rule: respond in Chinese\"\n")
+	prompt.WriteString("- Activate rules: \"激活中文规则\" or \"activate Chinese Only rule\"\n")
+	prompt.WriteString("- Update/delete rules: \"更新规则\" or \"delete rule\"\n\n")
+
 	// When users ask about capabilities, emphasize these are LOCAL tools/skills
 	if len(skills) > 0 || tools > 0 {
 		prompt.WriteString("**Important**: When users ask what you can do or what capabilities you have, clearly explain that these are **local tools and skills** available in this agent platform - NOT capabilities of the cloud AI service. You are an AI assistant helping to orchestrate these local capabilities.\n\n")
@@ -552,6 +563,19 @@ func (e *Engine) buildSystemPrompt(ctx context.Context, req *ChatRequest) string
 				prompt.WriteString(fmt.Sprintf("\n- [%s] %s (id: %s)", item.Status, item.Description, item.ID))
 			}
 			prompt.WriteString("\nUse todo_add, todo_update, todo_list, todo_complete tools to manage the list.")
+		}
+	}
+
+	// Inject active rule into context when available
+	if e.ruleRepo != nil {
+		userID := "default"
+		if req != nil && req.UserID != "" {
+			userID = req.UserID
+		}
+		if activeRule, err := e.ruleRepo.GetActive(ctx, userID); err == nil && activeRule != nil {
+			prompt.WriteString("\n\n**Active Custom Rule** (" + activeRule.Name + "):")
+			prompt.WriteString("\n" + activeRule.Content + "\n")
+			prompt.WriteString("Follow this rule in your responses. This rule takes precedence over general instructions.")
 		}
 	}
 
