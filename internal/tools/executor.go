@@ -473,6 +473,12 @@ func (e *Executor) RegisterAudioTools(qwenAPIKey, aliyunAPIKey string) {
 	audioExecutor.RegisterBuiltInTools()
 }
 
+// RegisterFileOperationsTools registers file download and operation tools
+func (e *Executor) RegisterFileOperationsTools() {
+	fileOpsExecutor := NewFileOperationsExecutor(e.engine, e.validator)
+	fileOpsExecutor.RegisterBuiltInTools()
+}
+
 // RegisterVideoAnalysisTools registers all video analysis tools (see_video, hear_video, etc.)
 func (e *Executor) RegisterVideoAnalysisTools(qwenAPIKey, zaiAPIKey string) {
 	videoAnalysisExecutor := NewVideoAnalysisExecutor(e.engine, e.validator, qwenAPIKey, zaiAPIKey)

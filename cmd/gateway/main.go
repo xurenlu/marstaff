@@ -37,8 +37,9 @@ import (
 )
 
 var (
-	configFile string
-	Version    = "1.10.0-rc4"
+	configFile    string
+	enableTelegram bool
+	Version       = "1.11.0-rc1"
 )
 
 // truncateRunes truncates s to at most max runes (avoids cutting mid-UTF8-char)
@@ -58,6 +59,7 @@ func main() {
 	}
 
 	rootCmd.Flags().StringVarP(&configFile, "config", "c", "configs/config.yaml", "config file path")
+	rootCmd.Flags().BoolVarP(&enableTelegram, "enable-telegram", "t", false, "enable Telegram bot (disabled by default in China)")
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -197,6 +199,22 @@ func run(cmd *cobra.Command, args []string) {
 	if ossUploaderForDevice != nil {
 		deviceToolExecutor.SetImageUploader(newOSSImageUploader(ossUploaderForDevice))
 	}
+	// Wire vision provider for screen analysis (device_screen_analyze)
+	if vp, ok := visionProviders["qwen"]; ok {
+		if provCfg := getProviderConfig(cfg, "qwen"); provCfg != nil {
+			if vm, ok := provCfg["vision_model"].(string); ok && vm != "" {
+				deviceToolExecutor.SetVisionProvider(vp, vm)
+				log.Info().Str("model", vm).Msg("vision provider wired for screen analysis")
+			}
+		}
+	} else if vp, ok := visionProviders["zai"]; ok {
+		if provCfg := getProviderConfig(cfg, "zai"); provCfg != nil {
+			if vm, ok := provCfg["vision_model"].(string); ok && vm != "" {
+				deviceToolExecutor.SetVisionProvider(vp, vm)
+				log.Info().Str("model", vm).Msg("vision provider wired for screen analysis")
+			}
+		}
+	}
 	deviceToolExecutor.RegisterBuiltInTools()
 
 	// Create and register file/command tools with security
@@ -274,6 +292,12 @@ func run(cmd *cobra.Command, args []string) {
 	if toolsExecutor != nil {
 		toolsExecutor.RegisterGitTools()
 		log.Info().Msg("git workflow tools registered")
+	}
+
+	// Register file operations tools (download_file, etc.)
+	if toolsExecutor != nil {
+		toolsExecutor.RegisterFileOperationsTools()
+		log.Info().Msg("file operations tools registered")
 	}
 
 	// Register install tools (skills, rules, MCP)
@@ -412,6 +436,18 @@ func run(cmd *cobra.Command, args []string) {
 	asyncTaskNotifier := gateway.NewAsyncTaskNotifier(hub)
 	log.Info().Msg("Async task notifier initialized")
 
+	// Set OSS uploader for background video uploads (DashScope videos will be uploaded to our OSS)
+	if ossUploaderForDevice != nil {
+		asyncTaskNotifier.SetOSSUploader(ossUploaderForDevice)
+		log.Info().Msg("OSS uploader configured for async task notifier (background video upload)")
+	}
+
+	// Set session API for message persistence
+	if sessionAPI != nil {
+		asyncTaskNotifier.SetSessionAPI(sessionAPI)
+		log.Info().Msg("Session API configured for async task notifier (message persistence)")
+	}
+
 	// Wire the notifier to the AFK scheduler for async task notifications
 	if afkScheduler != nil {
 		afkScheduler.SetAsyncNotifier(asyncTaskNotifier)
@@ -427,6 +463,11 @@ func run(cmd *cobra.Command, args []string) {
 	// Start IM adapters (telegram, matrix, discord, slack)
 	var startedAdapters []adapter.Adapter
 	for _, ac := range cfg.Adapters {
+		// Skip telegram unless explicitly enabled via command line flag
+		if ac.Type == "telegram" && !enableTelegram {
+			log.Info().Msg("telegram adapter disabled (use --enable-telegram or -t flag to enable)")
+			continue
+		}
 		if !ac.Enabled || ac.Type == "websocket" {
 			continue
 		}
@@ -467,6 +508,8 @@ func run(cmd *cobra.Command, args []string) {
 
 	// Set up message handler - call agent engine directly (in-process)
 	server.SetMessageHandler(func(client *gateway.Client, msg *gateway.Message) error {
+		startTime := time.Now() // Record start time for latency tracking
+
 		log.Info().
 			Str("type", string(msg.Type)).
 			Str("user_id", msg.UserID).
@@ -595,6 +638,9 @@ func run(cmd *cobra.Command, args []string) {
 				})
 				return fmt.Errorf("session creation failed: %w", err)
 			}
+
+			// Add client to session index for notifications
+			hub.AddClientToSession(client, sessionID)
 		}
 
 		// Generate session title summary for new chats (async, non-blocking)
@@ -621,7 +667,7 @@ func run(cmd *cobra.Command, args []string) {
 			}(sessionID, content, client.UserID, titleProvider)
 		}
 
-		// Save user message
+		// Save user message (assistant response is saved by engine.Chat/engine.ChatStreamWithCallback)
 		if sessionID != "" && sessionAPI != nil {
 			ctx := context.Background()
 			req := &api.AddMessageRequest{Role: "user", Content: content}
@@ -671,9 +717,7 @@ func run(cmd *cobra.Command, args []string) {
 					Text: p.Text,
 				}
 				if p.ImageURL != nil {
-					provParts[i].ImageURL = &struct {
-						URL string `json:"url"`
-					}{URL: p.ImageURL.URL}
+					provParts[i].ImageURL = &provider.ImageURLStruct{URL: p.ImageURL.URL}
 				}
 			}
 
@@ -730,9 +774,11 @@ func run(cmd *cobra.Command, args []string) {
 						if summary != "" {
 							contextParts = append(contextParts, fmt.Sprintf("[对话摘要]\n%s\n", summary))
 						}
-						// Use recent messages from summary service instead of full history
+						// Use recent messages from summary service instead of full history.
+						// Set SkipHistory to avoid engine adding history again (would cause duplication).
 						if len(recentMsgs) > 0 {
 							chatReq.Messages = recentMsgs
+							chatReq.SkipHistory = true
 						}
 					}
 				}
@@ -844,6 +890,10 @@ func run(cmd *cobra.Command, args []string) {
 
 				sendTypingDone()
 
+				// Calculate latency
+				latency := time.Since(startTime).Seconds()
+				latencyFormatted := fmt.Sprintf("%.2f", latency)
+
 				// Send the user-friendly message
 				if userMessage != "" {
 					chatData := map[string]interface{}{"content": userMessage}
@@ -854,6 +904,10 @@ func run(cmd *cobra.Command, args []string) {
 							"total_tokens":      resp.Usage.TotalTokens,
 						}
 					}
+					// Add latency info
+					chatData["latency"] = latencyFormatted
+					chatData["latency_seconds"] = latency
+
 					hub.SendToUser(client.UserID, &gateway.Message{
 						Type:      gateway.MessageTypeChat,
 						UserID:    client.UserID,
@@ -864,16 +918,12 @@ func run(cmd *cobra.Command, args []string) {
 				}
 			} else {
 				// Normal chat response
-				// Save assistant message
-				if sessionID != "" && sessionAPI != nil {
-					ctx := context.Background()
-					_ = sessionAPI.AddMessageToSession(ctx, sessionID, &api.AddMessageRequest{
-						Role:    "assistant",
-						Content: response,
-					})
-				}
-
+				// Note: Assistant message is saved by engine.Chat/engine.ChatStreamWithCallback
 				sendTypingDone()
+
+				// Calculate latency in seconds (with 2 decimal places)
+				latency := time.Since(startTime).Seconds()
+				latencyFormatted := fmt.Sprintf("%.2f", latency)
 
 				chatData := map[string]interface{}{"content": response}
 				if resp.Thinking != "" {
@@ -886,6 +936,10 @@ func run(cmd *cobra.Command, args []string) {
 						"total_tokens":      resp.Usage.TotalTokens,
 					}
 				}
+				// Add latency info
+				chatData["latency"] = latencyFormatted
+				chatData["latency_seconds"] = latency
+
 				hub.SendToUser(client.UserID, &gateway.Message{
 					Type:      gateway.MessageTypeChat,
 					UserID:    client.UserID,
