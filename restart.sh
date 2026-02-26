@@ -7,7 +7,7 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 # Port
-PORT=18789
+PORT=15678
 
 echo -e "${GREEN}=== Marstaff Restart Script ===${NC}"
 echo -e "  ${YELLOW}(Using Docker? Run: docker compose build --no-cache && docker compose up -d)${NC}"
