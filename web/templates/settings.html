@@ -721,6 +721,41 @@ This skill does something useful..." style="width: 100%; padding: 0.75rem; backg
         </div>
     </div>
 
+    <!-- Create/Edit Project Modal -->
+    <div id="projectModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="projectModalTitle">新建项目</h2>
+                <button class="modal-close" onclick="closeModal('projectModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>项目名称 <span style="color: var(--error-color);">*</span></label>
+                    <input type="text" id="projectName" class="form-control" placeholder="例如: my-awesome-project" style="width: 100%; padding: 0.6rem; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary);">
+                    <small style="display: block; margin-top: 0.3rem; color: var(--text-secondary);">仅支持字母、数字、空格、下划线、连字符和点</small>
+                </div>
+                <div class="form-group">
+                    <label>工作目录路径 <span style="color: var(--error-color);">*</span></label>
+                    <input type="text" id="projectWorkDir" class="form-control" placeholder="例如: /Users/username/my-project" style="width: 100%; padding: 0.6rem; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary);">
+                    <small style="display: block; margin-top: 0.3rem; color: var(--text-secondary);">项目的绝对路径</small>
+                </div>
+                <div class="form-group">
+                    <label>项目描述</label>
+                    <textarea id="projectDescription" class="form-control" placeholder="简要描述这个项目的用途..." style="width: 100%; padding: 0.75rem; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary); min-height: 80px;"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>项目模板</label>
+                    <input type="text" id="projectTemplate" class="form-control" placeholder="例如: react, vue, go-service (留空为自定义)" style="width: 100%; padding: 0.6rem; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary);">
+                    <small style="display: block; margin-top: 0.3rem; color: var(--text-secondary);">可选，用于预设项目类型的配置</small>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('projectModal')">取消</button>
+                <button class="btn btn-primary" onclick="submitProject()">保存</button>
+            </div>
+        </div>
+    </div>
+
     <script src="/static/js/storage.js"></script>
     <script src="/static/js/api.js"></script>
     <script>
@@ -992,32 +1027,61 @@ This skill does something useful..." style="width: 100%; padding: 0.75rem; backg
 
         document.getElementById('createProjectBtn').addEventListener('click', showCreateProjectModal);
 
-        function showCreateProjectModal() {
-            const name = prompt('项目名称 (仅支持字母、数字、空格、下划线、连字符和点):');
-            if (!name) return;
+        let editingProjectId = null;
 
-            const workDir = prompt('工作目录路径 (如: /Users/username/my-project):');
-            if (!workDir) {
-                alert('工作目录不能为空');
+        function showCreateProjectModal() {
+            editingProjectId = null;
+            document.getElementById('projectModalTitle').textContent = '新建项目';
+            document.getElementById('projectName').value = '';
+            document.getElementById('projectWorkDir').value = '';
+            document.getElementById('projectDescription').value = '';
+            document.getElementById('projectTemplate').value = '';
+            openModal('projectModal');
+        }
+
+        async function submitProject() {
+            const name = document.getElementById('projectName').value.trim();
+            const workDir = document.getElementById('projectWorkDir').value.trim();
+            const description = document.getElementById('projectDescription').value.trim();
+            const template = document.getElementById('projectTemplate').value.trim();
+
+            if (!name) {
+                alert('请输入项目名称');
                 return;
             }
 
-            const description = prompt('项目描述 (可选):') || '';
-            const template = prompt('项目模板 (可选，留空为自定义):') || '';
+            if (!workDir) {
+                alert('请输入工作目录路径');
+                return;
+            }
 
-            createProject({ name, work_dir: workDir, description, template });
-        }
-
-        async function createProject(data) {
             try {
-                await api.createProject({
-                    user_id: userId,
-                    ...data
-                });
-                await loadProjects();
-                alert('项目创建成功!');
+                if (editingProjectId) {
+                    // Update existing project
+                    await api.updateProject(editingProjectId, {
+                        name,
+                        work_dir: workDir,
+                        description,
+                        template
+                    });
+                    await loadProjects();
+                    closeModal('projectModal');
+                    alert('项目已更新');
+                } else {
+                    // Create new project
+                    await api.createProject({
+                        user_id: userId,
+                        name,
+                        work_dir: workDir,
+                        description,
+                        template
+                    });
+                    await loadProjects();
+                    closeModal('projectModal');
+                    alert('项目创建成功!');
+                }
             } catch (error) {
-                alert('创建项目失败: ' + error.message);
+                alert(editingProjectId ? '更新失败: ' : '创建失败: ' + error.message);
             }
         }
 
@@ -1039,28 +1103,13 @@ This skill does something useful..." style="width: 100%; padding: 0.75rem; backg
             const project = projects.find(p => p.id === projectId);
             if (!project) return;
 
-            const name = prompt('项目名称:', project.name);
-            if (!name) return;
-
-            const workDir = prompt('工作目录路径:', project.work_dir);
-            if (!workDir) {
-                alert('工作目录不能为空');
-                return;
-            }
-
-            const description = prompt('项目描述:', project.description || '') || '';
-
-            try {
-                await api.updateProject(projectId, {
-                    name,
-                    work_dir: workDir,
-                    description
-                });
-                await loadProjects();
-                alert('项目已更新');
-            } catch (error) {
-                alert('更新失败: ' + error.message);
-            }
+            editingProjectId = projectId;
+            document.getElementById('projectModalTitle').textContent = '编辑项目';
+            document.getElementById('projectName').value = project.name || '';
+            document.getElementById('projectWorkDir').value = project.work_dir || '';
+            document.getElementById('projectDescription').value = project.description || '';
+            document.getElementById('projectTemplate').value = project.template || '';
+            openModal('projectModal');
         }
 
         function escapeHtml(text) {
