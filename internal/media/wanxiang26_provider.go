@@ -33,16 +33,30 @@ type Wanxiang26Input struct {
 	Prompt string `json:"prompt"`            // Required: text description of the video
 	// Optional: image URL for image-to-video generation
 	ImageURL string `json:"image_url,omitempty"`
+	// Optional: URL of audio file to use in generated video
+	AudioURL string `json:"audio_url,omitempty"`
+	// Optional: negative prompt for things to avoid
+	NegativePrompt string `json:"negative_prompt,omitempty"`
+	// Optional: template ID for using predefined video styles
+	Template string `json:"template,omitempty"`
 }
 
 // Wanxiang26Parameters contains generation parameters
 type Wanxiang26Parameters struct {
 	Size           string `json:"size,omitempty"`            // Video size: "1280:720" (16:9), "720:1280" (9:16)
-	Duration       float64 `json:"duration,omitempty"`       // Video duration in seconds, max 10
+	Duration       float64 `json:"duration,omitempty"`       // Video duration in seconds, max 15
 	FPSEnum        int `json:"fps_enm,omitempty"`           // FPS: 24, 25, 30, 50
 	Seed           int64 `json:"seed,omitempty"`             // Random seed for reproducibility
 	Style          string `json:"style,omitempty"`           // Style preset
 	NumberOfVideos int `json:"number_of_videos,omitempty"`   // Number of videos to generate (default: 1)
+	// Optional: whether to generate audio (true) or not (false)
+	Audio bool `json:"audio,omitempty"`
+	// Optional: whether to extend prompt automatically
+	PromptExtend bool `json:"prompt_extend,omitempty"`
+	// Optional: shot type - "single" for single shot, "multi" for multi-shot narrative
+	ShotType string `json:"shot_type,omitempty"`
+	// Optional: whether to add watermark
+	Watermark bool `json:"watermark,omitempty"`
 }
 
 // Wanxiang26VideoResponse is the response from Wanxiang 2.6 API
@@ -267,8 +281,8 @@ func (p *Wanxiang26Provider) GenerateVideo(ctx context.Context, req VideoGenerat
 	if req.Duration == 0 {
 		req.Duration = 5
 	}
-	if req.Duration > 10 {
-		req.Duration = 10 // Max 10 seconds for Wanxiang 2.6
+	if req.Duration > 15 {
+		req.Duration = 15 // Max 15 seconds for Wanxiang 2.6
 	}
 	if req.AspectRatio == "" {
 		req.AspectRatio = "16:9"
@@ -277,29 +291,55 @@ func (p *Wanxiang26Provider) GenerateVideo(ctx context.Context, req VideoGenerat
 		req.Resolution = "720p"
 	}
 
-	// Convert aspect ratio to size parameter
-	size := "1280:720" // Default 16:9
-	if req.AspectRatio == "9:16" {
-		size = "720:1280"
+	// Convert resolution to size parameter (API expects "width*height" format)
+	size := p.resolutionToSize(req.Resolution, req.AspectRatio)
+
+	// Build request input with optional audio_url, negative_prompt, template
+	input := Wanxiang26Input{
+		Prompt: req.Prompt,
 	}
 
-	// Build request
-	wanxiangReq := Wanxiang26VideoRequest{
-		Model: "wan2.6-t2v", // Wanxiang 2.6 text-to-video model
-		Input: Wanxiang26Input{
-			Prompt: req.Prompt,
-		},
-		Parameters: Wanxiang26Parameters{
-			Size:           size,
-			Duration:       float64(req.Duration),
-			FPSEnum:        30, // Default 30 FPS
-			NumberOfVideos: 1,
-			Style:          req.Style,
-		},
+	// Add optional input parameters from request context or extensions
+	if req.AudioURL != "" {
+		input.AudioURL = req.AudioURL
+	}
+	if req.NegativePrompt != "" {
+		input.NegativePrompt = req.NegativePrompt
+	}
+	if req.Template != "" {
+		input.Template = req.Template
 	}
 
+	// Build parameters
+	params := Wanxiang26Parameters{
+		Size:           size,
+		Duration:       float64(req.Duration),
+		FPSEnum:        p.fpsToInt(req.FPS), // Default 30 FPS
+		NumberOfVideos: 1,
+		Style:          req.Style,
+	}
+
+	// Add optional parameters from request
 	if req.Seed != nil {
-		wanxiangReq.Parameters.Seed = int64(*req.Seed)
+		params.Seed = int64(*req.Seed)
+	}
+	if req.Audio {
+		params.Audio = true
+	}
+	if req.PromptExtend {
+		params.PromptExtend = true
+	}
+	if req.ShotType != "" {
+		params.ShotType = req.ShotType
+	}
+	if req.Watermark {
+		params.Watermark = true
+	}
+
+	wanxiangReq := Wanxiang26VideoRequest{
+		Model:      "wan2.6-t2v", // Wanxiang 2.6 text-to-video model
+		Input:      input,
+		Parameters: params,
 	}
 
 	body, err := json.Marshal(wanxiangReq)
@@ -421,8 +461,8 @@ func (p *Wanxiang26Provider) ImageToVideo(ctx context.Context, imageURL, prompt 
 	if duration == 0 {
 		duration = 5
 	}
-	if duration > 10 {
-		duration = 10
+	if duration > 15 {
+		duration = 15
 	}
 
 	wanxiangReq := Wanxiang26VideoRequest{
@@ -432,9 +472,9 @@ func (p *Wanxiang26Provider) ImageToVideo(ctx context.Context, imageURL, prompt 
 			ImageURL: imageURL,
 		},
 		Parameters: Wanxiang26Parameters{
-			Size:           "1280:720",
+			Size:           p.resolutionToSize("720p", "16:9"), // API expects "width*height" format
 			Duration:       float64(duration),
-			FPSEnum:        30,
+			FPSEnum:        p.fpsToInt(""),
 			NumberOfVideos: 1,
 		},
 	}
@@ -498,6 +538,63 @@ func (p *Wanxiang26Provider) SupportedVideoResolutions() []string {
 		"720p",   // 1280x720
 		"1080p",  // 1920x1080
 		"480p",   // 854x480
+	}
+}
+
+// resolutionToSize converts resolution string and aspect ratio to API size format
+func (p *Wanxiang26Provider) resolutionToSize(resolution, aspectRatio string) string {
+	// Default values
+	if resolution == "" {
+		resolution = "720p"
+	}
+	if aspectRatio == "" {
+		aspectRatio = "16:9"
+	}
+
+	// Map resolution to dimensions
+	switch resolution {
+	case "1080p":
+		if aspectRatio == "9:16" {
+			return "1080*1920"
+		}
+		return "1920*1080"
+	case "720p":
+		if aspectRatio == "9:16" {
+			return "720*1280"
+		}
+		return "1280*720"
+	case "480p":
+		if aspectRatio == "9:16" {
+			return "480*854"
+		}
+		return "854*480"
+	default:
+		// Default to 720p 16:9
+		return "1280*720"
+	}
+}
+
+// fpsToInt converts FPS string to integer value
+func (p *Wanxiang26Provider) fpsToInt(fps string) int {
+	switch fps {
+	case "24":
+		return 24
+	case "25":
+		return 25
+	case "50":
+		return 50
+	case "30", "":
+		return 30
+	default:
+		// Try to parse as int, default to 30 if invalid
+		var fpsInt int
+		if _, err := fmt.Sscanf(fps, "%d", &fpsInt); err == nil {
+			switch fpsInt {
+			case 24, 25, 30, 50:
+				return fpsInt
+			}
+		}
+		return 30
 	}
 }
 

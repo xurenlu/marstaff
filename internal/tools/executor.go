@@ -288,20 +288,22 @@ func (e *Executor) createAsyncAFKTask(ctx context.Context, task media.AsyncTaskI
 	}
 
 	// Update session to enter AFK mode (best-effort: session may not exist if not persisted)
-	session, err := e.sessionRepo.GetByID(ctx, sessionID)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			log.Warn().Str("session_id", sessionID).Msg("session not found when creating AFK task, skipping AFK mode update")
-			// AFK task is created; video polling will continue. Session just won't show AFK indicator.
+	if sessionID != "" {
+		session, err := e.sessionRepo.GetByID(ctx, sessionID)
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				log.Warn().Str("session_id", sessionID).Msg("session not found when creating AFK task, skipping AFK mode update")
+				// AFK task is created; video polling will continue. Session just won't show AFK indicator.
+			} else {
+				return fmt.Errorf("failed to get session: %w", err)
+			}
 		} else {
-			return fmt.Errorf("failed to get session: %w", err)
-		}
-	} else {
-		if err := session.EnterAFKMode(); err != nil {
-			return fmt.Errorf("failed to enter AFK mode: %w", err)
-		}
-		if err := e.sessionRepo.Update(ctx, session); err != nil {
-			return fmt.Errorf("failed to update session: %w", err)
+			if err := session.EnterAFKMode(); err != nil {
+				return fmt.Errorf("failed to enter AFK mode: %w", err)
+			}
+			if err := e.sessionRepo.Update(ctx, session); err != nil {
+				return fmt.Errorf("failed to update session: %w", err)
+			}
 		}
 	}
 
@@ -380,37 +382,76 @@ func (e *Executor) RegisterMediaTools() {
 
 	// generate_video tool
 	e.engine.RegisterTool("generate_video",
-		"Generates videos from text descriptions using AI",
+		"Generates videos from text descriptions using AI (Wanxiang 2.6). "+
+			"IMPORTANT: Extract video parameters from the user's natural language prompt. "+
+			"Look for mentions of duration (e.g., '10秒', '10 seconds', '10s' → duration=10), "+
+			"resolution (e.g., '1080p', '高清', '超清' → resolution='1080p'; '720p' → resolution='720p'), "+
+			"aspect ratio (e.g., '竖屏', '9:16', '竖版' → aspect_ratio='9:16'; '横屏', '16:9', '横版' → aspect_ratio='16:9'), "+
+			"FPS (e.g., '24帧', '24fps' → fps='24'), "+
+			"audio requirements (e.g., '要音乐', '有音乐', '需要音频' → audio=true), "+
+			"and include them as tool parameters.",
 		map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
 				"prompt": map[string]interface{}{
 					"type":        "string",
-					"description": "Text description of the video to generate",
+					"description": "Text description of the video content and visual elements",
 				},
 				"duration": map[string]interface{}{
 					"type":        "integer",
-					"description": "Duration in seconds (default: 5, max: 30)",
+					"description": "Duration in seconds. Extract from mentions like '10秒', '10 seconds', '10s' (default: 5, max: 15 for Wanxiang 2.6)",
 				},
 				"aspect_ratio": map[string]interface{}{
 					"type":        "string",
-					"description": "Aspect ratio - '16:9', '9:16', '1:1' (default: '16:9')",
+					"description": "Aspect ratio. Extract '9:16' for vertical/portrait/竖屏/竖版, '16:9' for horizontal/landscape/横屏/横版 (default: '16:9')",
+					"enum":        []string{"16:9", "9:16", "1:1"},
 				},
 				"resolution": map[string]interface{}{
 					"type":        "string",
-					"description": "Resolution - '720p', '1080p' (default: '720p')",
+					"description": "Resolution. Extract '1080p' for HD/高清/超清, '720p' for standard (default: '720p')",
+					"enum":        []string{"720p", "1080p", "480p"},
+				},
+				"fps": map[string]interface{}{
+					"type":        "string",
+					"description": "Frame rate. Extract from mentions like '24帧', '24fps', '30帧' (default: '30')",
+					"enum":        []string{"24", "25", "30", "50"},
 				},
 				"style": map[string]interface{}{
 					"type":        "string",
-					"description": "Style preset",
+					"description": "Style preset (e.g., 'anime', 'realistic', '3d', 'cinematic')",
 				},
 				"negative_prompt": map[string]interface{}{
 					"type":        "string",
-					"description": "Things to avoid in the video",
+					"description": "Things to avoid in the video (e.g., 'blurry', 'low quality', 'distorted')",
 				},
 				"seed": map[string]interface{}{
 					"type":        "integer",
 					"description": "Optional seed for reproducible results",
+				},
+				"audio": map[string]interface{}{
+					"type":        "boolean",
+					"description": "Whether to generate audio. Set to true if user mentions '要音乐', '有音乐', '需要音频', 'with audio', 'with music' (default: false)",
+				},
+				"audio_url": map[string]interface{}{
+					"type":        "string",
+					"description": "Optional URL of an audio file to include in the video",
+				},
+				"prompt_extend": map[string]interface{}{
+					"type":        "boolean",
+					"description": "Whether to automatically extend/enhance the prompt (default: false)",
+				},
+				"shot_type": map[string]interface{}{
+					"type":        "string",
+					"description": "Shot type: 'single' for single shot, 'multi' for multi-shot narrative with multiple scenes (default: 'single')",
+					"enum":        []string{"single", "multi"},
+				},
+				"watermark": map[string]interface{}{
+					"type":        "boolean",
+					"description": "Whether to add watermark to the video (default: false)",
+				},
+				"template": map[string]interface{}{
+					"type":        "string",
+					"description": "Optional template ID for using predefined video styles",
 				},
 			},
 			"required": []string{"prompt"},
