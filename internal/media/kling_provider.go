@@ -28,18 +28,54 @@ type KlingProvider struct {
 
 // KlingVideoRequest is the request format for Kling video generation API
 type KlingVideoRequest struct {
-	Model          string              `json:"model"`                    // Model: "kling-video-o1", "kling-v2-6", etc.
-	Prompt         string              `json:"prompt"`                   // Required: text description
-	NegativePrompt string              `json:"negative_prompt,omitempty"` // Optional: things to avoid
-	InputReference string              `json:"input_reference,omitempty"` // Optional: image URL for image-to-video
-	ImageTail      string              `json:"image_tail,omitempty"`      // Optional: end frame reference
-	Mode           string              `json:"mode,omitempty"`           // "std" (720p) or "pro" (1080p)
-	AspectRatio    string              `json:"aspect_ratio,omitempty"`    // "16:9", "9:16", "1:1"
-	Duration       int                 `json:"duration,omitempty"`        // 5 or 10 seconds
-	Strength       int                 `json:"strength,omitempty"`        // 0-100 for image-to-video
-	CameraControl  *KlingCameraControl `json:"camera_control,omitempty"`  // Optional: camera movement
-	FaceControl    *KlingFaceControl   `json:"face_control,omitempty"`   // Optional: face control
-	WebhookURL     string              `json:"webhookUrl,omitempty"`      // Optional: webhook callback
+	Model          string                   `json:"model"`                    // Model: "kling-video-o1", "kling-v3", "kling-v3-omni", etc.
+	Prompt         string                   `json:"prompt"`                   // Required: text description
+	NegativePrompt string                   `json:"negative_prompt,omitempty"` // Optional: things to avoid
+	InputReference string                   `json:"input_reference,omitempty"` // Optional: image URL for image-to-video (head frame)
+	ImageTail      string                   `json:"image_tail,omitempty"`      // Optional: end frame reference for "one-shot" video
+	Mode           string                   `json:"mode,omitempty"`           // "std" (720p) or "pro" (1080p)
+	AspectRatio    string                   `json:"aspect_ratio,omitempty"`    // "16:9", "9:16", "1:1"
+	Duration       int                      `json:"duration,omitempty"`        // 3-15 seconds (v3), 5-10 (v2.6/o1)
+	Strength       int                      `json:"strength,omitempty"`        // 0-100 for image-to-video
+	CameraControl  *KlingCameraControl      `json:"camera_control,omitempty"`  // Optional: camera movement
+	FaceControl    *KlingFaceControl        `json:"face_control,omitempty"`   // Optional: face control (deprecated in v3)
+	WebhookURL     string                   `json:"webhookUrl,omitempty"`      // Optional: webhook callback
+	MultiShot      string                   `json:"multi_shot,omitempty"`      // Multi-shot mode: "intelligence", "custom"
+	SubjectControl *KlingSubjectControl     `json:"subject_control,omitempty"` // Optional: subject control (v3)
+	VideoReference *KlingVideoReference     `json:"video_reference,omitempty"` // Optional: video reference for style
+	SoundControl   *KlingSoundControl       `json:"sound_control,omitempty"`   // Optional: sound control (v3-omni only)
+	CustomShots    []KlingCustomShot        `json:"custom_shots,omitempty"`    // Optional: custom shot definitions
+	Stream         bool                     `json:"stream,omitempty"`          // Optional: stream response
+}
+
+// KlingSubjectControl controls subject/character features (v3)
+type KlingSubjectControl struct {
+	SubjectID      string   `json:"subject_id,omitempty"`      // Subject ID from subject library
+	SubjectImages  []string `json:"subject_images,omitempty"`  // Multi-image subject URLs
+	SubjectType    string   `json:"subject_type,omitempty"`    // "video_character" or "multi_image"
+	VoiceTimbre    string   `json:"voice_timbre,omitempty"`    // Voice timbre ID for sound
+}
+
+// KlingVideoReference controls video style reference
+type KlingVideoReference struct {
+	VideoURL      string  `json:"video_url,omitempty"`      // Reference video URL (3s-10s for v3-omni)
+	ReferenceType string  `json:"reference_type,omitempty"` // "style" or "motion"
+	Strength      float64 `json:"strength,omitempty"`       // Reference strength 0-1
+}
+
+// KlingSoundControl controls sound generation (v3-omni only)
+type KlingSoundControl struct {
+	EnableSound    bool   `json:"enable_sound,omitempty"`     // Enable sound generation
+	VoiceTimbreID  string `json:"voice_timbre_id,omitempty"`  // Voice timbre ID for character speech
+	BackgroundMusic string `json:"background_music,omitempty"` // Background music style
+	SoundEffects   bool   `json:"sound_effects,omitempty"`    // Enable sound effects
+}
+
+// KlingCustomShot defines a custom shot for multi-shot video
+type KlingCustomShot struct {
+	Prompt    string `json:"prompt"`              // Shot-specific prompt
+	StartTime int    `json:"start_time,omitempty"` // Start time in seconds
+	EndTime   int    `json:"end_time,omitempty"`   // End time in seconds
 }
 
 // KlingCameraControl controls camera movement
@@ -95,13 +131,20 @@ type KlingTaskStatusResponse struct {
 
 // KlingImageRequest is the request format for Kling image generation API
 type KlingImageRequest struct {
-	Model          string   `json:"model"`                    // Model: "kolors" etc.
-	Prompt         string   `json:"prompt"`                   // Required: text description
-	NegativePrompt string   `json:"negative_prompt,omitempty"` // Optional: things to avoid
-	Mode           string   `json:"mode,omitempty"`           // "std" or "pro"
-	AspectRatio    string   `json:"aspect_ratio,omitempty"`    // "1:1", "3:4", "4:3", "9:16", "16:9"
-	N              int      `json:"n,omitempty"`               // Number of images (1-4)
-	Seed           int64    `json:"seed,omitempty"`           // Random seed
+	Model          string                `json:"model"`                    // Model: "kling-v3-omni", "kling-image-o1", "kolors" etc.
+	Prompt         string                `json:"prompt"`                   // Required: text description
+	NegativePrompt string                `json:"negative_prompt,omitempty"` // Optional: things to avoid
+	Mode           string                `json:"mode,omitempty"`           // "std" (1K/2K) or "pro" (1K/2K/4K)
+	AspectRatio    string                `json:"aspect_ratio,omitempty"`    // "1:1", "3:4", "4:3", "9:16", "16:9", "smart"
+	N              int                   `json:"n,omitempty"`               // Number of images (1-4)
+	Seed           int64                 `json:"seed,omitempty"`           // Random seed
+	InputImage     string                `json:"input_image,omitempty"`     // Image URL for image-to-image
+	SubjectControl *KlingImageSubjectControl `json:"subject_control,omitempty"` // Subject control (v3)
+}
+
+// KlingImageSubjectControl controls subject features for image generation (v3)
+type KlingImageSubjectControl struct {
+	SubjectImages []string `json:"subject_images,omitempty"` // Multi-image subject URLs (2-4 images)
 }
 
 // KlingImageResponse is the response from Kling image generation API
@@ -143,7 +186,7 @@ func (p *KlingProvider) Name() string {
 	return "kling"
 }
 
-// GenerateImage generates images using Kling AI (Kolors model)
+// GenerateImage generates images using Kling AI (v3-omni, v3-image-o1, or kolors model)
 func (p *KlingProvider) GenerateImage(ctx context.Context, req ImageGenerationRequest) (*ImageGenerationResponse, error) {
 	// Set defaults
 	if req.N == 0 {
@@ -153,12 +196,27 @@ func (p *KlingProvider) GenerateImage(ctx context.Context, req ImageGenerationRe
 		req.N = 4
 	}
 
+	// Determine model - default to v3-omni for best quality
+	model := "kling-v3-omni"
+	if req.Style != "" {
+		switch req.Style {
+		case "v3-omni", "v3":
+			model = "kling-v3-omni"
+		case "o1":
+			model = "kling-image-o1"
+		case "kolors":
+			model = "kolors"
+		default:
+			model = "kling-v3-omni"
+		}
+	}
+
 	// Build request
 	klingReq := KlingImageRequest{
-		Model:          "kolors", // Kling's image generation model
+		Model:          model,
 		Prompt:         req.Prompt,
 		NegativePrompt: req.NegativePrompt,
-		Mode:           "pro",
+		Mode:           "pro", // pro mode supports 1K/2K/4K for v3-omni
 		AspectRatio:    p.aspectRatioToKling(req.Size),
 		N:              req.N,
 	}
@@ -166,6 +224,10 @@ func (p *KlingProvider) GenerateImage(ctx context.Context, req ImageGenerationRe
 	if req.Seed != nil {
 		klingReq.Seed = int64(*req.Seed)
 	}
+
+	// Check if this is image-to-image (input image provided)
+	// The ImageGenerationRequest doesn't have an InputImage field, but we can check ExtendedParams if needed
+	// For now, we'll add support through a potential future extension
 
 	body, err := json.Marshal(klingReq)
 	if err != nil {
@@ -187,7 +249,7 @@ func (p *KlingProvider) GenerateImage(ctx context.Context, req ImageGenerationRe
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Authorization", "Bearer "+token)
 
-	log.Debug().Str("provider", "kling").Str("url", url).Msg("sending image generation request")
+	log.Debug().Str("provider", "kling").Str("url", url).Str("model", model).Msg("sending image generation request")
 
 	resp, err := p.httpClient.Do(httpReq)
 	if err != nil {
@@ -232,16 +294,41 @@ func (p *KlingProvider) GenerateVideo(ctx context.Context, req VideoGenerationRe
 	if req.Duration == 0 {
 		req.Duration = 5
 	}
-	if req.Duration > 10 {
-		req.Duration = 10 // Kling max is 10 seconds
+	// Determine max duration based on model (v3 supports up to 15s, v2.6/o1 up to 10s)
+	maxDuration := 10
+	if req.Style == "v3" || req.Style == "v3-omni" {
+		maxDuration = 15
+	}
+	if req.Duration > maxDuration {
+		req.Duration = maxDuration
+	}
+	if req.Duration < 3 {
+		req.Duration = 3 // Minimum 3 seconds for v3 models
 	}
 	if req.AspectRatio == "" {
 		req.AspectRatio = "16:9"
 	}
 
+	// Determine model
+	model := "kling-v3-omni" // Default to latest v3-omni
+	if req.Style != "" {
+		switch req.Style {
+		case "v3-omni":
+			model = "kling-v3-omni"
+		case "v3":
+			model = "kling-v3"
+		case "v2.6":
+			model = "kling-v2-6"
+		case "o1":
+			model = "kling-video-o1"
+		default:
+			model = "kling-v3-omni"
+		}
+	}
+
 	// Build request
 	klingReq := KlingVideoRequest{
-		Model:          "kling-v2-6", // Latest Kling 2.6 model
+		Model:          model,
 		Prompt:         req.Prompt,
 		NegativePrompt: req.NegativePrompt,
 		Mode:           "pro", // Default to pro mode (1080p)
@@ -249,12 +336,97 @@ func (p *KlingProvider) GenerateVideo(ctx context.Context, req VideoGenerationRe
 		Duration:       req.Duration,
 	}
 
-	// Add image reference for image-to-video (video continuation)
+	// Add image reference for image-to-video (video continuation) - head frame
 	if imageURL, ok := req.ExtendedParams["image_url"].(string); ok && imageURL != "" {
 		klingReq.InputReference = imageURL
 	}
 
-	// Add face control parameters if present
+	// Add tail frame for "one-shot" video (一镜到底)
+	if imageTailURL, ok := req.ExtendedParams["image_tail_url"].(string); ok && imageTailURL != "" {
+		klingReq.ImageTail = imageTailURL
+	}
+
+	// Add multi-shot mode (智能分镜)
+	if multiShot, ok := req.ExtendedParams["multi_shot"].(string); ok {
+		klingReq.MultiShot = multiShot // "intelligence" or "custom"
+	}
+
+	// Add subject control (v3 feature) - 主体控制
+	if subjectControl, ok := req.ExtendedParams["subject_control"].(map[string]interface{}); ok {
+		klingReq.SubjectControl = &KlingSubjectControl{}
+		if subjectID, ok := subjectControl["subject_id"].(string); ok {
+			klingReq.SubjectControl.SubjectID = subjectID
+		}
+		if subjectImages, ok := subjectControl["subject_images"].([]string); ok {
+			klingReq.SubjectControl.SubjectImages = subjectImages
+		}
+		// Handle subject_images from []interface{}
+		if subjectImagesInterface, ok := subjectControl["subject_images"].([]interface{}); ok {
+			for _, img := range subjectImagesInterface {
+				if imgStr, ok := img.(string); ok {
+					klingReq.SubjectControl.SubjectImages = append(klingReq.SubjectControl.SubjectImages, imgStr)
+				}
+			}
+		}
+		if subjectType, ok := subjectControl["subject_type"].(string); ok {
+			klingReq.SubjectControl.SubjectType = subjectType // "video_character" or "multi_image"
+		}
+		if voiceTimbre, ok := subjectControl["voice_timbre"].(string); ok {
+			klingReq.SubjectControl.VoiceTimbre = voiceTimbre
+		}
+	}
+
+	// Add video reference for style/motion (v3 feature)
+	if videoRef, ok := req.ExtendedParams["video_reference"].(map[string]interface{}); ok {
+		klingReq.VideoReference = &KlingVideoReference{}
+		if videoURL, ok := videoRef["video_url"].(string); ok {
+			klingReq.VideoReference.VideoURL = videoURL
+		}
+		if refType, ok := videoRef["reference_type"].(string); ok {
+			klingReq.VideoReference.ReferenceType = refType // "style" or "motion"
+		}
+		if strength, ok := videoRef["strength"].(float64); ok {
+			klingReq.VideoReference.Strength = strength
+		}
+	}
+
+	// Add sound control (v3-omni feature) - 声音控制
+	if soundControl, ok := req.ExtendedParams["sound_control"].(map[string]interface{}); ok {
+		klingReq.SoundControl = &KlingSoundControl{}
+		if enableSound, ok := soundControl["enable_sound"].(bool); ok {
+			klingReq.SoundControl.EnableSound = enableSound
+		}
+		if voiceTimbreID, ok := soundControl["voice_timbre_id"].(string); ok {
+			klingReq.SoundControl.VoiceTimbreID = voiceTimbreID
+		}
+		if bgMusic, ok := soundControl["background_music"].(string); ok {
+			klingReq.SoundControl.BackgroundMusic = bgMusic
+		}
+		if soundEffects, ok := soundControl["sound_effects"].(bool); ok {
+			klingReq.SoundControl.SoundEffects = soundEffects
+		}
+	}
+
+	// Add custom shots for multi-shot video
+	if customShots, ok := req.ExtendedParams["custom_shots"].([]interface{}); ok {
+		for _, shot := range customShots {
+			if shotMap, ok := shot.(map[string]interface{}); ok {
+				customShot := KlingCustomShot{}
+				if prompt, ok := shotMap["prompt"].(string); ok {
+					customShot.Prompt = prompt
+				}
+				if startTime, ok := shotMap["start_time"].(int); ok {
+					customShot.StartTime = startTime
+				}
+				if endTime, ok := shotMap["end_time"].(int); ok {
+					customShot.EndTime = endTime
+				}
+				klingReq.CustomShots = append(klingReq.CustomShots, customShot)
+			}
+		}
+	}
+
+	// Add face control parameters (deprecated in v3, but still supported for older models)
 	if faceControl, ok := req.ExtendedParams["face_control"].(map[string]interface{}); ok {
 		klingReq.FaceControl = &KlingFaceControl{}
 
@@ -306,6 +478,11 @@ func (p *KlingProvider) GenerateVideo(ctx context.Context, req VideoGenerationRe
 		klingReq.Mode = "std"
 	}
 
+	// Add stream option
+	if stream, ok := req.ExtendedParams["stream"].(bool); ok {
+		klingReq.Stream = stream
+	}
+
 	body, err := json.Marshal(klingReq)
 	if err != nil {
 		return nil, &MediaError{Code: "marshal_error", Message: "failed to marshal request", Err: err}
@@ -335,6 +512,11 @@ func (p *KlingProvider) GenerateVideo(ctx context.Context, req VideoGenerationRe
 	log.Debug().Str("provider", "kling").Str("url", url).
 		Str("model", klingReq.Model).
 		Bool("has_image_ref", klingReq.InputReference != "").
+		Bool("has_tail_frame", klingReq.ImageTail != "").
+		Bool("multi_shot", klingReq.MultiShot != "").
+		Bool("subject_control", klingReq.SubjectControl != nil).
+		Bool("video_reference", klingReq.VideoReference != nil).
+		Bool("sound_control", klingReq.SoundControl != nil).
 		Msg("sending video generation request")
 
 	resp, err := p.httpClient.Do(httpReq)

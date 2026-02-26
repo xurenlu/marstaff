@@ -41,11 +41,11 @@ type AsyncTaskCreatedCallback func(ctx context.Context, task AsyncTaskInfo) erro
 // GenerateVideoTool generates videos from text prompts
 // Parameters:
 //   - prompt (string, required): Text description of the video to generate
-//   - duration (int, optional): Duration in seconds (default: 5, max: 15 for Wanxiang 2.6, max: 10 for Kling)
+//   - duration (int, optional): Duration in seconds (default: 5, max: 15 for Wanxiang 2.6/Kling v3, max: 10 for Kling v2.6/o1)
 //   - aspect_ratio (string, optional): Aspect ratio - "16:9", "9:16", "1:1" (default: "16:9")
 //   - resolution (string, optional): Resolution - "720p", "1080p", "480p" (default: "720p")
 //   - fps (string, optional): Frame rate - "24", "25", "30", "50" (default: "30")
-//   - style (string, optional): Style preset
+//   - style (string, optional): Style preset or Kling model: "v3-omni" (default), "v3", "v2.6", "o1"
 //   - negative_prompt (string, optional): Things to avoid in the video
 //   - seed (int, optional): Seed for reproducible results
 //   - audio (bool, optional): Whether to generate audio (default: false)
@@ -55,7 +55,27 @@ type AsyncTaskCreatedCallback func(ctx context.Context, task AsyncTaskInfo) erro
 //   - watermark (bool, optional): Whether to add watermark (default: false)
 //   - template (string, optional): Template ID for predefined styles
 //   - image_url (string, optional): First frame image URL for video continuation (image-to-video)
-//   - face_control (object, optional): Face control parameters for Kling AI:
+//   - image_tail_url (string, optional): End frame image URL for "one-shot" video (Kling 3.0 首尾帧/一镜到底)
+//   - multi_shot (string, optional): Multi-shot mode for Kling 3.0 - "intelligence" (智能分镜) or "custom"
+//   - subject_control (object, optional): Subject control for Kling 3.0:
+//     - subject_id (string): Subject ID from subject library
+//     - subject_images (array): Array of image URLs for multi-image subject (2-4 images)
+//     - subject_type (string): "video_character" or "multi_image"
+//     - voice_timbre (string): Voice timbre ID for sound
+//   - video_reference (object, optional): Video reference for style/motion (Kling 3.0):
+//     - video_url (string): Reference video URL (3s-10s for v3-omni)
+//     - reference_type (string): "style" or "motion"
+//     - strength (float): Reference strength 0-1
+//   - sound_control (object, optional): Sound control for Kling 3.0-omni:
+//     - enable_sound (bool): Enable sound generation
+//     - voice_timbre_id (string): Voice timbre ID for character speech
+//     - background_music (string): Background music style
+//     - sound_effects (bool): Enable sound effects
+//   - custom_shots (array, optional): Custom shot definitions for multi-shot video:
+//     - prompt (string): Shot-specific prompt
+//     - start_time (int): Start time in seconds
+//     - end_time (int): End time in seconds
+//   - face_control (object, optional): Face control parameters for Kling AI (deprecated in v3):
 //     - lip_sync (bool): Enable lip synchronization
 //     - audio_url (string): Audio URL for lip sync
 //     - sync_mode (string): "accurate" or "natural"
@@ -64,6 +84,8 @@ type AsyncTaskCreatedCallback func(ctx context.Context, task AsyncTaskInfo) erro
 //   - camera_control (object, optional): Camera movement control for Kling AI:
 //     - type (string): "simple", "down_back", "forward_up", etc.
 //     - config (object): Camera parameters (horizontal, vertical, zoom, tilt, pan, roll)
+//   - webhook_url (string, optional): Webhook URL for async completion notification
+//   - stream (bool, optional): Enable streaming response (default: false)
 //
 // Returns: JSON formatted response with video URLs or status information
 type GenerateVideoTool struct {
@@ -146,6 +168,7 @@ func (t *GenerateVideoTool) Execute(ctx context.Context, params map[string]inter
 
 	// Extract new parameters for video continuation and face control
 	imageURL, _ := getStringParam(params, "image_url", false)
+	imageTailURL, _ := getStringParam(params, "image_tail_url", false) // Kling 3.0: 首尾帧/一镜到底
 
 	// Build extended parameters for provider-specific features
 	extendedParams := make(map[string]interface{})
@@ -155,7 +178,42 @@ func (t *GenerateVideoTool) Execute(ctx context.Context, params map[string]inter
 		extendedParams["image_url"] = imageURL
 	}
 
-	// Add face_control parameters (for Kling AI)
+	// Add image_tail_url for "one-shot" video (Kling 3.0 首尾帧/一镜到底)
+	if imageTailURL != "" {
+		extendedParams["image_tail_url"] = imageTailURL
+	}
+
+	// Add multi_shot mode (Kling 3.0 智能分镜)
+	if multiShot, ok := params["multi_shot"].(string); ok && multiShot != "" {
+		extendedParams["multi_shot"] = multiShot
+		log.Info().Str("multi_shot", multiShot).Msg("multi-shot mode enabled")
+	}
+
+	// Add subject_control parameters (Kling 3.0 主体控制)
+	if subjectControl, ok := params["subject_control"].(map[string]interface{}); ok {
+		extendedParams["subject_control"] = subjectControl
+		log.Info().Interface("subject_control", subjectControl).Msg("subject control enabled")
+	}
+
+	// Add video_reference parameters (Kling 3.0 视频参考)
+	if videoRef, ok := params["video_reference"].(map[string]interface{}); ok {
+		extendedParams["video_reference"] = videoRef
+		log.Info().Interface("video_reference", videoRef).Msg("video reference enabled")
+	}
+
+	// Add sound_control parameters (Kling 3.0-omni 声音控制)
+	if soundControl, ok := params["sound_control"].(map[string]interface{}); ok {
+		extendedParams["sound_control"] = soundControl
+		log.Info().Interface("sound_control", soundControl).Msg("sound control enabled")
+	}
+
+	// Add custom_shots parameters (Kling 3.0 自定义分镜)
+	if customShots, ok := params["custom_shots"].([]interface{}); ok && len(customShots) > 0 {
+		extendedParams["custom_shots"] = customShots
+		log.Info().Int("custom_shots_count", len(customShots)).Msg("custom shots enabled")
+	}
+
+	// Add face_control parameters (for Kling AI, deprecated in v3 but still supported)
 	if faceControl, ok := params["face_control"].(map[string]interface{}); ok {
 		extendedParams["face_control"] = faceControl
 		log.Info().Interface("face_control", faceControl).Msg("face control enabled")
@@ -165,6 +223,16 @@ func (t *GenerateVideoTool) Execute(ctx context.Context, params map[string]inter
 	if cameraControl, ok := params["camera_control"].(map[string]interface{}); ok {
 		extendedParams["camera_control"] = cameraControl
 		log.Info().Interface("camera_control", cameraControl).Msg("camera control enabled")
+	}
+
+	// Add webhook_url parameter
+	if webhookURL, ok := params["webhook_url"].(string); ok && webhookURL != "" {
+		extendedParams["webhook_url"] = webhookURL
+	}
+
+	// Add stream parameter
+	if stream, ok := params["stream"].(bool); ok && stream {
+		extendedParams["stream"] = stream
 	}
 
 	// Boolean parameters
