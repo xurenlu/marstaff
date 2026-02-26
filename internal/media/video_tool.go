@@ -41,7 +41,7 @@ type AsyncTaskCreatedCallback func(ctx context.Context, task AsyncTaskInfo) erro
 // GenerateVideoTool generates videos from text prompts
 // Parameters:
 //   - prompt (string, required): Text description of the video to generate
-//   - duration (int, optional): Duration in seconds (default: 5, max: 15 for Wanxiang 2.6)
+//   - duration (int, optional): Duration in seconds (default: 5, max: 15 for Wanxiang 2.6, max: 10 for Kling)
 //   - aspect_ratio (string, optional): Aspect ratio - "16:9", "9:16", "1:1" (default: "16:9")
 //   - resolution (string, optional): Resolution - "720p", "1080p", "480p" (default: "720p")
 //   - fps (string, optional): Frame rate - "24", "25", "30", "50" (default: "30")
@@ -54,6 +54,16 @@ type AsyncTaskCreatedCallback func(ctx context.Context, task AsyncTaskInfo) erro
 //   - shot_type (string, optional): Shot type - "single" or "multi" (default: "single")
 //   - watermark (bool, optional): Whether to add watermark (default: false)
 //   - template (string, optional): Template ID for predefined styles
+//   - image_url (string, optional): First frame image URL for video continuation (image-to-video)
+//   - face_control (object, optional): Face control parameters for Kling AI:
+//     - lip_sync (bool): Enable lip synchronization
+//     - audio_url (string): Audio URL for lip sync
+//     - sync_mode (string): "accurate" or "natural"
+//     - motion_ref (string): Reference video URL for motion control
+//     - expression (string): Expression control
+//   - camera_control (object, optional): Camera movement control for Kling AI:
+//     - type (string): "simple", "down_back", "forward_up", etc.
+//     - config (object): Camera parameters (horizontal, vertical, zoom, tilt, pan, roll)
 //
 // Returns: JSON formatted response with video URLs or status information
 type GenerateVideoTool struct {
@@ -134,6 +144,29 @@ func (t *GenerateVideoTool) Execute(ctx context.Context, params map[string]inter
 	template, _ := getStringParam(params, "template", false)
 	shotType, _ := getStringParam(params, "shot_type", false)
 
+	// Extract new parameters for video continuation and face control
+	imageURL, _ := getStringParam(params, "image_url", false)
+
+	// Build extended parameters for provider-specific features
+	extendedParams := make(map[string]interface{})
+
+	// Add image_url for video continuation (supported by Kling and Wanxiang)
+	if imageURL != "" {
+		extendedParams["image_url"] = imageURL
+	}
+
+	// Add face_control parameters (for Kling AI)
+	if faceControl, ok := params["face_control"].(map[string]interface{}); ok {
+		extendedParams["face_control"] = faceControl
+		log.Info().Interface("face_control", faceControl).Msg("face control enabled")
+	}
+
+	// Add camera_control parameters (for Kling AI)
+	if cameraControl, ok := params["camera_control"].(map[string]interface{}); ok {
+		extendedParams["camera_control"] = cameraControl
+		log.Info().Interface("camera_control", cameraControl).Msg("camera control enabled")
+	}
+
 	// Boolean parameters
 	audio := false
 	if audioVal, ok := params["audio"].(bool); ok {
@@ -156,6 +189,7 @@ func (t *GenerateVideoTool) Execute(ctx context.Context, params map[string]inter
 		Str("fps", fps).
 		Bool("audio", audio).
 		Bool("prompt_extend", promptExtend).
+		Str("image_url", imageURL).
 		Msg("generating videos")
 
 	// Create generation request
@@ -174,6 +208,8 @@ func (t *GenerateVideoTool) Execute(ctx context.Context, params map[string]inter
 		ShotType:       shotType,
 		Watermark:      watermark,
 		Template:       template,
+		ImageURL:       imageURL,
+		ExtendedParams: extendedParams,
 	}
 
 	// Generate videos

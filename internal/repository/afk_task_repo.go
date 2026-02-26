@@ -179,3 +179,12 @@ func (r *AFKTaskRepository) GetPendingAsyncTasks(ctx context.Context, sessionID 
 		Find(&tasks).Error
 	return tasks, err
 }
+
+// CancelPendingTasksBySessionID cancels all pending async tasks for a session
+func (r *AFKTaskRepository) CancelPendingTasksBySessionID(ctx context.Context, sessionID string) error {
+	return r.db.WithContext(ctx).
+		Model(&model.AFKTask{}).
+		Where("session_id = ? AND task_type = ? AND status = ?", sessionID, model.AFKTaskTypeAsync, model.AFKTaskStatusPending).
+		Update("status", model.AFKTaskStatusFailed).
+		Update("error_message", "Cancelled by user").Error
+}

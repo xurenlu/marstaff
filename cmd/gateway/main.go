@@ -30,6 +30,7 @@ import (
 	"github.com/rocky/marstaff/internal/gateway"
 	"github.com/rocky/marstaff/internal/media"
 	"github.com/rocky/marstaff/internal/model"
+	"github.com/rocky/marstaff/internal/pipeline"
 	"github.com/rocky/marstaff/internal/provider"
 	"github.com/rocky/marstaff/internal/repository"
 	"github.com/rocky/marstaff/internal/skill"
@@ -152,6 +153,12 @@ func run(cmd *cobra.Command, args []string) {
 		ruleRepo = repository.NewRuleRepository(db)
 	}
 
+	// Create token usage repository
+	var tokenUsageRepo *repository.TokenUsageRepository
+	if db != nil {
+		tokenUsageRepo = repository.NewTokenUsageRepository(db)
+	}
+
 	// Create session repository (needed for AFK async tasks)
 	var sessionRepo *repository.SessionRepository
 	if db != nil {
@@ -166,11 +173,12 @@ func run(cmd *cobra.Command, args []string) {
 
 	// Create agent engine
 	engine, err := agent.NewEngine(&agent.Config{
-		Provider:   prov,
-		SkillsPath: cfg.Skills.Path,
-		DB:         db,
-		TodoRepo:   todoRepo,
-		RuleRepo:   ruleRepo,
+		Provider:      prov,
+		SkillsPath:    cfg.Skills.Path,
+		DB:            db,
+		TodoRepo:      todoRepo,
+		RuleRepo:      ruleRepo,
+		TokenUsageRepo: tokenUsageRepo,
 	})
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to create engine")
@@ -369,6 +377,44 @@ func run(cmd *cobra.Command, args []string) {
 		log.Info().Msg("AFK task tools registered")
 	}
 
+	// Create Pipeline system for complex multi-step workflows
+	var pipelineEngine *pipeline.Engine
+	var pipelineAPI *api.PipelineAPI
+	if db != nil && sessionRepo != nil {
+		pipelineRepo := repository.NewPipelineRepository(db)
+		videoTaskExecutor := pipeline.NewVideoTaskExecutor(sessionRepo)
+		pipelineEngine = pipeline.NewEngine(pipelineRepo, videoTaskExecutor, nil)
+		pipelineAPI = api.NewPipelineAPI(db, pipelineEngine)
+
+		// Register pipeline tools with agent
+		pipelineExecutor := tools.NewPipelineExecutor(pipelineEngine, pipelineRepo)
+		pipelineExecutor.RegisterBuiltInTools(engine)
+		log.Info().Msg("Pipeline system initialized with tools registered")
+
+		// Start background pipeline executor (resumes pending/running pipelines)
+		go func() {
+			ctx := context.Background()
+			ticker := time.NewTicker(30 * time.Second)
+			defer ticker.Stop()
+
+			for range ticker.C {
+				pending, err := pipelineRepo.GetPending(ctx)
+				if err != nil {
+					continue
+				}
+
+				for _, p := range pending {
+					if p.Status == model.PipelineStatusPending {
+						log.Info().Uint("pipeline_id", p.ID).Msg("auto-starting pending pipeline")
+						pipelineEngine.Execute(ctx, p.ID)
+					}
+					// Running pipelines are already being executed
+				}
+			}
+		}()
+		log.Info().Msg("Pipeline background executor started")
+	}
+
 	registry := engine.GetSkillRegistry()
 	log.Info().Int("skills", len(registry.List())).Int("tools", engine.GetToolCount()).Msg("agent initialized")
 
@@ -424,6 +470,13 @@ func run(cmd *cobra.Command, args []string) {
 	if db != nil {
 		skillsAPI = api.NewSkillsAPI(db, cfg.Skills.Path, registry)
 		log.Info().Msg("Skills API initialized")
+	}
+
+	// Create token usage API
+	var tokenUsageAPI *api.TokenUsageAPI
+	if db != nil {
+		tokenUsageAPI = api.NewTokenUsageAPI(db)
+		log.Info().Msg("Token usage API initialized")
 	}
 
 	// Create hub and WebSocket server
@@ -522,6 +575,29 @@ func run(cmd *cobra.Command, args []string) {
 			Str("user_id", msg.UserID).
 			Str("session_id", msg.SessionID).
 			Msg("received message")
+
+		// Handle cancel message type
+		if msg.Type == gateway.MessageTypeCancel {
+			// Cancel pending AFK tasks for this session
+			if msg.SessionID != "" && afkTaskRepo != nil {
+				ctx := context.Background()
+				if err := afkTaskRepo.CancelPendingTasksBySessionID(ctx, msg.SessionID); err != nil {
+					log.Error().Err(err).Str("session_id", msg.SessionID).Msg("failed to cancel AFK tasks")
+				} else {
+					log.Info().Str("session_id", msg.SessionID).Msg("cancelled pending AFK tasks")
+				}
+			}
+
+			// Send cancellation confirmation
+			hub.SendToUser(client.UserID, &gateway.Message{
+				Type:      gateway.MessageTypeError,
+				UserID:    client.UserID,
+				SessionID: msg.SessionID,
+				Data:      map[string]interface{}{"error": "Request cancelled"},
+				Timestamp: time.Now().Unix(),
+			})
+			return nil
+		}
 
 		if msg.Type != gateway.MessageTypeChat {
 			return nil
@@ -1211,6 +1287,18 @@ func run(cmd *cobra.Command, args []string) {
 		if skillsAPI != nil {
 			skillsAPI.RegisterRoutes(apiGroup)
 			log.Info().Msg("Skills, Rules, and MCP API routes registered")
+		}
+
+		// Token Usage API
+		if tokenUsageAPI != nil {
+			tokenUsageAPI.RegisterRoutes(apiGroup)
+			log.Info().Msg("Token usage API routes registered")
+		}
+
+		// Pipeline API
+		if pipelineAPI != nil {
+			pipelineAPI.RegisterRoutes(apiGroup)
+			log.Info().Msg("Pipeline API routes registered")
 		}
 
 		// AFK Task API

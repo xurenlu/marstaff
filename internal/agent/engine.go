@@ -24,6 +24,7 @@ type Engine struct {
 	sessionAPI      *api.SessionAPI
 	todoRepo        *repository.TodoRepository
 	ruleRepo        *repository.RuleRepository
+	tokenUsageRepo  *repository.TokenUsageRepository
 	summaryConfig   SummaryConfig // Configuration for conversation summarization
 }
 
@@ -45,11 +46,12 @@ type ToolDefinition struct {
 
 // Config is the engine configuration
 type Config struct {
-	Provider   provider.Provider
-	SkillsPath string
-	DB         *gorm.DB
-	TodoRepo   *repository.TodoRepository
-	RuleRepo   *repository.RuleRepository
+	Provider      provider.Provider
+	SkillsPath    string
+	DB            *gorm.DB
+	TodoRepo      *repository.TodoRepository
+	RuleRepo      *repository.RuleRepository
+	TokenUsageRepo *repository.TokenUsageRepository
 }
 
 // NewEngine creates a new agent engine
@@ -64,11 +66,12 @@ func NewEngine(cfg *Config) (*Engine, error) {
 	}
 
 	engine := &Engine{
-		provider:     cfg.Provider,
+		provider:      cfg.Provider,
 		skillRegistry: skillRegistry,
-		memory:       memory,
-		tools:        make(map[string]ToolDefinition),
-		ruleRepo:     cfg.RuleRepo,
+		memory:        memory,
+		tools:         make(map[string]ToolDefinition),
+		ruleRepo:      cfg.RuleRepo,
+		tokenUsageRepo: cfg.TokenUsageRepo,
 		summaryConfig: SummaryConfig{
 			TriggerCount: 20, // Summarize after 20 messages
 			KeepRecent:   6,  // Keep 6 recent messages in full
@@ -162,6 +165,9 @@ func (e *Engine) Chat(ctx context.Context, req *ChatRequest) (*ChatResponse, err
 	if len(completion.Choices[0].Message.ToolCalls) > 0 {
 		response.ToolCalls = completion.Choices[0].Message.ToolCalls
 	}
+
+	// Record token usage
+	e.recordTokenUsage(ctx, req.SessionID, p.Name(), completion.Model, "chat", completion.Usage)
 
 	// Save assistant response to memory (user messages are saved by caller)
 	if e.memory != nil && req.SessionID != "" && response.Content != "" {
@@ -296,6 +302,9 @@ func (e *Engine) ChatStreamWithCallback(ctx context.Context, req *ChatRequest, o
 		ToolCalls: result.ToolCalls,
 		Usage:     result.Usage,
 	}
+
+	// Record token usage for streaming calls
+	e.recordTokenUsage(ctx, req.SessionID, p.Name(), providerReq.Model, "stream", result.Usage)
 
 	// Save assistant response to memory (user messages are saved by caller)
 	if e.memory != nil && req.SessionID != "" && resp.Content != "" {
@@ -850,4 +859,100 @@ func (e *Engine) GetSession(ctx context.Context, sessionID string) (*model.Sessi
 		return nil, nil
 	}
 	return e.memory.GetSession(ctx, sessionID)
+}
+
+// recordTokenUsage records token usage after a provider call
+func (e *Engine) recordTokenUsage(ctx context.Context, sessionID, providerName, modelName, callType string, usage provider.Usage) {
+	if e.tokenUsageRepo == nil {
+		return
+	}
+
+	// Skip recording if no tokens were used
+	if usage.TotalTokens == 0 {
+		return
+	}
+
+	// Create token usage record
+	tokenUsage := &model.TokenUsage{
+		Provider:         providerName,
+		Model:            modelName,
+		CallType:         callType,
+		PromptTokens:     uint(usage.PromptTokens),
+		CompletionTokens: uint(usage.CompletionTokens),
+		TotalTokens:      uint(usage.TotalTokens),
+	}
+
+	// Set session ID if provided
+	if sessionID != "" {
+		tokenUsage.SessionID = &sessionID
+	}
+
+	// Estimate cost (rough estimation based on common pricing)
+	// This can be enhanced with provider-specific pricing data
+	tokenUsage.EstimatedCost = e.estimateCost(providerName, modelName, usage)
+
+	// Save to database (non-blocking)
+	go func() {
+		if err := e.tokenUsageRepo.Create(context.Background(), tokenUsage); err != nil {
+			log.Warn().Err(err).
+				Str("provider", providerName).
+				Str("model", modelName).
+				Int("tokens", usage.TotalTokens).
+				Msg("failed to record token usage")
+		}
+	}()
+}
+
+// estimateCost provides a rough cost estimation for token usage
+// Pricing is in USD per 1M tokens (input + output)
+func (e *Engine) estimateCost(provider, model string, usage provider.Usage) float64 {
+	// Default pricing (can be enhanced with provider-specific rates)
+	// These are approximate rates as of 2024
+	var inputPrice, outputPrice float64 // per 1M tokens
+
+	switch provider {
+	case "zai", "zhipu":
+		switch model {
+		case "glm-4-flash":
+			inputPrice, outputPrice = 0.1, 0.1
+		case "glm-4-plus", "glm-4":
+			inputPrice, outputPrice = 1.0, 1.0
+		case "glm-4v-plus":
+			inputPrice, outputPrice = 2.5, 2.5
+		default:
+			inputPrice, outputPrice = 0.5, 0.5
+		}
+	case "qwen":
+		switch model {
+		case "qwen-plus":
+			inputPrice, outputPrice = 0.4, 1.2
+		case "qwen-turbo":
+			inputPrice, outputPrice = 0.3, 0.6
+		case "qwen-max":
+			inputPrice, outputPrice = 1.5, 2.0
+		default:
+			inputPrice, outputPrice = 0.5, 0.5
+		}
+	case "deepseek":
+		inputPrice, outputPrice = 0.14, 0.28
+	case "openai":
+		switch model {
+		case "gpt-4o":
+			inputPrice, outputPrice = 2.5, 10.0
+		case "gpt-4o-mini":
+			inputPrice, outputPrice = 0.15, 0.6
+		case "gpt-3.5-turbo":
+			inputPrice, outputPrice = 0.5, 1.5
+		default:
+			inputPrice, outputPrice = 1.0, 2.0
+		}
+	case "gemini":
+		inputPrice, outputPrice = 0.5, 1.5
+	default:
+		inputPrice, outputPrice = 0.1, 0.1
+	}
+
+	// Calculate cost: (input_tokens * input_price + output_tokens * output_price) / 1M
+	cost := (float64(usage.PromptTokens)*inputPrice + float64(usage.CompletionTokens)*outputPrice) / 1000000
+	return cost
 }
