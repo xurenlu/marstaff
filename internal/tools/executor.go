@@ -167,13 +167,16 @@ func (e *Executor) RegisterBuiltInTools() {
 
 	// run_command tool
 	e.engine.RegisterTool("run_command",
-		"Executes a shell command with security validation",
+		"Executes a shell command in the session's working directory. "+
+			"IMPORTANT: When referencing files created with write_file, use relative paths like './script.sh' or '~/script.sh'. "+
+			"The working directory is where write_file saves files. "+
+			"Commands run with sh -c, so you can use pipes, redirects, quotes, etc.",
 		map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
 				"command": map[string]interface{}{
 					"type":        "string",
-					"description": "The shell command to execute",
+					"description": "The shell command to execute. Use ./filename or ~/filename for files in working directory.",
 				},
 				"timeout": map[string]interface{}{
 					"type":        "integer",

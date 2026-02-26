@@ -46,10 +46,6 @@ func (e *Executor) toolRunCommand(ctx context.Context, params map[string]interfa
 		cmdCtx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
 
-		// Always use shell for proper command parsing
-		// This handles quoted strings, pipes, redirects, etc.
-		cmd := exec.CommandContext(cmdCtx, "sh", "-c", command)
-
 		// Set working directory: prefer session work_dir (edit mode), else first config dir
 		workingDir := ""
 		if wd := ctx.Value(contextkeys.SessionWorkDir); wd != nil {
@@ -67,6 +63,14 @@ func (e *Executor) toolRunCommand(ctx context.Context, params map[string]interfa
 			}
 			workingDir = workingDirs[0]
 		}
+
+		// Expand ~ to working directory in command arguments
+		// This makes ~/file work consistently with write_file ~/file
+		processedCommand := expandTildeInCommand(command, workingDir)
+
+		// Always use shell for proper command parsing
+		// This handles quoted strings, pipes, redirects, etc.
+		cmd := exec.CommandContext(cmdCtx, "sh", "-c", processedCommand)
 		cmd.Dir = workingDir
 
 		// Run command and capture output
@@ -110,4 +114,65 @@ func (e *Executor) toolRunCommand(ctx context.Context, params map[string]interfa
 	}
 
 	return result, nil
+}
+
+// expandTildeInCommand expands ~/path to workingDir/path in command strings
+// This handles cases where AI writes files with ~/ prefix and then runs commands on them
+func expandTildeInCommand(command, workingDir string) string {
+	// Simple case: ~/path at start of command or after spaces
+	// We need to be careful not to replace ~ inside quoted strings or other contexts
+	// For now, handle the common case of ~/filename or ~/path/file
+
+	// Replace ~/" with workingDir + "/"
+	expanded := command
+	for {
+		// Find ~/ occurrences
+		idx := findTildePath(expanded)
+		if idx == -1 {
+			break
+		}
+		// Replace ~/ with workingDir/
+		expanded = expanded[:idx] + workingDir + "/" + expanded[idx+2:]
+	}
+	return expanded
+}
+
+// findTildePath finds the index of ~/ that should be expanded
+// Returns -1 if not found, or the index of ~
+// Skips ~ inside quoted strings and after = (for environment variables)
+func findTildePath(s string) int {
+	inSingleQuote := false
+	inDoubleQuote := false
+	escapeNext := false
+
+	for i := 0; i < len(s); i++ {
+		if escapeNext {
+			escapeNext = false
+			continue
+		}
+
+		c := s[i]
+
+		switch c {
+		case '\\':
+			escapeNext = true
+		case '\'':
+			if !inDoubleQuote {
+				inSingleQuote = !inSingleQuote
+			}
+		case '"':
+			if !inSingleQuote {
+				inDoubleQuote = !inDoubleQuote
+			}
+		case '~':
+			// Check if this is ~/ and should be expanded
+			if !inSingleQuote && !inDoubleQuote && i+1 < len(s) && s[i+1] == '/' {
+				// Make sure ~ is not after = (environment variable assignment)
+				if i == 0 || (s[i-1] == ' ' || s[i-1] == '\t') {
+					return i
+				}
+			}
+		}
+	}
+	return -1
 }

@@ -193,7 +193,7 @@ func (s *Scheduler) checkAsyncTaskStatus(ctx context.Context, task *model.AFKTas
 
 		// Update session and notify
 		s.handleAsyncTaskComplete(ctx, task, false)
-	} else if status == "succeeded" {
+	} else if status == "succeeded" || status == "completed" {
 		// Task succeeded
 		task.Status = model.AFKTaskStatusCompleted
 		task.ResultURL = resultURL
@@ -204,6 +204,24 @@ func (s *Scheduler) checkAsyncTaskStatus(ctx context.Context, task *model.AFKTas
 
 		// Update session and notify
 		s.handleAsyncTaskComplete(ctx, task, true)
+	} else if status == "failed" {
+		// Task failed according to status
+		task.Status = model.AFKTaskStatusFailed
+		task.ErrorMessage = "Video generation failed"
+		log.Error().
+			Str("task_id", task.ID).
+			Str("status", status).
+			Msg("async task failed according to status")
+
+		// Update session and notify
+		s.handleAsyncTaskComplete(ctx, task, false)
+	} else {
+		// Task still processing or unknown status
+		log.Debug().
+			Str("task_id", task.ID).
+			Str("status", status).
+			Int("execution_count", task.ExecutionCount).
+			Msg("async task still processing")
 	}
 
 	// Save task updates

@@ -541,6 +541,15 @@ func (e *TaskExecutor) checkWanxiangVideoStatus(ctx context.Context, taskID, sta
 		return "", "", fmt.Errorf("unexpected status code: %d, body: %s", resp.StatusCode, string(body))
 	}
 
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	// Log the raw response for debugging
+	log.Debug().Str("url", url).Str("response", string(body)).Msg("video status API response")
+
+	// Try multiple response formats as the API may return different structures
 	var response struct {
 		Output struct {
 			TaskStatus string `json:"task_status"`
@@ -548,16 +557,39 @@ func (e *TaskExecutor) checkWanxiangVideoStatus(ctx context.Context, taskID, sta
 		} `json:"output"`
 	}
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to read response: %w", err)
+	// First try the standard format
+	if err := json.Unmarshal(body, &response); err == nil && response.Output.TaskStatus != "" {
+		return strings.ToLower(response.Output.TaskStatus), response.Output.VideoURL, nil
 	}
 
-	if err := json.Unmarshal(body, &response); err != nil {
-		return "", "", fmt.Errorf("failed to decode response: %w", err)
+	// Try alternative format with results array
+	var altResponse struct {
+		Output struct {
+			Results []struct {
+				URL     string `json:"url"`
+				Status  string `json:"status"`
+				TaskID  string `json:"task_id"`
+			} `json:"results"`
+		} `json:"output"`
+	}
+	if err := json.Unmarshal(body, &altResponse); err == nil && len(altResponse.Output.Results) > 0 {
+		result := altResponse.Output.Results[0]
+		return strings.ToLower(result.Status), result.URL, nil
 	}
 
-	return response.Output.TaskStatus, response.Output.VideoURL, nil
+	// Try task status format
+	var taskResponse struct {
+		TaskID  string `json:"task_id"`
+		Status  string `json:"status"`
+		Output  struct {
+			URL string `json:"url"`
+		} `json:"output"`
+	}
+	if err := json.Unmarshal(body, &taskResponse); err == nil && taskResponse.Status != "" {
+		return strings.ToLower(taskResponse.Status), taskResponse.Output.URL, nil
+	}
+
+	return "", "", fmt.Errorf("failed to decode response, unknown format: %s", string(body))
 }
 
 // checkQwenVideoStatus checks video generation status for Qwen Wanxiang provider
