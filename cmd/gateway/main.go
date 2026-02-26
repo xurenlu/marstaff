@@ -94,7 +94,7 @@ func run(cmd *cobra.Command, args []string) {
 		db = nil
 	} else {
 		log.Info().Msg("connected to database")
-		if err := db.AutoMigrate(&model.User{}, &model.Session{}, &model.Message{}, &model.Skill{}, &model.Memory{}, &model.TodoItem{}, &model.Project{}, &model.Rule{}, &model.MCPServer{}, &model.MCPTool{}, &model.AFKTask{}, &model.AFKTaskExecution{}); err != nil {
+		if err := db.AutoMigrate(&model.User{}, &model.Session{}, &model.Message{}, &model.Skill{}, &model.Memory{}, &model.TodoItem{}, &model.Project{}, &model.Rule{}, &model.MCPServer{}, &model.MCPTool{}, &model.AFKTask{}, &model.AFKTaskExecution{}, &model.Pipeline{}); err != nil {
 			log.Warn().Err(err).Msg("failed to auto migrate tables")
 		}
 	}
