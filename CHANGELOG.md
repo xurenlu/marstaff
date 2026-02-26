@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **万相 2.6 完整特性支持**：实现阿里万相 2.6 模型的所有参数支持，包括音频 (audio, audio_url)、多镜头叙事 (shot_type)、提示词扩展 (prompt_extend)、水印 (watermark)、模板 (template) 等；支持 AI 从自然语言解析参数（如 "10秒的1080p竖屏视频"）
+- **通用文件下载工具**：新增 `download_file` 工具，支持从任意 HTTP/HTTPS URL 下载文件到 session work_dir，下载后可用于 FFmpeg 等其他工具处理
+- **AFK 页面聊天入口**：在 /afk 页面的任务详情中添加"进入聊天"按钮，点击可跳转到触发该任务的聊天会话
+- **聊天内技能管理**：系统提示新增技能管理功能说明，用户可通过自然语言在聊天中查看、启用、禁用、搜索和安装技能
+
+### Fixed
+
+- **run_command 中 ~ 路径展开**：修复 `bash ~/script.sh` 中 `~` 被错误展开成用户主目录的问题，现在正确展开为 session work_dir
+- **search_files 中 ~ 路径展开**：修复 `search_files path=~/Sites` 中 `~` 未展开导致搜索失败的问题
+- **list_skills 显示已启用技能**：默认只显示已启用的技能，避免 AI 声称有未启用技能的能力；添加 `show_all=true` 参数查看所有技能
+- **视频结果持久化**：修复 OSS 上传失败时视频 URL 未保存到数据库的问题，现在无论上传成功与否都会保存结果 URL
+- **分辨率参数映射**：修复万相 2.6 分辨率参数硬编码问题，正确映射 720p → 1280*720、1080p → 1920*1080
+- **时长限制修正**：万相 2.6 支持最高 15 秒视频，之前错误限制为 10 秒
+
+### Changed
+
+- **系统提示明确本地能力**：更新系统提示，明确说明这是本地 AI Agent 平台，工具/技能运行在本地而非云 AI 服务
+- **工具描述增强**：技能管理工具 (list_skills, enable_skill, disable_skill, search_skills, install_skill) 添加中英文使用示例
+
 ## [1.11.0-rc1] - 2025-02-25
 
 ### Added
