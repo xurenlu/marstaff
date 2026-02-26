@@ -34,6 +34,9 @@ func (e *Executor) toolSearchFiles(ctx context.Context, params map[string]interf
 		searchPath = "."
 	}
 
+	// Expand ~ to user's home directory
+	searchPath = expandTilde(searchPath)
+
 	// Sandbox: non-main sessions run in Docker
 	if useSandbox, workDir := e.shouldUseSandbox(ctx); useSandbox {
 		// find with -name pattern; escape single quotes in pattern
@@ -130,4 +133,18 @@ func (e *Executor) toolSearchFiles(ctx context.Context, params map[string]interf
 	}
 
 	return result.String(), nil
+}
+
+// expandTilde expands ~ to the user's home directory
+func expandTilde(path string) string {
+	if strings.HasPrefix(path, "~/") || path == "~" {
+		homeDir, err := os.UserHomeDir()
+		if err == nil {
+			if path == "~" {
+				return homeDir
+			}
+			return filepath.Join(homeDir, path[2:])
+		}
+	}
+	return path
 }
