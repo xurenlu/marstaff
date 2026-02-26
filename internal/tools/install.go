@@ -42,7 +42,7 @@ func (e *InstallExecutor) SetRegistry(reg skill.SkillRegistryClient) {
 func (e *InstallExecutor) RegisterBuiltInTools() {
 	// Skill installation tools
 	e.engine.RegisterTool("install_skill",
-		"Install a new skill from markdown content, GitHub URL, or registry_id (when registry is configured)",
+		"Install a new skill from GitHub URL, markdown content, or registry. Users can say 'install weather skill' or '安装天气技能'. After installing, use enable_skill to activate it.",
 		map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
@@ -52,11 +52,11 @@ func (e *InstallExecutor) RegisterBuiltInTools() {
 				},
 				"url": map[string]interface{}{
 					"type":        "string",
-					"description": "GitHub URL to fetch skill from (optional, alternative to content)",
+					"description": "GitHub URL to fetch skill from (e.g., 'https://github.com/.../SKILL.md')",
 				},
 				"registry_id": map[string]interface{}{
 					"type":        "string",
-					"description": "Skill ID from registry (use with search_skills first; requires registry_url configured)",
+					"description": "Skill ID from registry (use search_skills first to find the ID)",
 				},
 				"overwrite": map[string]interface{}{
 					"type":        "boolean",
@@ -69,13 +69,13 @@ func (e *InstallExecutor) RegisterBuiltInTools() {
 
 	if e.registry != nil {
 		e.engine.RegisterTool("search_skills",
-			"Search for skills in the remote registry. Returns id, name, description, install_url. Use install_skill with registry_id to install.",
+			"Search for available skills in the skill registry. Users can say 'search skills for weather' or '搜索天气相关技能'. Returns skill ID, name, description which can be used to install.",
 			map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
 					"query": map[string]interface{}{
 						"type":        "string",
-						"description": "Search keyword (e.g., 'weather', 'calculator')",
+						"description": "Search keyword (e.g., 'weather', 'calculator', 'database')",
 					},
 				},
 				"required": []string{"query"},
@@ -100,13 +100,13 @@ func (e *InstallExecutor) RegisterBuiltInTools() {
 	)
 
 	e.engine.RegisterTool("enable_skill",
-		"Enable a skill by ID",
+		"Enable a skill by ID to make it available. Users can say 'enable weather skill' or '启用天气技能'. Use list_skills(show_all=true) to see available skills and their IDs.",
 		map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
 				"skill_id": map[string]interface{}{
 					"type":        "string",
-					"description": "The ID of the skill to enable",
+					"description": "The ID of the skill to enable (e.g., 'weather', 'calculator')",
 				},
 			},
 			"required": []string{"skill_id"},
@@ -115,13 +115,13 @@ func (e *InstallExecutor) RegisterBuiltInTools() {
 	)
 
 	e.engine.RegisterTool("disable_skill",
-		"Disable a skill by ID",
+		"Disable a skill by ID. Users can say 'disable weather skill' or '禁用天气技能'.",
 		map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
 				"skill_id": map[string]interface{}{
 					"type":        "string",
-					"description": "The ID of the skill to disable",
+					"description": "The ID of the skill to disable (e.g., 'weather', 'calculator')",
 				},
 			},
 			"required": []string{"skill_id"},
@@ -130,7 +130,7 @@ func (e *InstallExecutor) RegisterBuiltInTools() {
 	)
 
 	e.engine.RegisterTool("list_skills",
-		"List installed skills. By default shows only enabled skills that are actually available. Use show_all=true to see all skills including disabled ones.",
+		"List installed skills in this agent. Users can say 'list skills' or '查看有什么技能'. By default shows only enabled skills. Use show_all=true to see all skills including disabled ones.",
 		map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{

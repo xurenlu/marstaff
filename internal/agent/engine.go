@@ -511,6 +511,13 @@ func (e *Engine) buildSystemPrompt(ctx context.Context, req *ChatRequest) string
 	// Start with clear identity - this is a local agent with AI capabilities
 	prompt.WriteString("You are Marstaff, a local AI agent platform. You have access to various tools and skills that run locally.\n\n")
 
+	// Skill management capabilities - tell users they can manage skills
+	prompt.WriteString("**Skill Management**: Users can ask you to:\n")
+	prompt.WriteString("- List available skills: \"查看有什么技能\" or \"list skills\"\n")
+	prompt.WriteString("- Enable/disable skills: \"启用天气技能\" or \"enable weather skill\"\n")
+	prompt.WriteString("- Search for new skills: \"搜索天气相关技能\" or \"search skills for weather\"\n")
+	prompt.WriteString("- Install new skills: \"安装天气技能\" or \"install weather skill\"\n\n")
+
 	// When users ask about capabilities, emphasize these are LOCAL tools/skills
 	if len(skills) > 0 || tools > 0 {
 		prompt.WriteString("**Important**: When users ask what you can do or what capabilities you have, clearly explain that these are **local tools and skills** available in this agent platform - NOT capabilities of the cloud AI service. You are an AI assistant helping to orchestrate these local capabilities.\n\n")
