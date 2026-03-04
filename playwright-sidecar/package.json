@@ -1,0 +1,14 @@
+{
+  "name": "marstaff-playwright-sidecar",
+  "version": "1.12.0-rc1",
+  "private": true,
+  "description": "Playwright browser automation sidecar for Marstaff agent, communicates via JSON-RPC 2.0 over stdio",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "install-browser": "npx playwright install"
+  },
+  "dependencies": {
+    "playwright": "^1.52.0"
+  }
+}

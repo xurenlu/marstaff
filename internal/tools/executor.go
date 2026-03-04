@@ -168,19 +168,20 @@ func (e *Executor) RegisterBuiltInTools() {
 	// run_command tool
 	e.engine.RegisterTool("run_command",
 		"Executes a shell command in the session's working directory. "+
+			"Supports npm, npx, yarn, pnpm for dependency installation (e.g. 'npm install', 'yarn add xxx', 'npx playwright install'). "+
+			"For long installs, pass timeout (e.g. 300). "+
 			"IMPORTANT: When referencing files created with write_file, use relative paths like './script.sh' or '~/script.sh'. "+
-			"The working directory is where write_file saves files. "+
-			"Commands run with sh -c, so you can use pipes, redirects, quotes, etc.",
+			"Commands run with sh -c, so you can use pipes, redirects, quotes, cd, etc.",
 		map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
 				"command": map[string]interface{}{
 					"type":        "string",
-					"description": "The shell command to execute. Use ./filename or ~/filename for files in working directory.",
+					"description": "The shell command to execute. Supports npm/npx/yarn/pnpm for installs. Use cd subdir && cmd for subdirectories.",
 				},
 				"timeout": map[string]interface{}{
 					"type":        "integer",
-					"description": "Optional timeout in seconds (default: from config)",
+					"description": "Optional timeout in seconds (default: 60). Use 300+ for npm install, npx playwright install, etc.",
 				},
 			},
 			"required": []string{"command"},
@@ -345,7 +346,10 @@ func (e *Executor) RegisterMediaTools() {
 
 	// generate_image tool
 	e.engine.RegisterTool("generate_image",
-		"Generates images from text descriptions using AI",
+		"Generates visual images (pictures, illustrations, diagrams) from text descriptions. "+
+			"CRITICAL: ONLY call when user explicitly mentions visual output: 图片、画、画一张、配图、illustration、picture、diagram. "+
+			"NEVER call for: 唐诗/诗词/诗歌/月报/情书/故事/代码/报告 — these are text-only; respond with text directly. "+
+			"Rule: If user says \"生成\" without \"图片\" or \"画\", do NOT use this tool.",
 		map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{

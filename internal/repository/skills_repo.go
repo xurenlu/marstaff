@@ -21,14 +21,14 @@ func NewSkillRepository(db *gorm.DB) *SkillRepository {
 // List retrieves all skills
 func (r *SkillRepository) List(ctx context.Context) ([]*model.Skill, error) {
 	var skills []*model.Skill
-	err := r.db.WithContext(ctx).Preload("Tools").Find(&skills).Error
+	err := r.db.WithContext(ctx).Find(&skills).Error
 	return skills, err
 }
 
 // GetByID retrieves a skill by ID
 func (r *SkillRepository) GetByID(ctx context.Context, id string) (*model.Skill, error) {
 	var skill model.Skill
-	err := r.db.WithContext(ctx).Preload("Tools").Where("id = ?", id).First(&skill).Error
+	err := r.db.WithContext(ctx).Where("id = ?", id).First(&skill).Error
 	if err != nil {
 		return nil, err
 	}
@@ -38,7 +38,7 @@ func (r *SkillRepository) GetByID(ctx context.Context, id string) (*model.Skill,
 // GetEnabled retrieves all enabled skills
 func (r *SkillRepository) GetEnabled(ctx context.Context) ([]*model.Skill, error) {
 	var skills []*model.Skill
-	err := r.db.WithContext(ctx).Where("enabled = ?", true).Preload("Tools").Find(&skills).Error
+	err := r.db.WithContext(ctx).Where("enabled = ?", true).Find(&skills).Error
 	return skills, err
 }
 

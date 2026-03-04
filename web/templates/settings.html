@@ -169,6 +169,44 @@
         .link { color: var(--success-color); text-decoration: none; }
         .link:hover { text-decoration: underline; }
 
+        /* Password toggle (eye icon) - reusable component */
+        .password-toggle-wrap {
+            position: relative;
+            display: block;
+            width: 100%;
+        }
+        .password-toggle-wrap input {
+            padding-right: 2.5rem !important;
+            width: 100% !important;
+        }
+        .password-toggle-btn {
+            position: absolute;
+            right: 8px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: none;
+            border: none;
+            padding: 4px;
+            cursor: pointer;
+            color: var(--text-secondary);
+            opacity: 0.7;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .password-toggle-btn:hover {
+            opacity: 1;
+            color: var(--text-primary);
+        }
+        .password-toggle-btn svg {
+            width: 18px;
+            height: 18px;
+        }
+        .password-toggle-btn .icon-eye-slash { display: none; }
+        .password-toggle-btn .icon-eye { display: block; }
+        .password-toggle-wrap.visible .password-toggle-btn .icon-eye-slash { display: block; }
+        .password-toggle-wrap.visible .password-toggle-btn .icon-eye { display: none; }
+
         /* Modal styles */
         .modal {
             display: none;
@@ -271,6 +309,10 @@
             height: 18px;
             accent-color: var(--success-color);
         }
+        .model-chip:hover {
+            opacity: 0.9;
+            border-color: var(--accent-color) !important;
+        }
         .tabs {
             display: flex;
             gap: 0.5rem;
@@ -293,9 +335,46 @@
         }
         .tab-panel { display: none; }
         .tab-panel.active { display: block; }
+
+        /* Toast - 右上角浮层提示 */
+        #toastContainer {
+            position: fixed;
+            top: 1rem;
+            right: 1rem;
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            pointer-events: none;
+        }
+        .toast {
+            padding: 0.75rem 1.25rem;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            animation: toastSlideIn 0.3s ease;
+            pointer-events: auto;
+        }
+        .toast.success {
+            background: var(--success-color);
+            color: white;
+        }
+        .toast.error {
+            background: var(--error-color);
+            color: white;
+        }
+        @keyframes toastSlideIn {
+            from { opacity: 0; transform: translateX(100%); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+        @keyframes toastSlideOut {
+            from { opacity: 1; transform: translateX(0); }
+            to { opacity: 0; transform: translateX(100%); }
+        }
     </style>
 </head>
 <body>
+    <div id="toastContainer"></div>
     <div class="container">
         <a href="javascript:history.go(-1)" class="back-link">← 返回对话</a>
         <h1>设置</h1>
@@ -356,12 +435,19 @@
                         <div class="hint">api.minimaxi.com，海外用户</div>
                     </label>
                 </div>
+                <div class="option-row">
+                    <input type="radio" name="chat_provider" id="chat_openai" value="openai">
+                    <label for="chat_openai">
+                        <strong>OpenAI / 自定义中转</strong> (gpt-4 或自定义)
+                        <div class="hint">支持 OpenAI 官方或 One-API、API2D 等中转站，可自定义 base_url 和 model</div>
+                    </label>
+                </div>
                 <button class="save-btn" id="saveChatBtn">保存</button>
                 <div class="saved" id="chatSavedHint">已保存</div>
             </div>
             <div class="section">
-                <div class="section-title">API Keys（覆盖配置文件）</div>
-                <div class="section-desc">在此设置的 API Key 会写入数据库并覆盖 config 中的配置。留空表示使用环境变量或配置文件。</div>
+                <div class="section-title">API 与模型配置（覆盖配置文件）</div>
+                <div class="section-desc">API Key、Base URL（中转站地址）、模型名称均可在此覆盖。支持 One-API、OpenAI-Forward、API2D 等常见中转站，或自定义 base_url。留空表示使用 config 默认值。</div>
                 <div id="providerKeysContainer">
                     <div style="color: var(--text-secondary); padding: 0.5rem 0;">加载中...</div>
                 </div>
@@ -432,6 +518,7 @@
                 </div>
 
                 <div style="display: flex; gap: 0.5rem;">
+                    <button class="save-btn" id="syncSkillsBtn" style="background: var(--bg-secondary);">同步本地技能</button>
                     <button class="save-btn" id="installSkillBtn" style="background: var(--accent-color);">+ 安装技能</button>
                 </div>
             </div>
@@ -487,7 +574,13 @@
                 </div>
                 <div class="form-group">
                     <label>Webhook URL</label>
-                    <input type="url" id="feishu_webhook" placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/...">
+                    <div class="password-toggle-wrap">
+                        <input type="password" id="feishu_webhook" placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/..." autocomplete="off">
+                        <button type="button" class="password-toggle-btn" aria-label="显示/隐藏" title="点击显示或隐藏">
+                            <svg class="icon-eye" viewBox="0 0 24 24" fill="currentColor"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>
+                            <svg class="icon-eye-slash" viewBox="0 0 24 24" fill="currentColor"><path d="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l1.46 1.46C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z"/></svg>
+                        </button>
+                    </div>
                     <small>在飞书群组中添加自定义机器人即可获得 Webhook URL</small>
                 </div>
                 <button class="save-btn" onclick="saveNotificationSettings()">保存</button>
@@ -509,7 +602,13 @@
                 </div>
                 <div class="form-group">
                     <label>Webhook URL</label>
-                    <input type="url" id="wecom_webhook" placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=...">
+                    <div class="password-toggle-wrap">
+                        <input type="password" id="wecom_webhook" placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=..." autocomplete="off">
+                        <button type="button" class="password-toggle-btn" aria-label="显示/隐藏" title="点击显示或隐藏">
+                            <svg class="icon-eye" viewBox="0 0 24 24" fill="currentColor"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>
+                            <svg class="icon-eye-slash" viewBox="0 0 24 24" fill="currentColor"><path d="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l1.46 1.46C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z"/></svg>
+                        </button>
+                    </div>
                     <small>在企业微信群组中添加群机器人即可获得 Webhook URL</small>
                 </div>
                 <button class="save-btn" onclick="saveNotificationSettings()">保存</button>
@@ -530,7 +629,13 @@
                 </div>
                 <div class="form-group">
                     <label>Chat ID</label>
-                    <input type="text" id="telegram_chat_id" placeholder="你的 Chat ID">
+                    <div class="password-toggle-wrap">
+                        <input type="password" id="telegram_chat_id" placeholder="你的 Chat ID" autocomplete="off">
+                        <button type="button" class="password-toggle-btn" aria-label="显示/隐藏" title="点击显示或隐藏">
+                            <svg class="icon-eye" viewBox="0 0 24 24" fill="currentColor"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>
+                            <svg class="icon-eye-slash" viewBox="0 0 24 24" fill="currentColor"><path d="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l1.46 1.46C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z"/></svg>
+                        </button>
+                    </div>
                     <small>
                         通过 <a href="https://t.me/userinfobot" target="_blank" class="link">@userinfobot</a> 获取你的 Chat ID，
                         然后向你的 Bot 发送一条消息开始对话
@@ -538,7 +643,13 @@
                 </div>
                 <div class="form-group">
                     <label>Bot Token (可选，用于测试)</label>
-                    <input type="text" id="telegram_bot_token" placeholder="123456789:ABCdefGhIjKlmNoPQRsTUVwxyZ">
+                    <div class="password-toggle-wrap">
+                        <input type="password" id="telegram_bot_token" placeholder="123456789:ABCdefGhIjKlmNoPQRsTUVwxyZ" autocomplete="off">
+                        <button type="button" class="password-toggle-btn" aria-label="显示/隐藏" title="点击显示或隐藏">
+                            <svg class="icon-eye" viewBox="0 0 24 24" fill="currentColor"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>
+                            <svg class="icon-eye-slash" viewBox="0 0 24 24" fill="currentColor"><path d="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l1.46 1.46C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z"/></svg>
+                        </button>
+                    </div>
                     <small>格式: BOT_ID:TOKEN。服务器端也需配置此 Token</small>
                 </div>
                 <button class="save-btn" onclick="saveNotificationSettings()">保存</button>
@@ -817,6 +928,19 @@ This skill does something useful..." style="width: 100%; padding: 0.75rem; backg
             confirmCallback = null;
         }
 
+        // Toast 右上角浮层提示
+        function showToast(message, type = 'success') {
+            const container = document.getElementById('toastContainer');
+            const el = document.createElement('div');
+            el.className = `toast ${type}`;
+            el.textContent = message;
+            container.appendChild(el);
+            setTimeout(() => {
+                el.style.animation = 'toastSlideOut 0.2s ease forwards';
+                setTimeout(() => el.remove(), 200);
+            }, 3000);
+        }
+
         document.getElementById('confirmModalOkBtn').addEventListener('click', function() {
             if (confirmCallback) {
                 confirmCallback();
@@ -864,7 +988,7 @@ This skill does something useful..." style="width: 100%; padding: 0.75rem; backg
                 if (data) {
                     if (data.chat_providers) {
                         const providers = data.chat_providers;
-                        ['zai', 'qwen', 'gemini', 'deepseek', 'minimax', 'minimax_intl'].forEach(name => {
+                        ['zai', 'qwen', 'gemini', 'deepseek', 'minimax', 'minimax_intl', 'openai'].forEach(name => {
                             const el = document.getElementById(`chat_${name}`);
                             if (el && !providers.includes(name)) el.closest('.option-row')?.remove();
                         });
@@ -899,9 +1023,7 @@ This skill does something useful..." style="width: 100%; padding: 0.75rem; backg
         document.getElementById('saveChatBtn').addEventListener('click', () => {
             const val = document.querySelector('input[name="chat_provider"]:checked')?.value || 'zai';
             localStorage.setItem('marstaff_chat_provider', val);
-            const hint = document.getElementById('chatSavedHint');
-            hint.style.display = 'block';
-            setTimeout(() => { hint.style.display = 'none'; }, 2000);
+            showToast('已保存');
         });
 
         // ===== PROVIDER API KEYS =====
@@ -912,22 +1034,58 @@ This skill does something useful..." style="width: 100%; padding: 0.75rem; backg
             deepseek: 'DeepSeek',
             minimax: 'MiniMax 中国版',
             minimax_intl: 'MiniMax 国际版',
+            openai: 'OpenAI / 自定义中转',
             ollama: 'Ollama',
             vllm: 'vLLM',
             poe: 'Poe (Claude)'
         };
         const providerKeyFields = {
-            zai: ['api_key'],
-            qwen: ['api_key'],
-            gemini: ['api_key'],
-            deepseek: ['api_key'],
-            minimax: ['api_key', 'group_id'],
-            minimax_intl: ['api_key'],
-            ollama: [],
-            vllm: [],
-            poe: ['api_key']
+            zai: ['api_key', 'base_url', 'model'],
+            qwen: ['api_key', 'base_url', 'model'],
+            gemini: ['api_key', 'base_url', 'model'],
+            deepseek: ['api_key', 'base_url', 'model'],
+            minimax: ['api_key', 'group_id', 'base_url', 'model'],
+            minimax_intl: ['api_key', 'base_url', 'model'],
+            openai: ['api_key', 'base_url', 'model'],
+            ollama: ['base_url', 'model'],
+            vllm: ['base_url', 'model'],
+            poe: ['api_key', 'base_url', 'model']
         };
-        const fieldLabels = { api_key: 'API Key', group_id: 'Group ID' };
+        const fieldLabels = {
+            api_key: 'API Key',
+            group_id: 'Group ID',
+            base_url: 'Base URL（中转站地址，如 https://api.xxx.com/v1）',
+            model: '模型名称（如 qwen-plus、gpt-4、gemini-2.0-flash）'
+        };
+        const sensitiveFields = { api_key: true, group_id: true };
+
+        // 各 provider 默认模型及可选模型（与后端 SupportedModels 一致，便于快捷填入）
+        const providerDefaultModels = {
+            zai: 'glm-4-flash',
+            qwen: 'qwen-max',
+            gemini: 'gemini-2.0-flash-exp',
+            deepseek: 'deepseek-chat',
+            minimax: 'abab6.5s-chat',
+            minimax_intl: 'abab6.5s-chat',
+            openai: 'gpt-4',
+            ollama: 'llama3.2',
+            vllm: 'meta-llama/Llama-2-7b-chat-hf',
+            poe: 'Claude-Sonnet-4',
+            zhipu: 'glm-4-flash'
+        };
+        const providerModelOptions = {
+            zai: ['glm-5', 'glm-4-flash', 'glm-4.7', 'glm-4.6', 'glm-4.5', 'glm-4v-plus', 'glm-4v'],
+            qwen: ['qwen-max', 'qwen-plus', 'qwen-turbo', 'qwen-long', 'qwen-vl-max', 'qwen-vl-plus'],
+            gemini: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.5-pro-exp-03-25', 'gemini-2.0-flash-exp', 'gemini-2.0-flash-thinking-exp', 'gemini-1.5-pro', 'gemini-1.5-flash', 'gemini-1.5-flash-8b'],
+            deepseek: ['deepseek-chat', 'deepseek-reasoner'],
+            minimax: ['abab6.5s-chat', 'abab6.5-chat', 'abab5.5-chat', 'abab5.5s-chat'],
+            minimax_intl: ['abab6.5s-chat', 'abab6.5-chat', 'abab5.5-chat', 'abab5.5s-chat'],
+            openai: ['gpt-4', 'gpt-4-turbo', 'gpt-3.5-turbo', 'gpt-4o', 'gpt-4o-mini'],
+            ollama: ['llama3.2', 'llama3.1', 'llama3', 'mistral', 'codellama', 'qwen2', 'gemma2'],
+            vllm: ['meta-llama/Llama-2-7b-chat-hf', 'meta-llama/Llama-2-13b-chat-hf', 'mistralai/Mistral-7B-Instruct-v0.2', 'Qwen/Qwen2-7B-Instruct', 'codellama/CodeLlama-7b-Instruct-hf'],
+            poe: ['Claude-Sonnet-4', 'Claude-Sonnet-4.5', 'Claude-Opus-4.5', 'Claude-Haiku-3.5', 'GPT-4o', 'GPT-4o-mini', 'Gemini-3-Pro', 'Llama-3.1-405B', 'Grok-4'],
+            zhipu: ['glm-5', 'glm-4-flash', 'glm-4', 'glm-4-plus', 'glm-4-air', 'glm-4-flashx', 'glm-4-long']
+        };
 
         async function loadProviderKeys() {
             const container = document.getElementById('providerKeysContainer');
@@ -948,12 +1106,50 @@ This skill does something useful..." style="width: 100%; padding: 0.75rem; backg
                     html += `<div class="form-group" style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border-color);">`;
                     html += `<label style="font-weight: 600;">${label}</label>`;
                     fields.forEach(f => {
-                        const hasValue = keys[prov] && keys[prov][f] === '***';
-                        html += `<input type="password" class="provider-key-input" data-provider="${prov}" data-key="${f}" placeholder="${fieldLabels[f] || f}${hasValue ? ' (已设置)' : ''}" autocomplete="off" style="margin-top: 0.4rem;">`;
+                        const val = keys[prov] && keys[prov][f];
+                        const isSensitive = sensitiveFields[f];
+                        const inputType = isSensitive ? 'password' : 'text';
+                        const displayVal = isSensitive ? '' : (val || '');
+                        const placeholder = (fieldLabels[f] || f) + (isSensitive && val === '***' ? ' (已设置)' : '');
+                        const marginStyle = isSensitive ? '' : ' style="margin-top: 0.4rem;"';  // wrap 自带 margin
+                        const inputAttrs = `class="provider-key-input" data-provider="${prov}" data-key="${f}" value="${escapeHtml(displayVal)}" placeholder="${escapeHtml(placeholder)}" autocomplete="off"${marginStyle}`;
+                        if (isSensitive) {
+                            html += `<div class="password-toggle-wrap" style="margin-top: 0.4rem;"><input type="password" ${inputAttrs}>` +
+                                `<button type="button" class="password-toggle-btn" aria-label="显示/隐藏" title="点击显示或隐藏">` +
+                                `<svg class="icon-eye" viewBox="0 0 24 24" fill="currentColor"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>` +
+                                `<svg class="icon-eye-slash" viewBox="0 0 24 24" fill="currentColor"><path d="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l1.46 1.46C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z"/></svg>` +
+                                `</button></div>`;
+                        } else {
+                            html += `<input type="${inputType}" ${inputAttrs}>`;
+                            // 模型字段添加快捷填入按钮
+                            if (f === 'model' && providerModelOptions[prov]) {
+                                const defaultModel = providerDefaultModels[prov] || providerModelOptions[prov][0];
+                                html += `<div class="model-quick-btns" style="margin-top: 0.5rem; display: flex; flex-wrap: wrap; gap: 0.35rem;">`;
+                                html += `<span style="font-size: 0.8rem; color: var(--text-secondary); align-self: center; margin-right: 0.25rem;">快捷填入:</span>`;
+                                providerModelOptions[prov].forEach(m => {
+                                    const isDefault = m === defaultModel;
+                                    html += `<button type="button" class="model-chip" data-provider="${prov}" data-model="${escapeHtml(m)}" title="点击填入 ${escapeHtml(m)}" style="padding: 0.25rem 0.5rem; font-size: 0.8rem; border-radius: 6px; border: 1px solid var(--border-color); background: ${isDefault ? 'var(--accent-color)' : 'var(--bg-tertiary)'}; color: ${isDefault ? 'white' : 'var(--text-primary)'}; cursor: pointer;">${escapeHtml(m)}</button>`;
+                                });
+                                html += `</div>`;
+                            }
+                        }
                     });
                     html += `</div>`;
                 });
                 container.innerHTML = html || '<div style="color: var(--text-secondary);">无可配置的 Provider</div>';
+
+                // 模型快捷按钮点击事件（事件委托）
+                container.querySelectorAll('.model-chip').forEach(btn => {
+                    btn.addEventListener('click', function() {
+                        const prov = this.dataset.provider;
+                        const model = this.dataset.model;
+                        const inp = container.querySelector(`.provider-key-input[data-provider="${prov}"][data-key="model"]`);
+                        if (inp) {
+                            inp.value = model;
+                            inp.focus();
+                        }
+                    });
+                });
             } catch (e) {
                 container.innerHTML = '<div style="color: var(--error-color);">加载失败</div>';
             }
@@ -965,13 +1161,14 @@ This skill does something useful..." style="width: 100%; padding: 0.75rem; backg
             inputs.forEach(inp => {
                 const p = inp.dataset.provider, k = inp.dataset.key;
                 const v = (inp.value || '').trim();
-                if (v) {
-                    if (!byProvider[p]) byProvider[p] = {};
-                    byProvider[p][k] = v;
-                }
+                if (!byProvider[p]) byProvider[p] = {};
+                if (sensitiveFields[k] && !v) return;  // 敏感字段留空则不发送，避免误清
+                byProvider[p][k] = v;  // base_url/model 空值会清除覆盖
             });
-            const hint = document.getElementById('providerKeysSavedHint');
+            let hasAny = false;
             for (const [provider, keys] of Object.entries(byProvider)) {
+                if (Object.keys(keys).length === 0) continue;
+                hasAny = true;
                 try {
                     const res = await fetch(`${API_BASE}/api/settings/provider-keys`, {
                         method: 'PUT',
@@ -984,12 +1181,11 @@ This skill does something useful..." style="width: 100%; padding: 0.75rem; backg
                     return;
                 }
             }
-            if (Object.keys(byProvider).length === 0) {
-                alert('请至少填写一个要保存的 API Key');
+            if (!hasAny) {
+                alert('请至少填写一个要保存的配置项');
                 return;
             }
-            hint.style.display = 'block';
-            setTimeout(() => { hint.style.display = 'none'; }, 2000);
+            showToast('配置已保存');
             loadProviderKeys();
         });
 
@@ -1003,9 +1199,7 @@ This skill does something useful..." style="width: 100%; padding: 0.75rem; backg
         document.getElementById('saveVisionBtn').addEventListener('click', () => {
             const val = document.querySelector('input[name="vision_provider"]:checked')?.value || 'qwen';
             localStorage.setItem('marstaff_vision_provider', val);
-            const hint = document.getElementById('visionSavedHint');
-            hint.style.display = 'block';
-            setTimeout(() => { hint.style.display = 'none'; }, 2000);
+            showToast('已保存');
         });
 
         // ===== VIDEO PROVIDER SETTINGS =====
@@ -1016,9 +1210,7 @@ This skill does something useful..." style="width: 100%; padding: 0.75rem; backg
         document.getElementById('saveVideoBtn').addEventListener('click', () => {
             const val = document.querySelector('input[name="video_provider"]:checked')?.value || 'wanxiang_2.6';
             localStorage.setItem('marstaff_video_provider', val);
-            const hint = document.getElementById('videoSavedHint');
-            hint.style.display = 'block';
-            setTimeout(() => { hint.style.display = 'none'; }, 2000);
+            showToast('已保存');
         });
 
         // ===== NOTIFICATION SETTINGS =====
@@ -1061,10 +1253,24 @@ This skill does something useful..." style="width: 100%; padding: 0.75rem; backg
                     document.getElementById('quiet_hours_enabled').checked = data.quiet_hours_enabled || false;
                     document.getElementById('quiet_hours_start').value = data.quiet_hours_start || '22:00';
                     document.getElementById('quiet_hours_end').value = data.quiet_hours_end || '08:00';
+
+                    syncNotificationInputsState();
                 }
             } catch (error) {
                 console.error('Failed to load notification settings:', error);
             }
+        }
+
+        function syncNotificationInputsState() {
+            ['feishu', 'wecom', 'telegram', 'email'].forEach(channel => {
+                const checkbox = document.getElementById(`${channel}_enabled`);
+                const input = document.getElementById(`${channel}_webhook`) ||
+                             document.getElementById(`${channel}_chat_id`) ||
+                             document.getElementById(`${channel}_address`);
+                if (checkbox && input) {
+                    input.disabled = !checkbox.checked;
+                }
+            });
         }
 
         async function saveNotificationSettings() {
@@ -1090,14 +1296,12 @@ This skill does something useful..." style="width: 100%; padding: 0.75rem; backg
                 });
 
                 if (res.ok) {
-                    const hint = document.getElementById('notificationSavedHint');
-                    hint.classList.add('show');
-                    setTimeout(() => { hint.classList.remove('show'); }, 3000);
+                    showToast('✓ 通知设置已保存');
                 } else {
-                    alert('保存失败');
+                    showToast('保存失败', 'error');
                 }
             } catch (error) {
-                alert('错误: ' + error.message);
+                showToast('错误: ' + error.message, 'error');
             }
         }
 
@@ -1151,6 +1355,29 @@ This skill does something useful..." style="width: 100%; padding: 0.75rem; backg
                     }
                 });
                 input.disabled = !checkbox.checked;
+            }
+        });
+        // telegram_bot_token 单独处理
+        const tgCheckbox = document.getElementById('telegram_enabled');
+        const tgBotToken = document.getElementById('telegram_bot_token');
+        if (tgCheckbox && tgBotToken) {
+            tgCheckbox.addEventListener('change', () => { tgBotToken.disabled = !tgCheckbox.checked; });
+            tgBotToken.disabled = !tgCheckbox.checked;
+        }
+
+        // 全局密码显示/隐藏切换（API Keys、Webhook、Token 等）
+        document.addEventListener('click', (e) => {
+            const btn = e.target.closest('.password-toggle-btn');
+            if (!btn) return;
+            const wrap = btn.closest('.password-toggle-wrap');
+            const inp = wrap?.querySelector('input');
+            if (!inp) return;
+            if (inp.type === 'password') {
+                inp.type = 'text';
+                wrap.classList.add('visible');
+            } else {
+                inp.type = 'password';
+                wrap.classList.remove('visible');
             }
         });
 
@@ -1370,6 +1597,20 @@ This skill does something useful..." style="width: 100%; padding: 0.75rem; backg
         }
 
         document.getElementById('installSkillBtn').addEventListener('click', () => openModal('installSkillModal'));
+        document.getElementById('syncSkillsBtn').addEventListener('click', async () => {
+            try {
+                const response = await fetch(`${API_BASE}/api/skills/sync-from-filesystem`, { method: 'POST' });
+                const data = await response.json();
+                if (response.ok) {
+                    alert(`同步完成，新增 ${data.added || 0} 个技能`);
+                    await loadSkills();
+                } else {
+                    alert('同步失败: ' + (data.error || response.statusText));
+                }
+            } catch (e) {
+                alert('同步失败: ' + e.message);
+            }
+        });
 
         // Modal helper functions
         function openModal(modalId) {

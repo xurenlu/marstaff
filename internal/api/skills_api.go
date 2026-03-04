@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -50,6 +51,7 @@ func (api *SkillsAPI) RegisterRoutes(router *gin.RouterGroup) {
 	router.PUT("/skills/:id/disable", api.DisableSkill)
 	router.POST("/skills/install", api.InstallSkill)
 	router.POST("/skills/uninstall/:id", api.UninstallSkill)
+	router.POST("/skills/sync-from-filesystem", api.SyncSkillsFromFilesystem)
 
 	// Rules routes
 	router.GET("/rules", api.ListRules)
@@ -253,6 +255,76 @@ func (api *SkillsAPI) UninstallSkill(c *gin.Context) {
 	// api.skillRegistry.LoadAll()
 
 	c.JSON(http.StatusOK, gin.H{"status": "uninstalled"})
+}
+
+// SyncSkillsFromFilesystem is the HTTP handler for syncing skills from filesystem.
+func (api *SkillsAPI) SyncSkillsFromFilesystem(c *gin.Context) {
+	added, err := api.SyncFromFilesystem(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "synced", "added": added})
+}
+
+// SyncFromFilesystem syncs skills from the skills directory into the database.
+// Skills that exist on disk but not in DB will be added with enabled=true.
+// Returns the number of skills added.
+func (api *SkillsAPI) SyncFromFilesystem(ctx context.Context) (int, error) {
+	skillsDir := api.skillsDir
+	if skillsDir == "" {
+		skillsDir = "./skills"
+	}
+	parser := skill.NewParser(skillsDir)
+
+	parsed, err := parser.Discover()
+	if err != nil {
+		return 0, fmt.Errorf("failed to scan skills directory: %w", err)
+	}
+
+	var added int
+	for _, ps := range parsed {
+		existing, _ := api.skillRepo.GetByID(ctx, ps.Metadata.ID)
+		if existing != nil {
+			continue
+		}
+
+		skillMDPath := filepath.Join(ps.Path, "SKILL.md")
+		content, err := os.ReadFile(skillMDPath)
+		if err != nil {
+			log.Warn().Err(err).Str("path", skillMDPath).Msg("failed to read SKILL.md for sync")
+			continue
+		}
+
+		newSkill := &model.Skill{
+			ID:          ps.Metadata.ID,
+			Name:        ps.Metadata.Name,
+			Description: ps.Metadata.Description,
+			Category:    ps.Metadata.Category,
+			Version:     ps.Metadata.Version,
+			Author:      ps.Metadata.Author,
+			Content:     string(content),
+			Enabled:     true,
+		}
+		if newSkill.Name == "" {
+			newSkill.Name = ps.Metadata.ID
+		}
+
+		if err := api.skillRepo.Create(ctx, newSkill); err != nil {
+			log.Warn().Err(err).Str("id", ps.Metadata.ID).Msg("failed to create skill during sync")
+			continue
+		}
+		added++
+		log.Info().Str("id", ps.Metadata.ID).Msg("synced skill from filesystem")
+	}
+
+	if api.skillLoader != nil {
+		if _, err := api.skillLoader.Reload(); err != nil {
+			log.Warn().Err(err).Msg("failed to reload skills after sync")
+		}
+	}
+
+	return added, nil
 }
 
 // ============== Rules ==============

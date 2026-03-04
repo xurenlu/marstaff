@@ -9,17 +9,18 @@ import (
 
 // Project represents a programming project that sessions can be associated with
 type Project struct {
-	ID          string         `gorm:"type:varchar(36);primaryKey" json:"id"`
-	UserID      string         `gorm:"type:varchar(36);not null;index" json:"user_id"`
-	Name        string         `gorm:"type:varchar(255);not null" json:"name"`
-	Description string         `gorm:"type:text" json:"description,omitempty"`
-	WorkDir     string         `gorm:"type:varchar(1024);not null" json:"work_dir"`
-	Template    string         `gorm:"type:varchar(100)" json:"template,omitempty"` // react, go, python, nodejs, custom
-	TechStack   string         `gorm:"type:json" json:"tech_stack,omitempty"`       // JSON array of tech tags
-	Metadata    string         `gorm:"type:json" json:"metadata,omitempty"`
-	CreatedAt   time.Time      `json:"created_at"`
-	UpdatedAt   time.Time      `json:"updated_at"`
-	DeletedAt   gorm.DeletedAt `gorm:"index" json:"-"`
+	ID                string         `gorm:"type:varchar(36);primaryKey" json:"id"`
+	UserID            string         `gorm:"type:varchar(36);not null;index" json:"user_id"`
+	Name              string         `gorm:"type:varchar(255);not null" json:"name"`
+	Description       string         `gorm:"type:text" json:"description,omitempty"`
+	WorkDir           string         `gorm:"type:varchar(1024);not null" json:"work_dir"`
+	Template          string         `gorm:"type:varchar(100)" json:"template,omitempty"` // react, go, python, nodejs, custom
+	TechStack         string         `gorm:"type:json" json:"tech_stack,omitempty"`       // JSON array of tech tags
+	Metadata          string         `gorm:"type:json" json:"metadata,omitempty"`
+	MaxConcurrentBranches int        `gorm:"type:int;default:3" json:"max_concurrent_branches"` // Maximum active branches at once
+	CreatedAt         time.Time      `json:"created_at"`
+	UpdatedAt         time.Time      `json:"updated_at"`
+	DeletedAt         gorm.DeletedAt `gorm:"index" json:"-"`
 
 	// Relationships
 	User     *User      `gorm:"foreignKey:UserID" json:"-"`

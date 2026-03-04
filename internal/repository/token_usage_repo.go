@@ -97,8 +97,8 @@ func (r *TokenUsageRepository) GetStats(ctx context.Context, opts StatsQueryOpti
 		dateFormat = "%Y-%m-%d"
 	}
 
-	// Build the aggregation query
-	groupByCols := "DATE_FORMAT(created_at, '" + dateFormat + "')"
+	// Build the aggregation query - call_type must always be in GROUP BY
+	groupByCols := "DATE_FORMAT(created_at, '" + dateFormat + "'), call_type"
 	if opts.Provider == nil && opts.Model == nil {
 		groupByCols += ", provider, model"
 	} else if opts.Provider == nil {

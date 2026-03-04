@@ -63,6 +63,108 @@ func (ns *NotificationService) SetResendConfig(apiKey, from string) {
 	ns.resendFromAddress = from
 }
 
+// SendDirectNotification sends a one-off message to configured channels.
+// Used when user asks to "send to Feishu" etc. in chat - no AFK task needed.
+// channels: optional, e.g. ["feishu","wecom"]. If empty, uses all enabled channels.
+func (ns *NotificationService) SendDirectNotification(ctx context.Context, userID string, message string, channels []string) error {
+	settings, err := ns.taskRepo.GetOrCreateNotificationSettings(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("failed to get notification settings: %w", err)
+	}
+	// Fallback to "default" - settings page may store under default for single-user mode
+	if !ns.hasAnyChannelConfigured(settings) && userID != "default" {
+		if def, err := ns.taskRepo.GetOrCreateNotificationSettings(ctx, "default"); err == nil && ns.hasAnyChannelConfigured(def) {
+			settings = def
+		}
+	}
+
+	if ns.isQuietHours(settings) {
+		log.Info().Str("user_id", userID).Msg("In quiet hours, direct notification suppressed")
+		return nil
+	}
+
+	// If no channels specified, use all enabled
+	if len(channels) == 0 {
+		if settings.FeishuEnabled && settings.FeishuWebhookURL != "" {
+			channels = append(channels, "feishu")
+		}
+		if settings.WecomEnabled && settings.WecomWebhookURL != "" {
+			channels = append(channels, "wecom")
+		}
+		if settings.TelegramEnabled && settings.TelegramChatID != "" {
+			channels = append(channels, "telegram")
+		}
+		if settings.EmailEnabled && settings.EmailAddress != "" {
+			channels = append(channels, "email")
+		}
+	}
+
+	if len(channels) == 0 {
+		return fmt.Errorf("no notification channels configured - please configure Feishu/WeCom/Telegram/Email in settings first")
+	}
+
+	var errs []string
+	for _, ch := range channels {
+		if err := ns.sendToChannelDirect(ctx, ch, settings, message); err != nil {
+			errs = append(errs, fmt.Sprintf("%s: %v", ch, err))
+		}
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("notification errors: %s", strings.Join(errs, "; "))
+	}
+	return nil
+}
+
+func (ns *NotificationService) hasAnyChannelConfigured(s *model.UserNotificationSettings) bool {
+	return (s.FeishuEnabled && s.FeishuWebhookURL != "" && !isPlaceholderWebhook(s.FeishuWebhookURL)) ||
+		(s.WecomEnabled && s.WecomWebhookURL != "" && !isPlaceholderWebhook(s.WecomWebhookURL)) ||
+		(s.TelegramEnabled && s.TelegramChatID != "") ||
+		(s.EmailEnabled && s.EmailAddress != "")
+}
+
+// sendToChannelDirect sends to a channel without task context (for direct notifications)
+func (ns *NotificationService) sendToChannelDirect(ctx context.Context, channel string, settings *model.UserNotificationSettings, message string) error {
+	subject := "Marstaff 通知"
+	if len(message) > 50 {
+		subject = message[:47] + "..."
+	}
+
+	switch channel {
+	case "feishu":
+		webhookURL := settings.FeishuWebhookURL
+		if webhookURL == "" {
+			webhookURL = ns.feishuWebhookURL
+		}
+		if webhookURL != "" {
+			return ns.sendFeishuNotification(webhookURL, message)
+		}
+
+	case "wecom":
+		if settings.WecomWebhookURL != "" {
+			return ns.sendWecomNotification(settings.WecomWebhookURL, message)
+		}
+
+	case "telegram":
+		if settings.TelegramChatID != "" {
+			botToken := settings.TelegramBotToken
+			if botToken == "" {
+				botToken = ns.telegramBotToken
+			}
+			return ns.sendTelegramNotification(botToken, settings.TelegramChatID, message)
+		}
+
+	case "email":
+		if settings.EmailAddress != "" {
+			return ns.sendEmailNotification(settings.EmailAddress, subject, message)
+		}
+
+	case "web_push":
+		return ns.sendWebPushNotification(ctx, settings, message)
+	}
+
+	return fmt.Errorf("channel %s not configured", channel)
+}
+
 // SendTaskNotification sends notification for a task execution
 func (ns *NotificationService) SendTaskNotification(ctx context.Context, task *model.AFKTask, execution *model.AFKTaskExecution) error {
 	// Get user notification settings
@@ -259,10 +361,23 @@ func (ns *NotificationService) sendToChannel(ctx context.Context, channel string
 	return fmt.Errorf("channel %s not configured", channel)
 }
 
+func isPlaceholderWebhook(url string) bool {
+	if url == "" {
+		return true
+	}
+	lower := strings.ToLower(url)
+	for _, p := range []string{"your_feishu_webhook", "your_webhook", "xxx", "example.com", "placeholder", "replace_me", "hook/xxx", "hook/your_", "key=xxx", "key=your_"} {
+		if strings.Contains(lower, p) {
+			return true
+		}
+	}
+	return false
+}
+
 // sendFeishuNotification sends notification to Feishu
 func (ns *NotificationService) sendFeishuNotification(webhookURL, message string) error {
-	if webhookURL == "" {
-		return fmt.Errorf("Feishu webhook URL not configured")
+	if webhookURL == "" || isPlaceholderWebhook(webhookURL) {
+		return fmt.Errorf("Feishu webhook URL not configured or invalid (placeholder detected)")
 	}
 
 	// Feishu webhook format

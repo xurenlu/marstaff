@@ -27,7 +27,7 @@ func NewConfigurableProviderFactory(cfg *config.Config, repo *repository.Provide
 		repo:    repo,
 		get:     getConfig,
 		cache:   make(map[string]Provider),
-		enabled: []string{"zai", "qwen", "gemini", "deepseek", "minimax", "minimax_intl", "ollama", "vllm", "poe"},
+		enabled: []string{"zai", "qwen", "gemini", "deepseek", "minimax", "minimax_intl", "openai", "ollama", "vllm", "poe"},
 	}
 }
 

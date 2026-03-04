@@ -1,0 +1,2 @@
+-- Only drop if this migration created it (manual rollback if needed)
+-- DROP TABLE IF EXISTS tools;

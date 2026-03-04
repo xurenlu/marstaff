@@ -63,6 +63,11 @@ provider:
     base_url: "http://localhost:8000/v1"
     model: "meta-llama/Llama-2-7b-chat-hf"
     # api_key optional (vLLM typically does not validate)
+  poe:
+    api_key: "${POE_API_KEY}"
+    base_url: "https://api.poe.com/v1"
+    model: "Claude-Sonnet-4"
+    # 通过 Poe 访问 Claude，API Key 从 https://poe.com/api/keys 获取
   fallback:
     - "qwen"
 

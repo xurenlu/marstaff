@@ -43,7 +43,17 @@
       "Bash(./bin/migrate:*)",
       "Bash(git push)",
       "Bash(git remote add:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(perl:*)",
+      "Bash(git tag:*)",
+      "Bash(ALIYUN_ACCESS_KEY_ID=\"YOUR_ALIYUN_ACCESS_KEY_ID\" ALIYUN_ACCESS_KEY_SECRET=\"YOUR_ALIYUN_ACCESS_KEY_SECRET\" ZHIPU_API_KEY=\"YOUR_ZHIPU_API_KEY\" QWEN_API_KEY=\"YOUR_QWEN_API_KEY\" ./gateway)",
+      "Bash(echo:*)",
+      "Bash(./restart.sh:*)",
+      "Bash(xargs ps:*)",
+      "Bash(for:*)",
+      "Bash(do:*)",
+      "Bash(kill:*)",
+      "Bash(done:*)"
     ],
     "deny": [],
     "ask": []

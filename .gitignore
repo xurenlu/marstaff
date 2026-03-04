@@ -1,5 +1,6 @@
 # Binaries
 bin/
+gateway
 onboard
 *.exe
 *.exe~
@@ -16,6 +17,7 @@ coverage.html
 
 # Dependency directories
 vendor/
+playwright-sidecar/node_modules/
 
 # Go workspace file
 go.work
@@ -41,6 +43,12 @@ Thumbs.db
 # Temporary files
 tmp/
 temp/
+.tmp/
+
+# Public files (generated content)
+public/videos/
+public/images/
+public/documents/
 
 # Claude Code settings
 .claude/settings.local.json

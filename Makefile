@@ -7,7 +7,9 @@ BINARY_DIR=bin
 CMD_DIR=cmd
 GO=go
 GOFLAGS=-v
-LDFLAGS=-w -s
+# 注入版本号和 git 提交哈希，便于运行时可确认代码版本
+GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+LDFLAGS=-w -s -X main.GitCommit=$(GIT_COMMIT)
 
 # Build targets
 GATEWAY_BINARY=$(BINARY_DIR)/gateway
@@ -18,6 +20,10 @@ deps:
 	@echo "Installing dependencies..."
 	$(GO) mod download
 	$(GO) mod tidy
+
+playwright-install:
+	@echo "Installing Playwright sidecar dependencies..."
+	cd playwright-sidecar && npm install && npx playwright install
 
 build: build-gateway
 
@@ -82,6 +88,17 @@ onboard: build-onboard
 	@echo "Running onboard wizard..."
 	./$(BINARY_DIR)/onboard
 
+# Update skills from openclaw-master-skills (https://github.com/LeoYeAI/openclaw-master-skills)
+skills-update:
+	@echo "Updating skills from openclaw-master-skills..."
+	@if [ ! -d /tmp/openclaw-master-skills ]; then \
+		git clone --depth 1 git@github.com:LeoYeAI/openclaw-master-skills.git /tmp/openclaw-master-skills; \
+	else \
+		cd /tmp/openclaw-master-skills && git pull --rebase; \
+	fi
+	cp -r /tmp/openclaw-master-skills/skills/* ./skills/
+	@echo "Skills updated. Builtin skills (calculator, weather) are preserved."
+
 help:
 	@echo "Available targets:"
 	@echo "  all           - Install dependencies and build"
@@ -101,3 +118,4 @@ help:
 	@echo "  migrate-up        - Run database migrations up"
 	@echo "  migrate-single-user - Migrate sessions to default user"
 	@echo "  migrate-down      - Run database migrations down"
+	@echo "  skills-update     - Update skills from openclaw-master-skills repo"

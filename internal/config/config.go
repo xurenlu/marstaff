@@ -72,6 +72,7 @@ type ProviderConfig struct {
 	Zhipu    map[string]interface{} `mapstructure:"zhipu"`
 	Ollama   map[string]interface{} `mapstructure:"ollama"`
 	VLLM     map[string]interface{} `mapstructure:"vllm"`
+	Poe      map[string]interface{} `mapstructure:"poe"`
 	Fallback []string               `mapstructure:"fallback"`
 }
 
@@ -149,6 +150,7 @@ func Load(configPath string) (*Config, error) {
 	expandEnvInProviderConfig(config.Provider.MiniMaxIntl)
 	expandEnvInProviderConfig(config.Provider.Ollama)
 	expandEnvInProviderConfig(config.Provider.VLLM)
+	expandEnvInProviderConfig(config.Provider.Poe)
 
 	// Expand environment variables in media configs
 	expandEnvInProviderConfig(config.Media.Wanxiang26)

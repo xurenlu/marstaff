@@ -479,6 +479,12 @@ func run(cmd *cobra.Command, args []string) {
 	if db != nil {
 		skillsAPI = api.NewSkillsAPI(db, cfg.Skills.Path, registry)
 		log.Info().Msg("Skills API initialized")
+		// Sync skills from filesystem to DB on startup (so UI shows all skills)
+		if added, err := skillsAPI.SyncFromFilesystem(context.Background()); err != nil {
+			log.Warn().Err(err).Msg("failed to sync skills from filesystem")
+		} else if added > 0 {
+			log.Info().Int("count", added).Msg("synced skills from filesystem to database")
+		}
 	}
 
 	// Create token usage API

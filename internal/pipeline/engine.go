@@ -13,15 +13,41 @@ import (
 	"github.com/rocky/marstaff/internal/repository"
 )
 
+// AsyncTaskInfo represents information about an async task created during pipeline execution
+type AsyncTaskInfo struct {
+	TaskID    string
+	TaskType  string
+	StatusURL string
+	StepKey   string
+	CreatedAt time.Time
+}
+
+// TaskResult represents the result of a completed async task
+type TaskResult struct {
+	TaskID   string
+	StepKey  string
+	Result   map[string]interface{}
+	Error    error
+	CompletedAt time.Time
+}
+
 // Engine handles pipeline execution
 type Engine struct {
 	pipelineRepo *repository.PipelineRepository
 	taskExecutor  TaskExecutor
+	afkTaskRepo   *repository.AFKTaskRepository
 }
 
 // TaskExecutor executes individual tasks within a pipeline
 type TaskExecutor interface {
 	ExecuteTask(ctx context.Context, taskType string, params map[string]interface{}) (map[string]interface{}, error)
+	ExecuteTaskWithAsync(ctx context.Context, taskType string, params map[string]interface{}) (map[string]interface{}, []AsyncTaskInfo, error)
+}
+
+// AsyncTaskResult is returned when tasks create async operations
+type AsyncTaskResult struct {
+	ImmediateResult map[string]interface{}
+	AsyncTasks      []AsyncTaskInfo
 }
 
 // NewEngine creates a new pipeline engine
@@ -29,6 +55,7 @@ func NewEngine(pipelineRepo *repository.PipelineRepository, taskExecutor TaskExe
 	return &Engine{
 		pipelineRepo: pipelineRepo,
 		taskExecutor:  taskExecutor,
+		afkTaskRepo:   afkTaskRepo,
 	}
 }
 
@@ -116,10 +143,15 @@ func (e *Engine) executePipeline(ctx context.Context, pipeline *model.Pipeline) 
 
 	// Create execution context
 	execCtx := &ExecutionContext{
-		Pipeline:  pipeline,
-		Variables: make(map[string]interface{}),
-		Results:   make(map[string]interface{}),
-		mu:        sync.RWMutex{},
+		Pipeline:    pipeline,
+		Variables:   make(map[string]interface{}),
+		Results:     make(map[string]interface{}),
+		mu:          sync.RWMutex{},
+		AsyncTasks:  make([]AsyncTaskInfo, 0),
+		TaskResults: make(map[string]*TaskResult),
+	}
+	if pipeline.SessionID != nil {
+		execCtx.SessionID = *pipeline.SessionID
 	}
 
 	// Copy initial variables
@@ -156,10 +188,13 @@ func (e *Engine) executePipeline(ctx context.Context, pipeline *model.Pipeline) 
 
 // ExecutionContext holds state during pipeline execution
 type ExecutionContext struct {
-	Pipeline  *model.Pipeline
-	Variables map[string]interface{}
-	Results   map[string]interface{}
-	mu        sync.RWMutex
+	Pipeline     *model.Pipeline
+	Variables    map[string]interface{}
+	Results      map[string]interface{}
+	mu           sync.RWMutex
+	AsyncTasks   []AsyncTaskInfo
+	TaskResults  map[string]*TaskResult
+	SessionID    string
 }
 
 // executeSteps executes all steps in the pipeline
@@ -297,12 +332,154 @@ func (e *Engine) executeTaskStep(ctx context.Context, execCtx *ExecutionContext,
 	// Substitute variables in params
 	params := e.substituteVariables(execCtx, config.Params)
 
+	// Add session_id to params for async task tracking
+	if execCtx.SessionID != "" {
+		params["session_id"] = execCtx.SessionID
+	}
+
 	// Execute synchronously
 	if e.taskExecutor == nil {
 		return nil, fmt.Errorf("task executor not configured")
 	}
 
-	return e.taskExecutor.ExecuteTask(ctx, config.TaskType, params)
+	// Try to execute with async task support
+	result, asyncTasks, err := e.executeTaskWithAsyncSupport(ctx, config.TaskType, params)
+	if err != nil {
+		return nil, err
+	}
+
+	// Track async tasks if any
+	if len(asyncTasks) > 0 {
+		execCtx.mu.Lock()
+		for _, task := range asyncTasks {
+			task.StepKey = step.StepKey
+			execCtx.AsyncTasks = append(execCtx.AsyncTasks, task)
+		}
+		execCtx.mu.Unlock()
+
+		log.Info().
+			Uint("pipeline_id", execCtx.Pipeline.ID).
+			Str("step_key", step.StepKey).
+			Int("async_tasks", len(asyncTasks)).
+			Msg("step created async tasks, waiting for completion")
+
+		// Wait for all async tasks from this step to complete
+		if err := e.waitForAsyncTasks(ctx, execCtx, asyncTasks); err != nil {
+			return nil, fmt.Errorf("async task execution failed: %w", err)
+		}
+
+		// Merge results from completed async tasks
+		result = e.mergeAsyncTaskResults(execCtx, asyncTasks, result)
+	}
+
+	return result, nil
+}
+
+// executeTaskWithAsyncSupport executes a task and returns any async tasks created
+func (e *Engine) executeTaskWithAsyncSupport(ctx context.Context, taskType string, params map[string]interface{}) (map[string]interface{}, []AsyncTaskInfo, error) {
+	// Check if the executor supports async task tracking
+	type asyncExecutor interface {
+		ExecuteTaskWithAsync(ctx context.Context, taskType string, params map[string]interface{}) (map[string]interface{}, []AsyncTaskInfo, error)
+	}
+
+	if exec, ok := e.taskExecutor.(asyncExecutor); ok {
+		return exec.ExecuteTaskWithAsync(ctx, taskType, params)
+	}
+
+	// Fallback to regular execution
+	result, err := e.taskExecutor.ExecuteTask(ctx, taskType, params)
+	return result, nil, err
+}
+
+// waitForAsyncTasks waits for all async tasks to complete and polls their status
+func (e *Engine) waitForAsyncTasks(ctx context.Context, execCtx *ExecutionContext, tasks []AsyncTaskInfo) error {
+	if e.afkTaskRepo == nil || execCtx.SessionID == "" {
+		log.Warn().Msg("AFK task repo not available, cannot wait for async tasks")
+		return nil
+	}
+
+	maxWait := 10 * time.Minute // Maximum wait time for video generation
+	checkInterval := 10 * time.Second
+	deadline := time.Now().Add(maxWait)
+
+	for time.Now().Before(deadline) {
+		// Check if all async tasks have completed
+		allComplete := true
+		for _, task := range tasks {
+			afkTasks, err := e.afkTaskRepo.GetByTypeAndStatus(ctx, model.AFKTaskTypeAsync, model.AFKTaskStatusCompleted)
+			if err != nil {
+				log.Warn().Err(err).Str("task_id", task.TaskID).Msg("failed to check AFK task status")
+				continue
+			}
+
+			found := false
+			for _, afk := range afkTasks {
+				if afk.TriggerConfig.AsyncTaskConfig != nil &&
+					afk.TriggerConfig.AsyncTaskConfig.TaskID == task.TaskID {
+					// Task completed, store result
+					execCtx.mu.Lock()
+					if execCtx.TaskResults == nil {
+						execCtx.TaskResults = make(map[string]*TaskResult)
+					}
+					execCtx.TaskResults[task.TaskID] = &TaskResult{
+						TaskID:      task.TaskID,
+						StepKey:     task.StepKey,
+						Result:      map[string]interface{}{"result_url": afk.ResultURL},
+						CompletedAt: time.Now(),
+					}
+					execCtx.mu.Unlock()
+					found = true
+					break
+				}
+			}
+
+			if !found {
+				allComplete = false
+				break
+			}
+		}
+
+		if allComplete {
+			log.Info().
+				Int("task_count", len(tasks)).
+				Msg("all async tasks completed")
+			return nil
+		}
+
+		log.Debug().
+			Int("pending", len(tasks)).
+			Msg("waiting for async tasks to complete")
+		time.Sleep(checkInterval)
+	}
+
+	return fmt.Errorf("timeout waiting for async tasks after %v", maxWait)
+}
+
+// mergeAsyncTaskResults merges results from completed async tasks into the step result
+func (e *Engine) mergeAsyncTaskResults(execCtx *ExecutionContext, tasks []AsyncTaskInfo, baseResult map[string]interface{}) map[string]interface{} {
+	result := make(map[string]interface{})
+	for k, v := range baseResult {
+		result[k] = v
+	}
+
+	execCtx.mu.RLock()
+	defer execCtx.mu.RUnlock()
+
+	videoURLs := make([]string, 0)
+	for _, task := range tasks {
+		if taskResult, ok := execCtx.TaskResults[task.TaskID]; ok {
+			if url, ok := taskResult.Result["result_url"].(string); ok && url != "" {
+				videoURLs = append(videoURLs, url)
+			}
+		}
+	}
+
+	if len(videoURLs) > 0 {
+		result["video_urls"] = videoURLs
+		result["async_completed"] = true
+	}
+
+	return result
 }
 
 // executeParallelStep executes multiple tasks in parallel

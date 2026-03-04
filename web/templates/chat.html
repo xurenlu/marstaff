@@ -71,53 +71,134 @@
 
         .header {
             background: var(--bg-secondary);
-            padding: 1rem 2rem;
+            padding: 0.75rem 1.5rem;
             border-bottom: 1px solid var(--border-color);
             display: flex;
             justify-content: space-between;
             align-items: center;
             transition: background 0.3s, border-color 0.3s;
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
         }
 
         .header h1 {
-            font-size: 1.2rem;
-            font-weight: 600;
+            font-size: 1.1rem;
+            font-weight: 500;
+            letter-spacing: -0.01em;
         }
 
         .header-right {
             display: flex;
             align-items: center;
-            gap: 1rem;
+            gap: 0.75rem;
         }
 
-        .theme-toggle {
-            background: var(--bg-tertiary);
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            padding: 0.5rem 1rem;
-            cursor: pointer;
+        /* Mode toggle - Apple-style segmented control */
+        .mode-toggle {
             display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            font-size: 0.9rem;
+            gap: 0;
+            background: var(--bg-tertiary);
+            border-radius: 7px;
+            padding: 3px;
+            border: 1px solid transparent;
+            position: relative;
+        }
+
+        .mode-toggle::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: 7px;
+            padding: 1px;
+            background: linear-gradient(180deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.02) 100%);
+            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            -webkit-mask-composite: xor;
+            mask-composite: exclude;
+            pointer-events: none;
+        }
+
+        .mode-toggle button {
+            padding: 0.35rem 0.85rem;
+            border: none;
+            background: transparent;
+            color: var(--text-secondary);
+            cursor: pointer;
+            font-size: 0.8rem;
+            font-weight: 500;
+            border-radius: 5px;
+            transition: all 0.2s cubic-bezier(0.25, 0.1, 0.25, 1);
+            position: relative;
+            z-index: 1;
+        }
+
+        .mode-toggle button.active {
+            background: var(--bg-secondary);
             color: var(--text-primary);
-            transition: background 0.2s;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.08);
         }
 
-        .theme-toggle:hover {
-            background: var(--bg-hover);
+        .mode-toggle button:hover:not(.active) {
+            color: var(--text-primary);
         }
 
+        /* Icon button - Apple style */
+        .icon-btn {
+            width: 34px;
+            height: 34px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            background: transparent;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+            transition: all 0.15s ease;
+            position: relative;
+        }
+
+        .icon-btn:hover {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+        }
+
+        .icon-btn:active {
+            transform: scale(0.95);
+        }
+
+        .icon-btn .btn-label {
+            display: none;
+        }
+
+        /* Button with label (for Token stats) */
+        .icon-btn.labeled {
+            width: auto;
+            padding: 0 0.75rem;
+            gap: 0.4rem;
+        }
+
+        .icon-btn.labeled .btn-label {
+            display: inline;
+            font-size: 0.8rem;
+            font-weight: 500;
+        }
+
+        /* Status indicator - more subtle */
         .status {
             display: flex;
             align-items: center;
-            gap: 0.5rem;
-            font-size: 0.9rem;
+            gap: 0.4rem;
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            padding: 0.3rem 0.6rem;
+            background: var(--bg-tertiary);
+            border-radius: 6px;
         }
 
         .status-dot {
-            width: 8px;
-            height: 8px;
+            width: 6px;
+            height: 6px;
             border-radius: 50%;
             background: var(--success-color);
         }
@@ -128,6 +209,61 @@
 
         .status-dot.connecting {
             background: var(--warning-color);
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* Divider for button groups */
+        .header-divider {
+            width: 1px;
+            height: 20px;
+            background: var(--border-color);
+            margin: 0 0.25rem;
+        }
+
+        /* Project selector - Apple style */
+        .project-selector {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .project-selector select {
+            padding: 0.4rem 0.7rem;
+            border-radius: 7px;
+            border: 1px solid var(--border-color);
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            font-size: 0.8rem;
+            min-width: 140px;
+            cursor: pointer;
+        }
+
+        .project-selector button {
+            padding: 0.4rem 0.7rem;
+            border-radius: 7px;
+            border: 1px solid var(--border-color);
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            cursor: pointer;
+            font-size: 0.8rem;
+            transition: all 0.15s ease;
+        }
+
+        .project-selector button:hover {
+            background: var(--bg-hover);
+        }
+
+        /* Theme toggle - keep for backward compatibility */
+        .theme-toggle {
+            background: transparent;
+            border: none;
+            padding: 0;
+            gap: 0.4rem;
         }
 
         .main {
@@ -641,12 +777,31 @@
         }
 
         .message-content img.message-image {
-            max-height: 200px;
-            max-width: 100%;
+            max-height: 300px;
+            max-width: 600px;
+            width: auto;
+            height: auto;
             border-radius: 8px;
             margin-top: 0.5rem;
             display: block;
             object-fit: contain;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .message-content img.message-image:hover {
+            transform: scale(1.02);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+
+        /* 通用规则：限制聊天消息中所有图片的最大尺寸 */
+        .message-content img:not(.icon):not(.emoji):not([style*="width: 2"]):not([style*="width: 1"]) {
+            max-width: 600px !important;
+            max-height: 300px !important;
+            width: auto !important;
+            height: auto !important;
+            object-fit: contain !important;
+            cursor: pointer !important;
         }
 
         .image-preview-item {
@@ -925,25 +1080,36 @@
         <div class="header-right">
             <!-- Project Selector (only visible in programming mode) -->
             <div class="project-selector" id="projectSelector" style="display: none;">
-                <select id="projectSelect" style="padding: 0.5rem; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-tertiary); color: var(--text-primary); min-width: 150px;">
+                <select id="projectSelect">
                     <option value="">Select Project...</option>
                 </select>
-                <button id="createProjectBtn" style="margin-left: 0.5rem; padding: 0.5rem 1rem; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-tertiary); color: var(--text-primary); cursor: pointer;">+ New</button>
+                <button id="createProjectBtn">+ New</button>
             </div>
+
+            <!-- Mode Toggle: Chat / Programming / AFK -->
             <div class="mode-toggle" id="modeToggle">
                 <button type="button" id="modeChat" class="active" data-mode="chat">Chat</button>
                 <button type="button" id="modeProgramming" data-mode="programming">Programming</button>
                 <button type="button" id="modeAfk" data-mode="afk">AFK</button>
             </div>
-            <button class="theme-toggle" id="tokenStatsBtn" title="Token使用统计">
+
+            <div class="header-divider"></div>
+
+            <!-- Action Buttons -->
+            <button class="icon-btn labeled" id="tokenStatsBtn" title="Token使用统计">
                 <span>📊</span>
-                <span>Token统计</span>
+                <span class="btn-label">Token</span>
             </button>
-            <a href="/settings" class="theme-toggle" style="text-decoration:none" title="设置">⚙️</a>
-            <button class="theme-toggle" id="themeToggle" title="Toggle theme">
+            <a href="/settings" class="icon-btn" title="设置" style="text-decoration: none;">
+                ⚙️
+            </a>
+            <button class="icon-btn" id="themeToggle" title="切换主题">
                 <span id="themeIcon">🌙</span>
-                <span id="themeText">Dark</span>
             </button>
+
+            <div class="header-divider"></div>
+
+            <!-- Status -->
             <div class="status">
                 <div class="status-dot connecting" id="statusDot"></div>
                 <span id="statusText">Connecting...</span>
@@ -1174,7 +1340,6 @@
         // Theme management
         const themeToggle = document.getElementById('themeToggle');
         const themeIcon = document.getElementById('themeIcon');
-        const themeText = document.getElementById('themeText');
 
         // Load saved theme or default to dark
         let currentTheme = localStorage.getItem('marstaff_theme') || 'dark';
@@ -1197,13 +1362,7 @@
         });
 
         function updateThemeUI() {
-            if (currentTheme === 'dark') {
-                themeIcon.textContent = '🌙';
-                themeText.textContent = 'Dark';
-            } else {
-                themeIcon.textContent = '☀️';
-                themeText.textContent = 'Light';
-            }
+            themeIcon.textContent = currentTheme === 'dark' ? '🌙' : '☀️';
         }
 
         const statusDot = document.getElementById('statusDot');
@@ -1579,10 +1738,10 @@
                             const mediaUrl = mediaMatch[1];
                             const isVideo = !!videoMatch;
                             if (isVideo) {
-                                extraHtml = `<video src="${escapeHtml(mediaUrl)}" controls style="max-width: 100%; border-radius: 8px; margin-top: 8px;"></video>`;
+                                extraHtml = `<video src="${escapeHtml(mediaUrl)}" controls style="max-width: 600px; max-height: 300px; width: auto; border-radius: 8px; margin-top: 8px;"></video>`;
                                 extraHtml += `<a href="${escapeHtml(mediaUrl)}" target="_blank" style="display: inline-block; margin-top: 8px; padding: 8px 16px; background: #4CAF50; color: white; text-decoration: none; border-radius: 6px; font-size: 14px; font-weight: 500;">📥 下载视频</a>`;
                             } else {
-                                extraHtml = `<img src="${escapeHtml(mediaUrl)}" style="max-width: 100%; border-radius: 8px; margin-top: 8px;" alt="Generated result">`;
+                                extraHtml = `<img src="${escapeHtml(mediaUrl)}" data-lightbox="true" style="max-width: 600px; max-height: 300px; width: auto; height: auto; border-radius: 8px; margin-top: 8px; cursor: pointer;" alt="Generated result">`;
                             }
                         }
 
@@ -2105,7 +2264,7 @@
 
             let contentHtml = formatMessage(content || '');
             if (imageUrls && imageUrls.length > 0) {
-                contentHtml += imageUrls.map(url => `<img src="${escapeHtml(url)}" class="message-image" alt="attached">`).join('');
+                contentHtml += imageUrls.map(url => `<img src="${escapeHtml(url)}" class="message-image" data-lightbox="true" alt="attached">`).join('');
             }
 
             // Add collapsible thinking block (collapsed by default when complete)
@@ -2327,7 +2486,10 @@
         function formatMessage(text) {
             // Parse markdown with marked
             try {
-                return marked.parse(text);
+                let html = marked.parse(text);
+                // Add data-lightbox attribute to all images for click-to-enlarge
+                html = html.replace(/<img([^>]*)>/g, '<img$1 data-lightbox="true">');
+                return html;
             } catch (e) {
                 console.error('Markdown parse error:', e);
                 // Fallback to basic formatting
@@ -2354,9 +2516,9 @@
                            url.includes('.gif');
 
             if (isVideo) {
-                return `<video src="${escapeHtml(url)}" controls style="max-width: 100%; border-radius: 8px; margin-top: 8px;" onerror="this.parentElement.innerHTML='<div style=\\'color: #e74c3c; margin-top: 8px;\\'>视频加载失败，URL 可能无效</div>'"></video>`;
+                return `<video src="${escapeHtml(url)}" controls style="max-width: 600px; max-height: 300px; width: auto; border-radius: 8px; margin-top: 8px;" onerror="this.parentElement.innerHTML='<div style=\\'color: #e74c3c; margin-top: 8px;\\'>视频加载失败，URL 可能无效</div>'"></video>`;
             } else {
-                return `<img src="${escapeHtml(url)}" style="max-width: 100%; border-radius: 8px; margin-top: 8px;" alt="Generated result" onerror="this.style.display='none'; this.parentElement.innerHTML+='<div style=\\'color: #e74c3c; margin-top: 8px;\\'>图片加载失败</div>'">`;
+                return `<img src="${escapeHtml(url)}" style="max-width: 600px; max-height: 300px; width: auto; height: auto; border-radius: 8px; margin-top: 8px; cursor: pointer;" data-lightbox="true" alt="Generated result" onerror="this.style.display='none'; this.parentElement.innerHTML+='<div style=\\'color: #e74c3c; margin-top: 8px;\\'>图片加载失败</div>'">`;
             }
         }
 
@@ -2996,24 +3158,24 @@
                 console.error('Failed to load total stats:', e);
             }
 
-            // Load time series stats for chart
-            try {
-                const statsParams = new URLSearchParams({
-                    start_time: startTime.toISOString(),
-                    end_time: endTime.toISOString(),
-                    grouping: grouping
-                });
-                if (provider) statsParams.append('provider', provider);
-                if (model) statsParams.append('model', model);
-
-                const statsRes = await fetch(`/api/token/stats?${statsParams}`);
-                if (statsRes.ok) {
-                    const statsData = await statsRes.json();
-                    renderTokenChart(statsData.stats || []);
-                }
-            } catch (e) {
-                console.error('Failed to load stats:', e);
-            }
+            // Load time series stats for chart - DISABLED due to SQL compatibility issues
+            // try {
+            //     const statsParams = new URLSearchParams({
+            //         start_time: startTime.toISOString(),
+            //         end_time: endTime.toISOString(),
+            //         grouping: grouping
+            //     });
+            //     if (provider) statsParams.append('provider', provider);
+            //     if (model) statsParams.append('model', model);
+            //
+            //     const statsRes = await fetch(`/api/token/stats?${statsParams}`);
+            //     if (statsRes.ok) {
+            //         const statsData = await statsRes.json();
+            //         renderTokenChart(statsData.stats || []);
+            //     }
+            // } catch (e) {
+            //     console.error('Failed to load stats:', e);
+            // }
 
             // Load by provider
             try {
@@ -3203,6 +3365,102 @@
             div.textContent = text;
             return div.innerHTML;
         }
+
+        // Image modal functions
+        window.openImageModal = function(imageUrl) {
+            console.log('openImageModal called:', imageUrl);
+            const modal = document.createElement('div');
+            modal.className = 'image-modal';
+            modal.innerHTML = `
+                <div class="image-modal-content">
+                    <img src="${escapeHtml(imageUrl)}" alt="Full size image">
+                    <button class="image-modal-close">×</button>
+                </div>
+            `;
+            // Close on background click, close button click, or image click
+            modal.onclick = function(e) {
+                if (e.target === modal || e.target.classList.contains('image-modal-close') || e.target.tagName === 'IMG') {
+                    modal.remove();
+                }
+            };
+            document.body.appendChild(modal);
+        };
+        console.log('openImageModal function loaded');
+
+        // Event delegation for clickable images - use capture phase to catch clicks earlier
+        document.addEventListener('click', function(e) {
+            console.log('Click detected:', e.target.tagName, e.target.className, e.target.hasAttribute('data-lightbox'));
+            // Check if clicked element is an image or contains an image
+            let img = e.target;
+            if (img.tagName !== 'IMG') {
+                img = e.target.closest('img');
+            }
+            if (img && (img.classList.contains('message-image') || img.hasAttribute('data-lightbox'))) {
+                const url = img.getAttribute('src') || img.getAttribute('data-src');
+                console.log('Image clicked, URL:', url);
+                if (url) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    openImageModal(url);
+                }
+            }
+        }, true); // Use capture phase
     </script>
+
+    <style>
+        .image-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+            animation: fadeIn 0.2s ease-out;
+        }
+
+        .image-modal-content {
+            position: relative;
+            max-width: 90vw;
+            max-height: 90vh;
+        }
+
+        .image-modal-content img {
+            max-width: 90vw;
+            max-height: 90vh;
+            object-fit: contain;
+            border-radius: 8px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+        }
+
+        .image-modal-close {
+            position: absolute;
+            top: -40px;
+            right: 0;
+            background: white;
+            border: none;
+            border-radius: 50%;
+            width: 32px;
+            height: 32px;
+            font-size: 24px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        }
+
+        .image-modal-close:hover {
+            background: #f0f0f0;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+    </style>
 </body>
 </html>

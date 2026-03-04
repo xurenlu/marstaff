@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/rs/zerolog/log"
 
+	"github.com/rocky/marstaff/internal/afk"
 	"github.com/rocky/marstaff/internal/agent"
 	"github.com/rocky/marstaff/internal/api"
 	"github.com/rocky/marstaff/internal/contextkeys"
@@ -15,19 +17,40 @@ import (
 	"github.com/rocky/marstaff/internal/repository"
 )
 
+// isPlaceholderWebhook detects LLM-hallucinated placeholder URLs (e.g. "your_feishu_webhook_url")
+func isPlaceholderWebhook(url string) bool {
+	if url == "" {
+		return true
+	}
+	lower := strings.ToLower(url)
+	placeholders := []string{
+		"your_feishu_webhook", "your_webhook", "xxx", "example.com",
+		"placeholder", "replace_me", "your_key", "your_token",
+		"hook/xxx", "hook/your_", "key=xxx", "key=your_",
+	}
+	for _, p := range placeholders {
+		if strings.Contains(lower, p) {
+			return true
+		}
+	}
+	return false
+}
+
 // AFKExecutor registers AFK task management tools
 type AFKExecutor struct {
-	engine  *agent.Engine
-	taskAPI *api.AFKTaskAPI
-	taskRepo *repository.AFKTaskRepository
+	engine    *agent.Engine
+	taskAPI   *api.AFKTaskAPI
+	taskRepo  *repository.AFKTaskRepository
+	notifier  *afk.NotificationService
 }
 
 // NewAFKExecutor creates a new AFK tool executor
-func NewAFKExecutor(engine *agent.Engine, taskAPI *api.AFKTaskAPI, taskRepo *repository.AFKTaskRepository) *AFKExecutor {
+func NewAFKExecutor(engine *agent.Engine, taskAPI *api.AFKTaskAPI, taskRepo *repository.AFKTaskRepository, notifier *afk.NotificationService) *AFKExecutor {
 	return &AFKExecutor{
-		engine:  engine,
-		taskAPI: taskAPI,
+		engine:   engine,
+		taskAPI:  taskAPI,
 		taskRepo: taskRepo,
+		notifier: notifier,
 	}
 }
 
@@ -158,9 +181,9 @@ func (e *AFKExecutor) RegisterBuiltInTools() {
 			"required": []string{"task_id"},
 		}, e.toolDeleteTask)
 
-	// Configure notification settings
+	// Configure notification settings (NOT for sending - use afk_send_notification for that)
 	e.engine.RegisterTool("afk_set_notifications",
-		"Configure notification channels for the user. Set up Feishu webhook, WeChat Work webhook, Telegram chat ID/bot token, email address, and quiet hours.",
+		"Configure notification channels for the user (set up Feishu/WeCom/Telegram/Email webhooks in settings). ONLY use when user explicitly wants to CHANGE or ADD notification config. Do NOT use when user just wants to SEND a message - use afk_send_notification instead. Never ask user for webhook URL when they say 'send to Feishu' or '用飞书发给我'.",
 		map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
@@ -210,6 +233,27 @@ func (e *AFKExecutor) RegisterBuiltInTools() {
 				},
 			},
 		}, e.toolSetNotifications)
+
+	// Send notification immediately (PREFERRED when user says "send to Feishu" / "发到飞书")
+	if e.notifier != nil {
+		e.engine.RegisterTool("afk_send_notification",
+			"Send a message to Feishu/WeCom/Telegram/Email RIGHT NOW. Triggers: 'send to Feishu', '发到飞书', '用飞书通知发送给我', '飞书发给我', '发给我', '推送通知', 'notify me'. Uses user's ALREADY configured channels in Settings - NO webhook URL needed from user. Just pass the message. If user has no channel configured, the tool will return an error; do NOT ask user for webhook. Do NOT use afk_set_notifications for sending. IMPORTANT: When user asks to generate content (e.g. poem) AND send, you must also include the full content in your chat response — never reply with only '已生成，请查看'.",
+			map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"message": map[string]interface{}{
+						"type":        "string",
+						"description": "The message content to send (text, can include markdown if channel supports)",
+					},
+					"channels": map[string]interface{}{
+						"type":        "array",
+						"description": "Channels to send to: feishu, wecom, telegram, email. If empty, uses all enabled channels.",
+						"items":       map[string]interface{}{"type": "string"},
+					},
+				},
+				"required": []string{"message"},
+			}, e.toolSendNotification)
+	}
 }
 
 func (e *AFKExecutor) toolCreateTask(ctx context.Context, params map[string]interface{}) (string, error) {
@@ -457,25 +501,33 @@ func (e *AFKExecutor) toolDeleteTask(ctx context.Context, params map[string]inte
 }
 
 func (e *AFKExecutor) toolSetNotifications(ctx context.Context, params map[string]interface{}) (string, error) {
-	settings, err := e.taskRepo.GetOrCreateNotificationSettings(ctx, "default")
+	userID := "default"
+	if uid, ok := ctx.Value(contextkeys.UserID).(string); ok && uid != "" {
+		userID = uid
+	}
+
+	settings, err := e.taskRepo.GetOrCreateNotificationSettings(ctx, userID)
 	if err != nil {
 		return "", fmt.Errorf("failed to get settings: %w", err)
 	}
 
-	if webhook, ok := params["feishu_webhook"].(string); ok {
+	// Reject placeholder URLs - LLM often hallucinates "your_feishu_webhook_url" etc.
+	if webhook, ok := params["feishu_webhook"].(string); ok && !isPlaceholderWebhook(webhook) {
 		settings.FeishuWebhookURL = webhook
 		if enable, ok := params["enable_feishu"].(bool); ok {
-			settings.FeishuEnabled = enable && webhook != ""
-		} else if webhook != "" {
+			settings.FeishuEnabled = enable
+		} else {
 			settings.FeishuEnabled = true
 		}
+	} else if webhook, ok := params["feishu_webhook"].(string); ok && isPlaceholderWebhook(webhook) {
+		return "", fmt.Errorf("请勿使用占位符 URL（如 your_feishu_webhook_url）。请在 设置→通知 中配置真实的飞书 Webhook，或提供有效的 webhook 地址")
 	}
 
-	if wecomWebhook, ok := params["wecom_webhook"].(string); ok {
+	if wecomWebhook, ok := params["wecom_webhook"].(string); ok && !isPlaceholderWebhook(wecomWebhook) {
 		settings.WecomWebhookURL = wecomWebhook
 		if enable, ok := params["enable_wecom"].(bool); ok {
-			settings.WecomEnabled = enable && wecomWebhook != ""
-		} else if wecomWebhook != "" {
+			settings.WecomEnabled = enable
+		} else {
 			settings.WecomEnabled = true
 		}
 	}
@@ -533,6 +585,36 @@ func (e *AFKExecutor) toolSetNotifications(ctx context.Context, params map[strin
 		result += fmt.Sprintf("• Quiet hours: %s - %s\n", *settings.QuietHoursStart, *settings.QuietHoursEnd)
 	}
 	return result, nil
+}
+
+func (e *AFKExecutor) toolSendNotification(ctx context.Context, params map[string]interface{}) (string, error) {
+	message, _ := params["message"].(string)
+	if message == "" {
+		return "", fmt.Errorf("message is required")
+	}
+
+	channelsRaw, _ := params["channels"].([]interface{})
+	var channels []string
+	for _, ch := range channelsRaw {
+		if s, ok := ch.(string); ok && s != "" {
+			channels = append(channels, s)
+		}
+	}
+
+	userID := "default"
+	if uid, ok := ctx.Value(contextkeys.UserID).(string); ok && uid != "" {
+		userID = uid
+	}
+
+	if err := e.notifier.SendDirectNotification(ctx, userID, message, channels); err != nil {
+		return "", fmt.Errorf("发送失败: %w", err)
+	}
+
+	log.Info().Str("user_id", userID).Strs("channels", channels).Msg("direct notification sent via chat")
+	if len(channels) > 0 {
+		return "✅ 已发送到 " + fmt.Sprintf("%v", channels) + "，请查收", nil
+	}
+	return "✅ 已发送到已配置的通知通道，请查收", nil
 }
 
 func formatTimePointer(t *time.Time) string {

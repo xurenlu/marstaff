@@ -538,6 +538,12 @@ func (e *Engine) buildSystemPrompt(ctx context.Context, req *ChatRequest) string
 	prompt.WriteString("- Activate rules: \"激活中文规则\" or \"activate Chinese Only rule\"\n")
 	prompt.WriteString("- Update/delete rules: \"更新规则\" or \"delete rule\"\n\n")
 
+	// Feishu/notification sending - critical: do NOT ask user for webhook
+	if _, hasSend := e.tools["afk_send_notification"]; hasSend {
+		prompt.WriteString("**Feishu/Notification Sending**: When user asks to \"用飞书通知发送\" / \"发到飞书\" / \"发给我\" / \"推送通知\" (or similar), ALWAYS call afk_send_notification with the message. User's Feishu/WeCom/Telegram/Email are ALREADY configured in Settings. NEVER ask user for webhook URL - just send. If no channel is configured, the tool will return an error; then suggest user to configure in Settings.\n\n")
+		prompt.WriteString("**CRITICAL - Generate + Send flow**: When user asks to generate content (poems/唐诗/诗词, stories, summaries, etc.) AND send via notification: 1) Generate the full content first, 2) Call afk_send_notification with that content, 3) In your final response you MUST include the full generated content in the chat — NEVER reply with only \"已生成，请查看\" or \"请查收\" without showing the actual content. The user expects to see it in the chat AND receive it via notification.\n\n")
+	}
+
 	// When users ask about capabilities, emphasize these are LOCAL tools/skills
 	if len(skills) > 0 || tools > 0 {
 		prompt.WriteString("**Important**: When users ask what you can do or what capabilities you have, clearly explain that these are **local tools and skills** available in this agent platform - NOT capabilities of the cloud AI service. You are an AI assistant helping to orchestrate these local capabilities.\n\n")
@@ -561,7 +567,7 @@ func (e *Engine) buildSystemPrompt(ctx context.Context, req *ChatRequest) string
 	// Plan mode: output plan only, no tool execution
 	if req != nil && req.PlanMode {
 		prompt.WriteString("\n\n**PLAN MODE**: You are in plan mode. Output a clear, step-by-step plan for the user's request. Do NOT execute any tools or take actions. Wait for the user to confirm before proceeding.")
-		prompt.WriteString("\n\nFor screen automation tasks (open webpage, search, click result, extract content): include steps like: 1) Connect device (device_browser_connect), 2) Navigate (device_browser_navigate), 3) Screenshot (device_screen_snapshot), 4) Analyze (device_screen_analyze), 5) Tap/Input (device_browser_tap, device_browser_input_to), 6) Wait (device_screen_wait), 7) Extract content (device_browser_get_text), 8) Summarize.")
+		prompt.WriteString("\n\nFor browser automation (open webpage, search, click result, extract content): include steps like: 1) Navigate (device_browser_navigate), 2) Snapshot (device_browser_snapshot), 3) Click/Fill by ref (device_browser_click, device_browser_fill), 4) Wait (device_browser_wait), 5) Extract content (device_browser_get_text), 6) Repeat snapshot as needed.")
 	}
 
 	// Inject todo list into context when available
@@ -593,16 +599,14 @@ func (e *Engine) buildSystemPrompt(ctx context.Context, req *ChatRequest) string
 		prompt.WriteString(fmt.Sprintf("\n\nCurrent time: %s", currentTime))
 	}
 
-	// Browser workflow: when user asks to analyze/identify webpage content (e.g. hot news, headlines)
-	if _, hasNav := e.tools["device_browser_navigate"]; hasNav {
-		prompt.WriteString("\n\n**Browser content analysis**: When user asks to view a webpage and identify/analyze its content (e.g. hot news, headlines, trends): 1) device_browser_navigate to the URL, 2) device_browser_get_text or device_browser_get_html with selector 'body' to extract full page content, 3) analyze the returned text. Do NOT rely on screenshot for text extraction; use get_text/get_html.")
-		prompt.WriteString(" For search-result tasks (e.g. Baidu search, click first non-ad result): use device_screen_analyze with task_hint 'identify ad labels, find first non-ad result link' to distinguish ads from organic results, then device_browser_tap at the element center.")
+	// Browser automation: Playwright snapshot + ref-based interaction
+	if _, hasSnapshot := e.tools["device_browser_snapshot"]; hasSnapshot {
+		prompt.WriteString("\n\n**Browser automation**: Use device_browser_snapshot to see all interactive elements with numbered refs. Then use device_browser_click(ref) to click or device_browser_fill(ref, text) to type. Flow: device_browser_navigate → device_browser_snapshot → device_browser_click/device_browser_fill → device_browser_wait → device_browser_snapshot → repeat until goal reached. For text extraction prefer device_browser_get_text with selector 'body'. For search results, snapshot shows each link with its ref; pick the non-ad result by ref.")
 	}
 
-
-	// Screen automation: when screen tools are available, guide decision loop
-	if _, hasAnalyze := e.tools["device_screen_analyze"]; hasAnalyze {
-		prompt.WriteString("\n\n**Screen automation**: When device_screen_analyze returns elements with bounds and center coordinates, use device_browser_tap (or device_android_tap/device_windows_tap) with the center (x,y) to click. Flow: device_screen_snapshot → device_screen_analyze → tap/input at coordinates → device_screen_wait → repeat until goal reached. For search result pages, use task_hint in device_screen_analyze to identify non-ad results (e.g. 'find first non-ad link'). Prefer device_browser_get_text for final content extraction.")
+	// Text vs image intent: avoid misusing generate_image for text-only requests
+	if _, hasImage := e.tools["generate_image"]; hasImage {
+		prompt.WriteString("\n\n**Text vs Image (CRITICAL)**: generate_image is ONLY for visual output. Do NOT call it when user asks for: 唐诗/诗词/诗歌/月报/情书/故事/代码/报告 — respond with text directly. Only call generate_image when user explicitly says 图片、画、画一张、配图、illustration、picture、diagram. Rule: \"生成\" alone (e.g. 生成一首唐诗) = text only, never use generate_image.")
 	}
 
 	return prompt.String()
@@ -859,6 +863,22 @@ func (e *Engine) GetSession(ctx context.Context, sessionID string) (*model.Sessi
 		return nil, nil
 	}
 	return e.memory.GetSession(ctx, sessionID)
+}
+
+// ExecuteTool executes a single tool by name (for use by pipeline and other systems)
+func (e *Engine) ExecuteTool(ctx context.Context, toolName string, params map[string]interface{}) (string, error) {
+	// Check if tool is registered in engine
+	if toolDef, ok := e.tools[toolName]; ok {
+		return toolDef.Handler(ctx, params)
+	}
+
+	// Check if tool is registered in skill registry
+	tool, err := e.skillRegistry.GetTool(toolName)
+	if err == nil {
+		return tool.Handler(ctx, params)
+	}
+
+	return "", fmt.Errorf("tool not found: %s", toolName)
 }
 
 // recordTokenUsage records token usage after a provider call

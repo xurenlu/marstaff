@@ -134,9 +134,44 @@
         .channel-icon {
             font-size: 1.2rem;
         }
+        /* Toast - 右上角浮层提示 */
+        #toastContainer {
+            position: fixed;
+            top: 1rem;
+            right: 1rem;
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            pointer-events: none;
+        }
+        .toast {
+            padding: 0.75rem 1.25rem;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            animation: toastSlideIn 0.3s ease;
+        }
+        .toast.success {
+            background: var(--success-color);
+            color: white;
+        }
+        .toast.error {
+            background: #f44336;
+            color: white;
+        }
+        @keyframes toastSlideIn {
+            from { opacity: 0; transform: translateX(100%); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+        @keyframes toastSlideOut {
+            from { opacity: 1; transform: translateX(0); }
+            to { opacity: 0; transform: translateX(100%); }
+        }
     </style>
 </head>
 <body>
+    <div id="toastContainer"></div>
     <div class="container">
         <a href="javascript:history.go(-1)" class="back-link">← Back to Tasks</a>
         <h1>🔔 Notification Settings</h1>
@@ -257,6 +292,18 @@
     <script>
         const API_BASE = window.location.origin;
 
+        function showToast(message, type = 'success') {
+            const container = document.getElementById('toastContainer');
+            const el = document.createElement('div');
+            el.className = `toast ${type}`;
+            el.textContent = message;
+            container.appendChild(el);
+            setTimeout(() => {
+                el.style.animation = 'toastSlideOut 0.2s ease forwards';
+                setTimeout(() => el.remove(), 200);
+            }, 3000);
+        }
+
         // Load theme
         const savedTheme = localStorage.getItem('marstaff_theme') || 'dark';
         document.documentElement.setAttribute('data-theme', savedTheme);
@@ -277,9 +324,21 @@
                 document.getElementById('quiet_hours_enabled').checked = settings.quiet_hours_enabled;
                 document.getElementById('quiet_hours_start').value = settings.quiet_hours_start || '22:00';
                 document.getElementById('quiet_hours_end').value = settings.quiet_hours_end || '08:00';
+
+                syncNotificationInputsState();
             } catch (error) {
                 console.error('Failed to load settings:', error);
             }
+        }
+
+        function syncNotificationInputsState() {
+            ['feishu', 'telegram', 'email'].forEach(channel => {
+                const checkbox = document.getElementById(`${channel}_enabled`);
+                const input = document.getElementById(`${channel === 'feishu' ? 'feishu_webhook' : channel + '_' + (channel === 'telegram' ? 'chat_id' : 'address')}`);
+                if (checkbox && input) {
+                    input.disabled = !checkbox.checked;
+                }
+            });
         }
 
         document.getElementById('settingsForm').addEventListener('submit', async (e) => {
@@ -305,14 +364,12 @@
                 });
 
                 if (res.ok) {
-                    const hint = document.getElementById('savedHint');
-                    hint.classList.add('show');
-                    setTimeout(() => { hint.classList.remove('show'); }, 3000);
+                    showToast('✓ Settings saved successfully');
                 } else {
-                    alert('Failed to save settings');
+                    showToast('Failed to save settings', 'error');
                 }
             } catch (error) {
-                alert('Error: ' + error.message);
+                showToast('Error: ' + error.message, 'error');
             }
         });
 
