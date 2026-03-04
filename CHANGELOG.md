@@ -28,6 +28,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **系统提示明确本地能力**：更新系统提示，明确说明这是本地 AI Agent 平台，工具/技能运行在本地而非云 AI 服务
 - **工具描述增强**：技能管理工具 (list_skills, enable_skill, disable_skill, search_skills, install_skill) 添加中英文使用示例
 
+## [1.13.0-rc1] - 2025-03-04
+
+### Added
+
+- **设置页 API Key 管理**：在设置页可配置各 Provider 的 API Key，写入数据库并覆盖配置文件
+- **工具读取配置**：新增 `get_config` 工具，执行工具时通过 context 注入安全配置
+
+## [1.12.0-rc1] - 2025-03-04
+
+### Added
+
+- **Playwright 浏览器自动化**：浏览器控制从 chromedp 迁移至 Playwright Node.js sidecar，通过 stdio JSON-RPC 2.0 通信；新增 `device_browser_snapshot` 返回页面可交互元素编号列表，`device_browser_click(ref)` 和 `device_browser_fill(ref, text)` 通过编号精准操作，替代原有「截图→VLM 猜坐标→tap」流程
+- **按需启动与空闲回收**：Playwright sidecar 首次调用浏览器工具时自动启动，5 分钟无调用自动回收
+
+### Removed
+
+- **废弃 chromedp 相关工具**：device_browser_connect、device_browser_click_element、device_browser_input_to、device_browser_tap、device_browser_swipe、device_browser_input、device_screen_snapshot、device_screen_analyze
+
+### Changed
+
+- **浏览器工作流**：系统提示更新为 navigate → snapshot → click/fill → wait → repeat 流程
+
 ## [1.11.0-rc1] - 2025-02-25
 
 ### Added

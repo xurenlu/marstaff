@@ -27,6 +27,7 @@ import (
 	afkpkg "github.com/rocky/marstaff/internal/afk"
 	"github.com/rocky/marstaff/internal/config"
 	"github.com/rocky/marstaff/internal/device"
+	"github.com/rocky/marstaff/internal/device/playwright"
 	"github.com/rocky/marstaff/internal/gateway"
 	"github.com/rocky/marstaff/internal/media"
 	"github.com/rocky/marstaff/internal/model"
@@ -38,9 +39,10 @@ import (
 )
 
 var (
-	configFile    string
+	configFile     string
 	enableTelegram bool
-	Version       = "1.11.0-rc1"
+	Version        = "1.13.0-rc1"
+	GitCommit      = "dev" // 编译时通过 ldflags 注入，如未注入则显示 dev
 )
 
 // truncateRunes truncates s to at most max runes (avoids cutting mid-UTF8-char)
@@ -94,10 +96,20 @@ func run(cmd *cobra.Command, args []string) {
 		db = nil
 	} else {
 		log.Info().Msg("connected to database")
-		if err := db.AutoMigrate(&model.User{}, &model.Session{}, &model.Message{}, &model.Skill{}, &model.Memory{}, &model.TodoItem{}, &model.Project{}, &model.Rule{}, &model.MCPServer{}, &model.MCPTool{}, &model.AFKTask{}, &model.AFKTaskExecution{}, &model.Pipeline{}, &model.TokenUsage{}); err != nil {
+		if err := db.AutoMigrate(&model.User{}, &model.Session{}, &model.Message{}, &model.Skill{}, &model.Memory{}, &model.TodoItem{}, &model.Project{}, &model.Rule{}, &model.MCPServer{}, &model.MCPTool{}, &model.AFKTask{}, &model.AFKTaskExecution{}, &model.Pipeline{}, &model.TokenUsage{},
+			&model.ProviderSetting{},
+			// Coding-related models
+			&model.FeatureBranch{}, &model.Commit{}, &model.Iteration{}, &model.Task{}, &model.CodingStats{}); err != nil {
 			log.Warn().Err(err).Msg("failed to auto migrate tables")
 		}
 	}
+
+	// Provider setting repo and factory (for API key overrides from settings UI)
+	var providerSettingRepo *repository.ProviderSettingRepository
+	if db != nil {
+		providerSettingRepo = repository.NewProviderSettingRepository(db)
+	}
+	providerFactory := provider.NewConfigurableProviderFactory(cfg, providerSettingRepo, getProviderConfig)
 
 	// Create provider
 	prov, err := provider.CreateProvider(cfg.Provider.Default, getProviderConfig(cfg, cfg.Provider.Default))
@@ -110,27 +122,10 @@ func run(cmd *cobra.Command, args []string) {
 	for _, name := range []string{"qwen", "zai"} {
 		if provCfg := getProviderConfig(cfg, name); provCfg != nil {
 			if vm, ok := provCfg["vision_model"].(string); ok && vm != "" {
-				vp, err := provider.CreateProvider(name, provCfg)
-				if err != nil {
-					log.Warn().Err(err).Str("provider", name).Msg("failed to create vision provider")
-				} else {
+				if vp, ok := providerFactory.GetProviderCached(context.Background(), name); ok {
 					visionProviders[name] = vp
 					log.Info().Str("provider", name).Str("model", vm).Msg("vision provider registered")
 				}
-			}
-		}
-	}
-
-	// Build chat providers map for user-selectable chat engines
-	chatProviders := make(map[string]provider.Provider)
-	for _, name := range []string{"zai", "qwen", "gemini", "deepseek", "minimax", "minimax_intl", "ollama", "vllm"} {
-		if provCfg := getProviderConfig(cfg, name); provCfg != nil {
-			cp, err := provider.CreateProvider(name, provCfg)
-			if err != nil {
-				log.Warn().Err(err).Str("provider", name).Msg("failed to create chat provider")
-			} else {
-				chatProviders[name] = cp
-				log.Info().Str("provider", name).Msg("chat provider registered")
 			}
 		}
 	}
@@ -171,6 +166,10 @@ func run(cmd *cobra.Command, args []string) {
 		afkTaskRepo = repository.NewAFKTaskRepository(db)
 	}
 
+	for _, name := range providerFactory.List() {
+		log.Info().Str("provider", name).Msg("chat provider available")
+	}
+
 	// Create agent engine
 	engine, err := agent.NewEngine(&agent.Config{
 		Provider:      prov,
@@ -189,6 +188,7 @@ func run(cmd *cobra.Command, args []string) {
 	if cfg.Security.Sandbox.Mode == "non_main" {
 		executor.SetSandboxMode(cfg.Security.Sandbox.Mode)
 	}
+	executor.SetConfigReader(&safeConfigReader{cfg: cfg, providerFactory: providerFactory})
 	executor.RegisterBuiltInTools()
 
 	// Create OSS uploader early for device screenshot tools (screenshots must upload to OSS, not base64)
@@ -211,10 +211,12 @@ func run(cmd *cobra.Command, args []string) {
 
 	// Create and register device control tools
 	deviceToolExecutor := device.NewToolExecutor(engine)
+	pwProcess := playwright.NewProcess("playwright-sidecar", "node")
+	deviceToolExecutor.SetPlaywrightProcess(pwProcess)
 	if ossUploaderForDevice != nil {
 		deviceToolExecutor.SetImageUploader(newOSSImageUploader(ossUploaderForDevice))
 	}
-	// Wire vision provider for screen analysis (device_screen_analyze)
+	// Vision provider no longer used for browser (Playwright snapshot replaces VLM analysis)
 	if vp, ok := visionProviders["qwen"]; ok {
 		if provCfg := getProviderConfig(cfg, "qwen"); provCfg != nil {
 			if vm, ok := provCfg["vision_model"].(string); ok && vm != "" {
@@ -383,7 +385,14 @@ func run(cmd *cobra.Command, args []string) {
 	if db != nil && sessionRepo != nil {
 		pipelineRepo := repository.NewPipelineRepository(db)
 		videoTaskExecutor := pipeline.NewVideoTaskExecutor(sessionRepo)
-		pipelineEngine = pipeline.NewEngine(pipelineRepo, videoTaskExecutor, nil)
+		videoTaskExecutor.SetEngine(engine)
+		// Pass AFK task repo if available for async task tracking
+		var afkTaskRepoForPipeline *repository.AFKTaskRepository
+		if afkTaskRepo != nil {
+			afkTaskRepoForPipeline = afkTaskRepo
+			videoTaskExecutor.SetAFKTaskRepo(afkTaskRepo)
+		}
+		pipelineEngine = pipeline.NewEngine(pipelineRepo, videoTaskExecutor, afkTaskRepoForPipeline)
 		pipelineAPI = api.NewPipelineAPI(db, pipelineEngine)
 
 		// Register pipeline tools with agent
@@ -531,7 +540,7 @@ func run(cmd *cobra.Command, args []string) {
 		if !ac.Enabled || ac.Type == "websocket" {
 			continue
 		}
-		a, err := createAdapter(ac, executor, sessionAPI, chatProviders, cfg, engine, summaryService, memoryService)
+		a, err := createAdapter(ac, executor, sessionAPI, providerFactory, cfg, engine, summaryService, memoryService)
 		if err != nil {
 			log.Warn().Err(err).Str("type", ac.Type).Msg("failed to create adapter, skipping")
 			continue
@@ -650,7 +659,7 @@ func run(cmd *cobra.Command, args []string) {
 			}
 			if p, exists := data["provider"]; exists {
 				if prov, ok := p.(string); ok {
-					if _, ok := chatProviders[prov]; ok {
+					if _, ok := providerFactory.GetProviderCached(context.Background(), prov); ok {
 						providerChoice = prov
 					}
 				}
@@ -730,7 +739,7 @@ func run(cmd *cobra.Command, args []string) {
 		// Use user's selected chat_provider so session title respects user preference (e.g. qwen vs zai)
 		if isNewSession && sessionID != "" && sessionAPI != nil {
 			var titleProvider provider.Provider
-			if cp, ok := chatProviders[providerChoice]; ok {
+			if cp, ok := providerFactory.GetProviderCached(context.Background(), providerChoice); ok {
 				titleProvider = cp
 			}
 			go func(sid string, userContent string, uid string, p provider.Provider) {
@@ -811,7 +820,7 @@ func run(cmd *cobra.Command, args []string) {
 				PlanMode:    planMode,
 			}
 			// Use selected chat provider if available (priority: user selection > vision provider for images > default)
-			if cp, ok := chatProviders[providerChoice]; ok {
+			if cp, ok := providerFactory.GetProviderCached(context.Background(), providerChoice); ok {
 				chatReq.ProviderOverride = cp
 				log.Info().Str("provider", providerChoice).Msg("using selected chat provider")
 			}
@@ -1033,7 +1042,7 @@ func run(cmd *cobra.Command, args []string) {
 
 				// Resolve provider for background tasks (memory/summary) - use user's chat_provider choice
 				var bgProvider provider.Provider
-				if cp, ok := chatProviders[providerChoice]; ok {
+				if cp, ok := providerFactory.GetProviderCached(context.Background(), providerChoice); ok {
 					bgProvider = cp
 				}
 
@@ -1078,6 +1087,7 @@ func run(cmd *cobra.Command, args []string) {
 		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, accept, origin, Cache-Control, X-Requested-With")
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, DELETE")
 		c.Writer.Header().Set("X-Marstaff-Version", Version)
+		c.Writer.Header().Set("X-Marstaff-Git-Commit", GitCommit)
 
 		if c.Request.Method == "OPTIONS" {
 			c.AbortWithStatus(http.StatusNoContent)
@@ -1088,6 +1098,8 @@ func run(cmd *cobra.Command, args []string) {
 
 	// Web UI
 	router.Static("/static", "./web/static")
+	// Public files directory for generated content (videos, etc.)
+	router.Static("/public", "./public")
 	router.GET("/", func(c *gin.Context) {
 		c.File("./web/templates/welcome.html")
 	})
@@ -1116,11 +1128,12 @@ func run(cmd *cobra.Command, args []string) {
 	{
 		apiGroup.GET("/health", func(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{
-				"status":   "ok",
-				"version":  Version,
-				"provider": prov.Name(),
-				"clients":  server.GetClientCount(),
-				"database": db != nil,
+				"status":     "ok",
+				"version":    Version,
+				"git_commit": GitCommit,
+				"provider":   prov.Name(),
+				"clients":    server.GetClientCount(),
+				"database":   db != nil,
 			})
 		})
 
@@ -1132,10 +1145,7 @@ func run(cmd *cobra.Command, args []string) {
 			if len(visionProvidersList) == 0 {
 				visionProvidersList = []string{"qwen", "zai"}
 			}
-			chatProvidersList := []string{}
-			for name := range chatProviders {
-				chatProvidersList = append(chatProvidersList, name)
-			}
+			chatProvidersList := providerFactory.List()
 			if len(chatProvidersList) == 0 {
 				chatProvidersList = []string{"zai", "qwen", "gemini", "deepseek", "minimax", "minimax_intl", "ollama", "vllm"}
 			}
@@ -1143,6 +1153,54 @@ func run(cmd *cobra.Command, args []string) {
 				"vision_providers": visionProvidersList,
 				"chat_providers":   chatProvidersList,
 			})
+		})
+
+		// Provider API keys (DB overrides config file)
+		apiGroup.GET("/settings/provider-keys", func(c *gin.Context) {
+			if providerSettingRepo == nil {
+				c.JSON(http.StatusOK, gin.H{"provider_keys": map[string]interface{}{}})
+				return
+			}
+			all, err := providerSettingRepo.GetAll(c.Request.Context())
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			// Mask sensitive values: show only "***" if set
+			masked := make(map[string]map[string]string)
+			for prov, keys := range all {
+				masked[prov] = make(map[string]string)
+				for k, v := range keys {
+					if v != "" {
+						masked[prov][k] = "***"
+					}
+				}
+			}
+			c.JSON(http.StatusOK, gin.H{"provider_keys": masked})
+		})
+		apiGroup.PUT("/settings/provider-keys", func(c *gin.Context) {
+			if providerSettingRepo == nil {
+				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "database not available"})
+				return
+			}
+			var req struct {
+				Provider string            `json:"provider"`
+				Keys     map[string]string `json:"keys"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+			if req.Provider == "" || len(req.Keys) == 0 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "provider and keys required"})
+				return
+			}
+			if err := providerSettingRepo.SetBatch(c.Request.Context(), req.Provider, req.Keys); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			providerFactory.Invalidate(req.Provider)
+			c.JSON(http.StatusOK, gin.H{"ok": true})
 		})
 
 		// Chat API (for programmatic access)
@@ -1283,6 +1341,13 @@ func run(cmd *cobra.Command, args []string) {
 			projects.GET("/:id/sessions", projectAPI.GetProjectSessions)
 		}
 
+		// Coding/Iteration API (AI-driven development)
+		var codingAPI *api.CodingAPI
+		if db != nil {
+			codingAPI = api.NewCodingAPI(db)
+			codingAPI.RegisterRoutes(apiGroup)
+		}
+
 		// Skills, Rules, and MCP API
 		if skillsAPI != nil {
 			skillsAPI.RegisterRoutes(apiGroup)
@@ -1400,7 +1465,11 @@ func run(cmd *cobra.Command, args []string) {
 	}
 
 	go func() {
-		log.Info().Str("addr", addr).Msg("Marstaff server starting")
+		log.Info().
+			Str("addr", addr).
+			Str("version", Version).
+			Str("git_commit", GitCommit).
+			Msg("Marstaff server starting")
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatal().Err(err).Msg("failed to start server")
 		}
@@ -1411,6 +1480,10 @@ func run(cmd *cobra.Command, args []string) {
 	<-quit
 
 	log.Info().Msg("shutting down server...")
+
+	// Stop Playwright sidecar
+	pwProcess.Stop()
+	log.Info().Msg("Playwright sidecar stopped")
 
 	// Stop AFK scheduler
 	if afkScheduler != nil {
@@ -1464,6 +1537,45 @@ func setupLogger(cfg *config.Config) {
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stdout})
 }
 
+// safeConfigReader implements agent.SafeConfigReader (no API keys or secrets)
+type safeConfigReader struct {
+	cfg             *config.Config
+	providerFactory *provider.ConfigurableProviderFactory
+}
+
+func (r *safeConfigReader) Get() map[string]interface{} {
+	out := map[string]interface{}{
+		"workspace_base_path": r.cfg.Workspace.BasePath,
+		"skills_path":         r.cfg.Skills.Path,
+		"default_provider":    r.cfg.Provider.Default,
+		"providers":          r.providerFactory.List(),
+		"media_default":       r.cfg.Media.Default,
+		"sandbox_mode":        r.cfg.Security.Sandbox.Mode,
+	}
+	// Provider models (non-sensitive)
+	if r.cfg.Provider.Qwen != nil {
+		if m, ok := r.cfg.Provider.Qwen["model"].(string); ok {
+			out["qwen_model"] = m
+		}
+	}
+	if r.cfg.Provider.ZAI != nil {
+		if m, ok := r.cfg.Provider.ZAI["model"].(string); ok {
+			out["zai_model"] = m
+		}
+	}
+	if r.cfg.Provider.DeepSeek != nil {
+		if m, ok := r.cfg.Provider.DeepSeek["model"].(string); ok {
+			out["deepseek_model"] = m
+		}
+	}
+	if r.cfg.Provider.Poe != nil {
+		if m, ok := r.cfg.Provider.Poe["model"].(string); ok {
+			out["poe_model"] = m
+		}
+	}
+	return out
+}
+
 func getProviderConfig(cfg *config.Config, name string) map[string]interface{} {
 	switch name {
 	case "zai":
@@ -1486,6 +1598,8 @@ func getProviderConfig(cfg *config.Config, name string) map[string]interface{} {
 		return cfg.Provider.Ollama
 	case "vllm":
 		return cfg.Provider.VLLM
+	case "poe":
+		return cfg.Provider.Poe
 	default:
 		return nil
 	}
@@ -1595,7 +1709,7 @@ func createAdapter(
 	ac config.AdapterConfig,
 	executor *agent.Executor,
 	sessionAPI *api.SessionAPI,
-	chatProviders map[string]provider.Provider,
+	providerFactory *provider.ConfigurableProviderFactory,
 	cfg *config.Config,
 	engine *agent.Engine,
 	summaryService *agent.SummaryService,
@@ -1653,7 +1767,7 @@ func createAdapter(
 		return nil, fmt.Errorf("unknown adapter type: %s", ac.Type)
 	}
 
-	handler := makeAdapterMessageHandler(a, executor, sessionAPI, chatProviders, cfg, engine, summaryService, memoryService)
+	handler := makeAdapterMessageHandler(a, executor, sessionAPI, providerFactory, cfg, engine, summaryService, memoryService)
 	a.SetMessageHandler(handler)
 	return a, nil
 }
@@ -1663,7 +1777,7 @@ func makeAdapterMessageHandler(
 	adp adapter.Adapter,
 	executor *agent.Executor,
 	sessionAPI *api.SessionAPI,
-	chatProviders map[string]provider.Provider,
+	providerFactory *provider.ConfigurableProviderFactory,
 	cfg *config.Config,
 	engine *agent.Engine,
 	summaryService *agent.SummaryService,
@@ -1718,7 +1832,7 @@ func makeAdapterMessageHandler(
 		_ = adp.SendTypingIndicator(ctx, destID)
 
 		providerChoice := cfg.Provider.Default
-		if cp, ok := chatProviders[providerChoice]; !ok || cp == nil {
+		if cp, ok := providerFactory.GetProviderCached(ctx, providerChoice); !ok || cp == nil {
 			providerChoice = "zai"
 		}
 		chatReq := &agent.ChatRequest{
@@ -1726,7 +1840,7 @@ func makeAdapterMessageHandler(
 			UserID:    platformUserID,
 			Messages:  []provider.Message{{Role: provider.RoleUser, Content: content}},
 		}
-		if cp, ok := chatProviders[providerChoice]; ok {
+		if cp, ok := providerFactory.GetProviderCached(ctx, providerChoice); ok {
 			chatReq.ProviderOverride = cp
 		}
 

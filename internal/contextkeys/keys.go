@@ -10,4 +10,6 @@ const (
 	SessionID Key = "session_id"
 	// UserID is the context key for user ID (used by tools like video generation for AFK task creation)
 	UserID Key = "user_id"
+	// Config is the context key for safe config (map[string]interface{}, no secrets)
+	Config Key = "config"
 )

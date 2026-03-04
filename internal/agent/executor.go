@@ -17,9 +17,10 @@ import (
 
 // Executor handles tool/function calls from AI
 type Executor struct {
-	engine      *Engine
-	registry    skill.Registry
-	sandboxMode string // "off" or "non_main"
+	engine       *Engine
+	registry     skill.Registry
+	sandboxMode  string // "off" or "non_main"
+	configReader SafeConfigReader
 }
 
 // NewExecutor creates a new tool executor
@@ -30,6 +31,11 @@ func NewExecutor(engine *Engine) *Executor {
 	}
 }
 
+// SetConfigReader sets optional config reader for get_config tool
+func (e *Executor) SetConfigReader(r SafeConfigReader) {
+	e.configReader = r
+}
+
 // SetSandboxMode sets sandbox mode for non-main sessions
 func (e *Executor) SetSandboxMode(mode string) {
 	e.sandboxMode = mode
@@ -37,7 +43,7 @@ func (e *Executor) SetSandboxMode(mode string) {
 
 // ExecuteToolCalls executes tool calls returned by the AI
 func (e *Executor) ExecuteToolCalls(ctx context.Context, sessionID, userID string, toolCalls []provider.ToolCall) ([]provider.Message, error) {
-	// Enrich context with session work_dir, session_id, and user_id for tools (e.g. video generation)
+	// Enrich context with session work_dir, session_id, user_id, and config for tools
 	if sessionID != "" {
 		ctx = context.WithValue(ctx, contextkeys.SessionID, sessionID)
 		if session, err := e.engine.GetSession(ctx, sessionID); err == nil && session != nil && session.WorkDir != "" {
@@ -46,6 +52,9 @@ func (e *Executor) ExecuteToolCalls(ctx context.Context, sessionID, userID strin
 	}
 	if userID != "" {
 		ctx = context.WithValue(ctx, contextkeys.UserID, userID)
+	}
+	if e.configReader != nil {
+		ctx = context.WithValue(ctx, contextkeys.Config, e.configReader.Get())
 	}
 
 	var results []provider.Message
@@ -260,6 +269,39 @@ func (e *Executor) RegisterBuiltInTools() {
 				result += fmt.Sprintf("- %s: %s\n", meta.Name, meta.Description)
 			}
 			return result, nil
+		})
+
+	// Get config (non-sensitive: workspace, providers, skills path, etc.)
+	e.engine.RegisterTool("get_config",
+		"Reads application configuration (workspace path, available providers, skills path, etc.). Use when you need to know where files are stored or what AI providers are available. Does not include API keys or secrets.",
+		map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"key": map[string]interface{}{
+					"type":        "string",
+					"description": "Optional: specific config key (e.g. workspace_base_path, providers). If empty, returns all.",
+				},
+			},
+		},
+		func(ctx context.Context, params map[string]interface{}) (string, error) {
+			if e.configReader == nil {
+				return "Config not available", nil
+			}
+			cfg := e.configReader.Get()
+			if cfg == nil {
+				return "{}", nil
+			}
+			if k, ok := params["key"].(string); ok && k != "" {
+				if v, exists := cfg[k]; exists {
+					return fmt.Sprintf("%v", v), nil
+				}
+				return fmt.Sprintf("key %q not found", k), nil
+			}
+			b, err := json.MarshalIndent(cfg, "", "  ")
+			if err != nil {
+				return "", err
+			}
+			return string(b), nil
 		})
 
 	log.Info().Msg("registered built-in tools")
