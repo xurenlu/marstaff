@@ -544,6 +544,13 @@ func (e *Engine) buildSystemPrompt(ctx context.Context, req *ChatRequest) string
 		prompt.WriteString("**CRITICAL - Generate + Send flow**: When user asks to generate content (poems/唐诗/诗词, stories, summaries, etc.) AND send via notification: 1) Generate the full content first, 2) Call afk_send_notification with that content, 3) In your final response you MUST include the full generated content in the chat — NEVER reply with only \"已生成，请查看\" or \"请查收\" without showing the actual content. The user expects to see it in the chat AND receive it via notification.\n\n")
 	}
 
+	// Long-running tasks: prefer afk_create_oneoff_task
+	if _, hasOneoff := e.tools["afk_create_oneoff_task"]; hasOneoff {
+		prompt.WriteString("**Long-running tasks (CRITICAL)**: When user requests ANY of these, ALWAYS use afk_create_oneoff_task instead of run_command: firecrawl search/scrape, npm/yarn/pip install, ffmpeg, large builds, bulk data extraction, web scraping. Use 'npx firecrawl-cli' (not 'firecrawl') in the command to avoid 'command not found'. Call afk_create_oneoff_task with name and command, then return immediately. User will be notified when done. Do NOT run these via run_command — they may take minutes and will timeout. For firecrawl: (1) user must have FIRECRAWL_API_KEY in Settings; (2) use --limit N for result count, NOT --page-limit.\n\n")
+	} else {
+		prompt.WriteString("**Long-running tasks (firecrawl, web scraping, bulk extraction)**: When user requests tasks that involve network requests, crawling, or bulk extraction: 1) BEFORE starting, tell the user to keep the session open. 2) Execute step by step. 3) When done, output the result and optionally call afk_send_notification.\n\n")
+	}
+
 	// When users ask about capabilities, emphasize these are LOCAL tools/skills
 	if len(skills) > 0 || tools > 0 {
 		prompt.WriteString("**Important**: When users ask what you can do or what capabilities you have, clearly explain that these are **local tools and skills** available in this agent platform - NOT capabilities of the cloud AI service. You are an AI assistant helping to orchestrate these local capabilities.\n\n")

@@ -24,8 +24,14 @@ func (e *ToolExecutor) pwClient(ctx context.Context) (*playwright.Client, error)
 	if err != nil {
 		return nil, fmt.Errorf("playwright client: %w", err)
 	}
-	// Ensure browser is launched (idempotent)
-	if err := client.Call(ctx, "browser.launch", map[string]interface{}{"headless": true}, nil); err != nil {
+	launchParams := map[string]interface{}{"headless": true}
+	if e.browserSettingsProvider != nil {
+		mode, cdpPort := e.browserSettingsProvider.GetBrowserSettings()
+		if mode == "cdp" && cdpPort > 0 {
+			launchParams["cdp_url"] = fmt.Sprintf("http://localhost:%d", cdpPort)
+		}
+	}
+	if err := client.Call(ctx, "browser.launch", launchParams, nil); err != nil {
 		return nil, fmt.Errorf("browser launch: %w", err)
 	}
 	return client, nil

@@ -73,6 +73,13 @@ func (e *Executor) toolRunCommand(ctx context.Context, params map[string]interfa
 		cmd := exec.CommandContext(cmdCtx, "sh", "-c", processedCommand)
 		cmd.Dir = workingDir
 
+		// Inject env vars from settings
+		if e.envProvider != nil {
+			if env, err := e.envProvider.GetMergedEnv(cmdCtx); err == nil && len(env) > 0 {
+				cmd.Env = env
+			}
+		}
+
 		// Run command and capture output
 		output, err := cmd.CombinedOutput()
 

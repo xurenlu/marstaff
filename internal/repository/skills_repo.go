@@ -89,14 +89,17 @@ func (r *RuleRepository) GetByID(ctx context.Context, id string) (*model.Rule, e
 	return &rule, nil
 }
 
-// GetActive retrieves the active rule for a user
+// GetActive retrieves the active rule for a user. Returns (nil, nil) when no active rule exists (avoids GORM "record not found" log).
 func (r *RuleRepository) GetActive(ctx context.Context, userID string) (*model.Rule, error) {
-	var rule model.Rule
-	err := r.db.WithContext(ctx).Where("(user_id = ? OR user_id = '') AND is_active = ?", userID, true).First(&rule).Error
+	var rules []model.Rule
+	err := r.db.WithContext(ctx).Where("(user_id = ? OR user_id = '') AND is_active = ?", userID, true).Limit(1).Find(&rules).Error
 	if err != nil {
 		return nil, err
 	}
-	return &rule, nil
+	if len(rules) == 0 {
+		return nil, nil
+	}
+	return &rules[0], nil
 }
 
 // Create creates a new rule

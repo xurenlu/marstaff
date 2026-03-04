@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -89,6 +90,43 @@ func (e *Executor) ExecuteToolCalls(ctx context.Context, sessionID, userID strin
 	return results, nil
 }
 
+// parseToolArguments parses tool call arguments, resilient to Gemini streaming artifacts.
+// Gemini may concatenate multiple JSON objects (e.g. {"name":"x"}{"command":"y"}) when streaming;
+// we merge them into a single map.
+func parseToolArguments(raw string) (map[string]interface{}, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+	var args map[string]interface{}
+	if err := json.Unmarshal([]byte(raw), &args); err == nil {
+		return args, nil
+	}
+	// Lenient: try merging multiple top-level JSON objects (streaming artifact)
+	dec := json.NewDecoder(strings.NewReader(raw))
+	var merged map[string]interface{}
+	for {
+		var obj map[string]interface{}
+		if err := dec.Decode(&obj); err != nil {
+			if err == io.EOF {
+				break
+			}
+			return nil, err
+		}
+		if merged == nil {
+			merged = obj
+		} else {
+			for k, v := range obj {
+				merged[k] = v
+			}
+		}
+	}
+	if merged != nil {
+		return merged, nil
+	}
+	return nil, fmt.Errorf("invalid JSON")
+}
+
 // executeToolCall executes a single tool call
 func (e *Executor) executeToolCall(ctx context.Context, sessionID, userID string, toolCall provider.ToolCall) (string, error) {
 	toolName := toolCall.Function.Name
@@ -102,11 +140,14 @@ func (e *Executor) executeToolCall(ctx context.Context, sessionID, userID string
 		}
 	}
 
-	// Parse arguments
+	// Parse arguments (resilient to Gemini streaming artifacts: multiple JSON objects concatenated)
 	var args map[string]interface{}
 	if toolCall.Function.Arguments != "" {
-		if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &args); err != nil {
-			return "", fmt.Errorf("failed to parse arguments: %w", err)
+		var parseErr error
+		args, parseErr = parseToolArguments(toolCall.Function.Arguments)
+		if parseErr != nil {
+			log.Debug().Str("raw_args", toolCall.Function.Arguments).Err(parseErr).Msg("tool arguments parse failed")
+			return "", fmt.Errorf("failed to parse arguments: %w", parseErr)
 		}
 	}
 

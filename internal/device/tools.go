@@ -16,14 +16,20 @@ import (
 	"github.com/rocky/marstaff/internal/provider"
 )
 
+// BrowserSettingsProvider returns current browser automation settings (mode, cdp_port)
+type BrowserSettingsProvider interface {
+	GetBrowserSettings() (mode string, cdpPort int)
+}
+
 // ToolExecutor provides device control tools for the agent
 type ToolExecutor struct {
-	manager           *Manager
-	engine            *agent.Engine
-	imageUploader     ImageUploader
-	visionProvider    provider.Provider
-	visionModel       string
-	playwrightProcess *playwright.Process
+	manager                *Manager
+	engine                  *agent.Engine
+	imageUploader           ImageUploader
+	visionProvider          provider.Provider
+	visionModel             string
+	playwrightProcess       *playwright.Process
+	browserSettingsProvider BrowserSettingsProvider
 }
 
 // NewToolExecutor creates a new device control tool executor
@@ -43,6 +49,11 @@ func (e *ToolExecutor) SetImageUploader(u ImageUploader) {
 func (e *ToolExecutor) SetVisionProvider(p provider.Provider, model string) {
 	e.visionProvider = p
 	e.visionModel = model
+}
+
+// SetBrowserSettingsProvider sets the provider for browser automation settings (launch vs CDP mode)
+func (e *ToolExecutor) SetBrowserSettingsProvider(p BrowserSettingsProvider) {
+	e.browserSettingsProvider = p
 }
 
 // uploadScreenshot encodes RGBA to PNG, uploads to OSS, returns URL. Falls back to size-only text if no uploader.

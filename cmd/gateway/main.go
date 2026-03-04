@@ -27,6 +27,7 @@ import (
 	afkpkg "github.com/rocky/marstaff/internal/afk"
 	"github.com/rocky/marstaff/internal/config"
 	"github.com/rocky/marstaff/internal/device"
+	"github.com/rocky/marstaff/internal/envvars"
 	"github.com/rocky/marstaff/internal/device/playwright"
 	"github.com/rocky/marstaff/internal/gateway"
 	"github.com/rocky/marstaff/internal/media"
@@ -41,7 +42,7 @@ import (
 var (
 	configFile     string
 	enableTelegram bool
-	Version        = "1.13.0-rc2"
+	Version        = "1.15.0-rc3"
 	GitCommit      = "dev" // 编译时通过 ldflags 注入，如未注入则显示 dev
 )
 
@@ -98,6 +99,8 @@ func run(cmd *cobra.Command, args []string) {
 		log.Info().Msg("connected to database")
 		if err := db.AutoMigrate(&model.User{}, &model.Session{}, &model.Message{}, &model.Skill{}, &model.Memory{}, &model.TodoItem{}, &model.Project{}, &model.Rule{}, &model.MCPServer{}, &model.MCPTool{}, &model.AFKTask{}, &model.AFKTaskExecution{}, &model.Pipeline{}, &model.TokenUsage{},
 			&model.ProviderSetting{},
+			&model.EnvVarSetting{},
+			&model.BrowserSetting{},
 			// Coding-related models
 			&model.FeatureBranch{}, &model.Commit{}, &model.Iteration{}, &model.Task{}, &model.CodingStats{}); err != nil {
 			log.Warn().Err(err).Msg("failed to auto migrate tables")
@@ -106,8 +109,14 @@ func run(cmd *cobra.Command, args []string) {
 
 	// Provider setting repo and factory (for API key overrides from settings UI)
 	var providerSettingRepo *repository.ProviderSettingRepository
+	var envVarRepo *repository.EnvVarRepository
+	var browserSettingRepo *repository.BrowserSettingRepository
+	var envVarsLoader *envvars.Loader
 	if db != nil {
 		providerSettingRepo = repository.NewProviderSettingRepository(db)
+		envVarRepo = repository.NewEnvVarRepository(db)
+		browserSettingRepo = repository.NewBrowserSettingRepository(db)
+		envVarsLoader = envvars.NewLoader(envVarRepo)
 	}
 	providerFactory := provider.NewConfigurableProviderFactory(cfg, providerSettingRepo, getProviderConfig)
 
@@ -213,6 +222,9 @@ func run(cmd *cobra.Command, args []string) {
 	deviceToolExecutor := device.NewToolExecutor(engine)
 	pwProcess := playwright.NewProcess("playwright-sidecar", "node")
 	deviceToolExecutor.SetPlaywrightProcess(pwProcess)
+	if browserSettingRepo != nil {
+		deviceToolExecutor.SetBrowserSettingsProvider(&browserSettingsProviderAdapter{repo: browserSettingRepo})
+	}
 	if ossUploaderForDevice != nil {
 		deviceToolExecutor.SetImageUploader(newOSSImageUploader(ossUploaderForDevice))
 	}
@@ -248,6 +260,9 @@ func run(cmd *cobra.Command, args []string) {
 		// Wire session repo for sandbox (and media async tasks)
 		if sessionRepo != nil && afkTaskRepo != nil {
 			toolsExecutor.SetRepositories(afkTaskRepo, sessionRepo)
+		}
+		if envVarsLoader != nil {
+			toolsExecutor.SetEnvVarsProvider(envVarsLoader)
 		}
 		log.Info().Str("security_config", securityConfigPath).Msg("file and command tools registered")
 
@@ -352,6 +367,7 @@ func run(cmd *cobra.Command, args []string) {
 
 	// Create AFK task scheduler and services
 	var afkScheduler *afkpkg.Scheduler
+	var afkExecutor *tools.AFKExecutor
 	if db != nil && afkTaskRepo != nil && sessionRepo != nil {
 		afkTaskAPI := api.NewAFKTaskAPI(db)
 
@@ -374,7 +390,7 @@ func run(cmd *cobra.Command, args []string) {
 		log.Info().Msg("AFK task scheduler started")
 
 		// Register AFK tools
-		afkExecutor := tools.NewAFKExecutor(engine, afkTaskAPI, afkTaskRepo, notificationService)
+		afkExecutor = tools.NewAFKExecutor(engine, afkTaskAPI, afkTaskRepo, notificationService)
 		afkExecutor.RegisterBuiltInTools()
 		log.Info().Msg("AFK task tools registered")
 	}
@@ -527,6 +543,21 @@ func run(cmd *cobra.Command, args []string) {
 	if afkScheduler != nil {
 		afkScheduler.SetAsyncNotifier(asyncTaskNotifier)
 		log.Info().Msg("Async task notifier wired to AFK scheduler")
+	}
+
+	// Setup one-off AFK tasks (firecrawl, npm install, etc.) - requires sessionRepo, asyncNotifier, validator
+	if afkExecutor != nil && sessionRepo != nil {
+		var validator tools.CommandValidator
+		if toolsExecutor != nil {
+			validator = toolsExecutor.GetValidator()
+		}
+		// Upload one-off task logs to OSS so Feishu notification includes a clickable URL
+		if ossUploaderForDevice != nil {
+			afkExecutor.SetFileUploader(newOneOffFileUploader(ossUploaderForDevice))
+			log.Info().Msg("One-off task log upload to OSS enabled (Feishu will receive clickable URL)")
+		}
+		afkExecutor.SetupOneOffTasks(sessionRepo, asyncTaskNotifier, validator, envVarsLoader)
+		log.Info().Msg("AFK one-off tasks configured (afk_create_oneoff_task ready)")
 	}
 
 	// Set up user repository for WebSocket server (to resolve platform_user_id to real user ID)
@@ -1220,6 +1251,127 @@ func run(cmd *cobra.Command, args []string) {
 			c.JSON(http.StatusOK, gin.H{"ok": true})
 		})
 
+		// Environment variables (injected into agent commands)
+		apiGroup.GET("/settings/env-vars", func(c *gin.Context) {
+			if envVarRepo == nil {
+				c.JSON(http.StatusOK, gin.H{"env_vars": map[string]string{}})
+				return
+			}
+			vars, err := envVarRepo.GetAll(c.Request.Context())
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{"env_vars": vars})
+		})
+		apiGroup.PUT("/settings/env-vars", func(c *gin.Context) {
+			if envVarRepo == nil {
+				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "database not available"})
+				return
+			}
+			var req struct {
+				// Single: key + value for add/update
+				Key   string `json:"key"`
+				Value string `json:"value"`
+				// Batch: replace all with this map (keys not present = delete)
+				Vars map[string]string `json:"vars"`
+				// Bulk: .env format text (parsed, then SetBatch; keys not in text = delete)
+				EnvContent string `json:"env_content"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+			ctx := c.Request.Context()
+			if req.EnvContent != "" {
+				parsed := envvars.ParseEnvContent(req.EnvContent)
+				if err := envVarRepo.SetBatch(ctx, parsed); err != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+					return
+				}
+			} else if len(req.Vars) > 0 {
+				if err := envVarRepo.SetBatch(ctx, req.Vars); err != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+					return
+				}
+			} else if req.Key != "" {
+				if req.Value == "" {
+					_ = envVarRepo.Delete(ctx, req.Key)
+				} else {
+					if err := envVarRepo.Set(ctx, req.Key, req.Value); err != nil {
+						c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+						return
+					}
+				}
+			} else {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "key+value, vars, or env_content required"})
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{"ok": true})
+		})
+
+		// Browser automation settings
+		apiGroup.GET("/settings/browser", func(c *gin.Context) {
+			if browserSettingRepo == nil {
+				c.JSON(http.StatusOK, gin.H{"mode": "launch", "cdp_port": 9222})
+				return
+			}
+			s, err := browserSettingRepo.GetOrCreate(c.Request.Context(), "default")
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{"mode": s.Mode, "cdp_port": s.CDPPort})
+		})
+		apiGroup.PUT("/settings/browser", func(c *gin.Context) {
+			if browserSettingRepo == nil {
+				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "database not available"})
+				return
+			}
+			var req struct {
+				Mode    string `json:"mode"`    // "launch" | "cdp"
+				CDPPort int    `json:"cdp_port"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+			if req.Mode != "launch" && req.Mode != "cdp" {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "mode must be launch or cdp"})
+				return
+			}
+			if req.Mode == "cdp" && (req.CDPPort <= 0 || req.CDPPort > 65535) {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "cdp_port must be 1-65535 when mode is cdp"})
+				return
+			}
+			s, err := browserSettingRepo.GetOrCreate(c.Request.Context(), "default")
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			s.Mode = req.Mode
+			s.CDPPort = req.CDPPort
+			if s.CDPPort <= 0 {
+				s.CDPPort = 9222
+			}
+			if err := browserSettingRepo.Update(c.Request.Context(), s); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{"ok": true, "mode": s.Mode, "cdp_port": s.CDPPort})
+		})
+		apiGroup.GET("/settings/browser/check-cdp", func(c *gin.Context) {
+			port := 9222
+			if p := c.Query("port"); p != "" {
+				if n, err := fmt.Sscanf(p, "%d", &port); err != nil || n != 1 {
+					c.JSON(http.StatusBadRequest, gin.H{"error": "invalid port"})
+					return
+				}
+			}
+			result := device.CheckCDPPort(c.Request.Context(), port)
+			c.JSON(http.StatusOK, result)
+		})
+
 		// Chat API (for programmatic access)
 		apiGroup.POST("/chat", func(c *gin.Context) {
 			var req struct {
@@ -1666,6 +1818,24 @@ func (a *ossVideoUploaderAdapter) UploadVideoFile(data []byte, filename string) 
 	}, nil
 }
 
+// browserSettingsProviderAdapter adapts repository.BrowserSettingRepository to device.BrowserSettingsProvider
+type browserSettingsProviderAdapter struct {
+	repo *repository.BrowserSettingRepository
+}
+
+func (a *browserSettingsProviderAdapter) GetBrowserSettings() (mode string, cdpPort int) {
+	s, err := a.repo.GetOrCreate(context.Background(), "default")
+	if err != nil {
+		return "launch", 9222
+	}
+	mode = s.Mode
+	cdpPort = s.CDPPort
+	if cdpPort <= 0 {
+		cdpPort = 9222
+	}
+	return mode, cdpPort
+}
+
 // userRepoAdapter adapts repository.UserRepository to gateway.UserRepository
 type userRepoAdapter struct {
 	repo *repository.UserRepository
@@ -1719,6 +1889,23 @@ func (a *ossMediaImageUploaderAdapter) UploadImage(data []byte, filename, conten
 
 func newOSSMediaImageUploader(oss *gateway.OSSUploader) media.ImageUploader {
 	return &ossMediaImageUploaderAdapter{uploader: oss}
+}
+
+// oneOffFileUploaderAdapter adapts gateway.OSSUploader to afk.OneOffFileUploader for one-off task logs
+type oneOffFileUploaderAdapter struct {
+	oss *gateway.OSSUploader
+}
+
+func (a *oneOffFileUploaderAdapter) UploadBytes(data []byte, filename, contentType string) (string, error) {
+	resp, err := a.oss.UploadBytes(data, filename, contentType)
+	if err != nil {
+		return "", err
+	}
+	return resp.URL, nil
+}
+
+func newOneOffFileUploader(oss *gateway.OSSUploader) afkpkg.OneOffFileUploader {
+	return &oneOffFileUploaderAdapter{oss: oss}
 }
 
 // createAdapter creates an IM adapter and wires the message handler

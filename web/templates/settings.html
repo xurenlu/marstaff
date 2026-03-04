@@ -33,11 +33,22 @@
             background: var(--bg-primary);
             color: var(--text-primary);
             min-height: 100vh;
-            padding: 2rem;
+            padding: 1rem;
         }
-        .container {
-            max-width: 700px;
+        .settings-layout {
+            display: flex;
+            gap: 2rem;
+            max-width: 1400px;
             margin: 0 auto;
+            width: 100%;
+        }
+        .settings-sidebar {
+            flex-shrink: 0;
+            width: 200px;
+        }
+        .settings-main {
+            flex: 1;
+            min-width: 0;
         }
         .back-link {
             display: inline-flex;
@@ -52,9 +63,8 @@
         h1 { font-size: 1.5rem; margin-bottom: 1.5rem; }
         .nav-tabs {
             display: flex;
-            gap: 1rem;
-            margin-bottom: 1.5rem;
-            border-bottom: 1px solid var(--border-color);
+            flex-direction: column;
+            gap: 0.25rem;
         }
         .nav-tab {
             padding: 0.75rem 1rem;
@@ -62,13 +72,14 @@
             border: none;
             color: var(--text-secondary);
             cursor: pointer;
-            border-bottom: 2px solid transparent;
+            text-align: left;
+            border-left: 3px solid transparent;
             transition: all 0.2s;
         }
         .nav-tab:hover { color: var(--text-primary); }
         .nav-tab.active {
             color: var(--success-color);
-            border-bottom-color: var(--success-color);
+            border-left-color: var(--success-color);
         }
         .tab-content { display: none; }
         .tab-content.active { display: block; }
@@ -375,19 +386,21 @@
 </head>
 <body>
     <div id="toastContainer"></div>
-    <div class="container">
-        <a href="javascript:history.go(-1)" class="back-link">← 返回对话</a>
-        <h1>设置</h1>
-
-        <div class="nav-tabs" id="navTabs">
-            <button class="nav-tab active" data-tab="general">通用设置</button>
-            <button class="nav-tab" data-tab="skills">技能管理</button>
-            <button class="nav-tab" data-tab="rules">规则管理</button>
-            <button class="nav-tab" data-tab="mcp">MCP 服务器</button>
-            <button class="nav-tab" data-tab="notifications">通知设置</button>
-            <button class="nav-tab" data-tab="projects">项目管理</button>
-        </div>
-
+    <div class="settings-layout">
+        <aside class="settings-sidebar">
+            <a href="javascript:history.go(-1)" class="back-link">← 返回对话</a>
+            <h1>设置</h1>
+            <nav class="nav-tabs" id="navTabs">
+                <button class="nav-tab active" data-tab="general">通用设置</button>
+                <button class="nav-tab" data-tab="envvars">环境变量</button>
+                <button class="nav-tab" data-tab="skills">技能管理</button>
+                <button class="nav-tab" data-tab="rules">规则管理</button>
+                <button class="nav-tab" data-tab="mcp">MCP 服务器</button>
+                <button class="nav-tab" data-tab="notifications">通知设置</button>
+                <button class="nav-tab" data-tab="projects">项目管理</button>
+            </nav>
+        </aside>
+        <main class="settings-main">
         <!-- General Settings Tab -->
         <div id="tab-general" class="tab-content active">
             <div class="section">
@@ -495,12 +508,82 @@
                 <div class="saved" id="videoSavedHint">已保存</div>
             </div>
             <div class="section">
+                <div class="section-title">浏览器自动化</div>
+                <div class="section-desc">Agent 访问网页时使用的浏览器模式。默认新建 Chrome；若需复用已登录的 Chrome（如已登录的网站），请选择「连接已有 Chrome」并先按下方说明启动 Chrome。</div>
+                <div class="option-row">
+                    <input type="radio" name="browser_mode" id="browser_launch" value="launch">
+                    <label for="browser_launch">
+                        <strong>新开 Chrome</strong>（默认）
+                        <div class="hint">每次启动新的浏览器实例，无登录状态</div>
+                    </label>
+                </div>
+                <div class="option-row">
+                    <input type="radio" name="browser_mode" id="browser_cdp" value="cdp">
+                    <label for="browser_cdp">
+                        <strong>连接已有 Chrome</strong>（带登录信息）
+                        <div class="hint">连接已启动的 Chrome，复用其 cookies 和登录状态</div>
+                    </label>
+                </div>
+                <div id="browserCdpOptions" class="form-group" style="margin-top: 1rem; display: none;">
+                    <label>CDP 端口</label>
+                    <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+                        <input type="number" id="browserCdpPort" min="1" max="65535" value="9222" style="width: 100px;">
+                        <button type="button" class="save-btn" id="browserCheckCdpBtn" style="background: var(--accent-color);">检测连接</button>
+                        <span id="browserCheckResult" style="font-size: 0.85rem; color: var(--text-secondary);"></span>
+                    </div>
+                    <div class="form-group" style="margin-top: 1rem; padding: 1rem; background: var(--bg-tertiary); border-radius: 8px; font-size: 0.85rem;">
+                        <strong>启动方式（需先关闭所有 Chrome 窗口）：</strong>
+                        <pre style="margin-top: 0.5rem; white-space: pre-wrap; word-break: break-all; font-family: 'SF Mono', Monaco, monospace;">macOS:
+/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --remote-debugging-port=9222
+
+Linux:
+google-chrome --remote-debugging-port=9222
+# 或 chromium --remote-debugging-port=9222
+
+Windows:
+"C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9222</pre>
+                    </div>
+                </div>
+                <button class="save-btn" id="saveBrowserBtn">保存</button>
+                <div class="saved" id="browserSavedHint">已保存</div>
+            </div>
+            <div class="section">
                 <div class="section-title">关于</div>
                 <div class="section-desc">当前运行版本，便于确认代码是否为最新</div>
                 <div class="option-row" style="flex-direction: column; align-items: flex-start;">
                     <div id="versionInfo" style="font-family: monospace; font-size: 0.9rem; color: var(--text-secondary);">
                         加载中...
                     </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Environment Variables Tab -->
+        <div id="tab-envvars" class="tab-content">
+            <div class="section">
+                <div class="section-title">环境变量管理</div>
+                <div class="section-desc">在此配置的环境变量会注入到 Agent 执行的所有命令中（run_command、挂机任务等）。支持单项添加/编辑，也支持 .env 格式批量导入；批量导入时，文本中不存在的键会被删除。</div>
+
+                <div class="tabs" style="margin-bottom: 1rem;">
+                    <button class="tab-btn active" data-env-tab="single">单项管理</button>
+                    <button class="tab-btn" data-env-tab="bulk">批量导入 (.env)</button>
+                </div>
+
+                <div id="env-single-panel" class="tab-panel active">
+                    <div id="envVarsList" style="margin-bottom: 1rem;"></div>
+                    <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+                        <input type="text" id="envNewKey" placeholder="KEY" style="width: 140px; padding: 0.5rem;">
+                        <input type="text" id="envNewValue" placeholder="value" style="flex: 1; min-width: 120px; padding: 0.5rem;">
+                        <button class="save-btn" id="envAddBtn">添加</button>
+                    </div>
+                </div>
+
+                <div id="env-bulk-panel" class="tab-panel">
+                    <div class="form-group">
+                        <label>粘贴 .env 格式内容（每行 KEY=value，支持 # 注释）。保存时，当前文本中不存在的键会被删除。</label>
+                        <textarea id="envBulkContent" rows="12" placeholder="FIRECRAWL_API_KEY=fc-xxx&#10;OPENAI_API_KEY=sk-xxx&#10;# 注释行会被忽略" style="font-family: 'SF Mono', Monaco, monospace; font-size: 0.85rem;"></textarea>
+                    </div>
+                    <button class="save-btn" id="envBulkSaveBtn">保存（覆盖全部）</button>
                 </div>
             </div>
         </div>
@@ -716,6 +799,7 @@
                 <button class="save-btn" id="createProjectBtn" style="background: var(--accent-color);">+ 新建项目</button>
             </div>
         </div>
+        </main>
     </div>
 
     <!-- Install Skill Modal -->
@@ -963,6 +1047,7 @@ This skill does something useful..." style="width: 100%; padding: 0.75rem; backg
             if (panel) panel.classList.add('active');
 
             // Load data for specific tabs
+            if (tabName === 'envvars' && typeof loadEnvVars === 'function') loadEnvVars();
             if (tabName === 'skills' && typeof loadSkills === 'function') loadSkills();
             if (tabName === 'rules' && typeof loadRules === 'function') loadRules();
             if (tabName === 'mcp' && typeof loadMcpServers === 'function') loadMcpServers();
@@ -1025,6 +1110,59 @@ This skill does something useful..." style="width: 100%; padding: 0.75rem; backg
             localStorage.setItem('marstaff_chat_provider', val);
             showToast('已保存');
         });
+
+        // ===== BROWSER AUTOMATION SETTINGS =====
+        async function loadBrowserSettings() {
+            try {
+                const r = await fetch(`${API_BASE}/api/settings/browser?t=${Date.now()}`);
+                if (!r.ok) return;
+                const data = await r.json();
+                const mode = data.mode || 'launch';
+                document.querySelector(`input[name="browser_mode"][value="${mode}"]`)?.click();
+                document.getElementById('browserCdpPort').value = data.cdp_port || 9222;
+                document.getElementById('browserCdpOptions').style.display = mode === 'cdp' ? 'block' : 'none';
+            } catch (e) {}
+        }
+        document.querySelectorAll('input[name="browser_mode"]').forEach(el => {
+            el.addEventListener('change', function() {
+                document.getElementById('browserCdpOptions').style.display = this.value === 'cdp' ? 'block' : 'none';
+            });
+        });
+        document.getElementById('saveBrowserBtn').addEventListener('click', async () => {
+            const mode = document.querySelector('input[name="browser_mode"]:checked')?.value || 'launch';
+            const port = parseInt(document.getElementById('browserCdpPort').value, 10) || 9222;
+            try {
+                const r = await fetch(`${API_BASE}/api/settings/browser`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ mode, cdp_port: port })
+                });
+                if (!r.ok) {
+                    const err = await r.json();
+                    showToast(err.error || '保存失败');
+                    return;
+                }
+                document.getElementById('browserSavedHint').style.display = 'block';
+                setTimeout(() => { document.getElementById('browserSavedHint').style.display = 'none'; }, 2000);
+            } catch (e) {
+                showToast('保存失败');
+            }
+        });
+        document.getElementById('browserCheckCdpBtn').addEventListener('click', async () => {
+            const port = parseInt(document.getElementById('browserCdpPort').value, 10) || 9222;
+            const resultEl = document.getElementById('browserCheckResult');
+            resultEl.textContent = '检测中...';
+            try {
+                const r = await fetch(`${API_BASE}/api/settings/browser/check-cdp?port=${port}`);
+                const data = await r.json();
+                resultEl.textContent = data.message || '';
+                resultEl.style.color = data.is_chrome_cdp ? 'var(--success-color)' : (data.port_available ? 'var(--error-color)' : 'var(--text-secondary)');
+            } catch (e) {
+                resultEl.textContent = '检测失败';
+                resultEl.style.color = 'var(--error-color)';
+            }
+        });
+        loadBrowserSettings();
 
         // ===== PROVIDER API KEYS =====
         const providerKeyLabels = {
@@ -1190,6 +1328,121 @@ This skill does something useful..." style="width: 100%; padding: 0.75rem; backg
         });
 
         loadProviderKeys();
+
+        // ===== ENV VARS =====
+        document.querySelectorAll('[data-env-tab]').forEach(btn => {
+            btn.addEventListener('click', async function() {
+                const t = this.dataset.envTab;
+                document.querySelectorAll('[data-env-tab]').forEach(b => b.classList.remove('active'));
+                document.querySelector(`[data-env-tab="${t}"]`).classList.add('active');
+                document.getElementById('env-single-panel').classList.toggle('active', t === 'single');
+                document.getElementById('env-bulk-panel').classList.toggle('active', t === 'bulk');
+                if (t === 'bulk') {
+                    try {
+                        const res = await fetch(`${API_BASE}/api/settings/env-vars?t=${Date.now()}`);
+                        const data = res.ok ? await res.json() : {};
+                        const vars = data.env_vars || {};
+                        document.getElementById('envBulkContent').value = Object.entries(vars).map(([k, v]) => {
+                            if (/[\n"=]/.test(v)) return k + '="' + v.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n') + '"';
+                            return k + '=' + v;
+                        }).join('\n');
+                    } catch (e) {}
+                }
+            });
+        });
+
+        async function loadEnvVars() {
+            const list = document.getElementById('envVarsList');
+            try {
+                const res = await fetch(`${API_BASE}/api/settings/env-vars?t=${Date.now()}`);
+                const data = res.ok ? await res.json() : {};
+                const vars = data.env_vars || {};
+                if (Object.keys(vars).length === 0) {
+                    list.innerHTML = '<div style="color: var(--text-secondary); padding: 0.5rem 0;">暂无环境变量</div>';
+                } else {
+                    list.innerHTML = Object.entries(vars).map(([k, v]) =>
+                        `<div class="option-row env-var-row" data-key="${escapeHtml(k)}">
+                            <span style="font-family: monospace; min-width: 140px;">${escapeHtml(k)}</span>
+                            <input type="text" class="env-var-value" data-key="${escapeHtml(k)}" value="${escapeHtml(v)}" style="flex: 1; padding: 0.4rem; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px;">
+                            <button type="button" class="btn btn-danger" style="padding: 0.3rem 0.6rem; font-size: 0.85rem;" data-key="${escapeHtml(k)}">删除</button>
+                        </div>`
+                    ).join('');
+                    list.querySelectorAll('.env-var-value').forEach(inp => {
+                        inp.addEventListener('change', () => saveEnvVar(inp.dataset.key, inp.value));
+                    });
+                    list.querySelectorAll('.btn-danger').forEach(btn => {
+                        btn.addEventListener('click', () => deleteEnvVar(btn.dataset.key));
+                    });
+                }
+            } catch (e) {
+                list.innerHTML = '<div style="color: var(--error-color);">加载失败</div>';
+            }
+        }
+
+        async function saveEnvVar(key, value) {
+            try {
+                const res = await fetch(`${API_BASE}/api/settings/env-vars`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ key: key, value: value })
+                });
+                if (!res.ok) throw new Error((await res.json()).error || '保存失败');
+                showToast('已保存');
+            } catch (e) {
+                alert('保存失败: ' + e.message);
+            }
+        }
+
+        async function deleteEnvVar(key) {
+            try {
+                const res = await fetch(`${API_BASE}/api/settings/env-vars`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ key: key, value: '' })
+                });
+                if (!res.ok) throw new Error((await res.json()).error || '删除失败');
+                showToast('已删除');
+                loadEnvVars();
+            } catch (e) {
+                alert('删除失败: ' + e.message);
+            }
+        }
+
+        document.getElementById('envAddBtn').addEventListener('click', async () => {
+            const key = (document.getElementById('envNewKey').value || '').trim();
+            const value = (document.getElementById('envNewValue').value || '').trim();
+            if (!key) { alert('请输入 KEY'); return; }
+            try {
+                const res = await fetch(`${API_BASE}/api/settings/env-vars`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ key, value })
+                });
+                if (!res.ok) throw new Error((await res.json()).error || '添加失败');
+                document.getElementById('envNewKey').value = '';
+                document.getElementById('envNewValue').value = '';
+                showToast('已添加');
+                loadEnvVars();
+            } catch (e) {
+                alert('添加失败: ' + e.message);
+            }
+        });
+
+        document.getElementById('envBulkSaveBtn').addEventListener('click', async () => {
+            const content = document.getElementById('envBulkContent').value;
+            try {
+                const res = await fetch(`${API_BASE}/api/settings/env-vars`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ env_content: content })
+                });
+                if (!res.ok) throw new Error((await res.json()).error || '保存失败');
+                showToast('已保存（已删除文本中不存在的项）');
+                loadEnvVars();
+            } catch (e) {
+                alert('保存失败: ' + e.message);
+            }
+        });
 
         // ===== VISION SETTINGS =====
         const saved = localStorage.getItem('marstaff_vision_provider') || 'qwen';

@@ -10,6 +10,7 @@ import (
 
 	"github.com/rocky/marstaff/internal/agent"
 	"github.com/rocky/marstaff/internal/contextkeys"
+	"github.com/rocky/marstaff/internal/envvars"
 	"github.com/rocky/marstaff/internal/media"
 	"github.com/rocky/marstaff/internal/model"
 	"github.com/rocky/marstaff/internal/repository"
@@ -27,6 +28,7 @@ type Executor struct {
 	sessionRepo       *repository.SessionRepository
 	sandboxMode       string       // "off" or "non_main"
 	sandboxExecutor   *SandboxExecutor
+	envProvider       envvars.Provider // optional: inject env vars from settings
 }
 
 // ExecutorContext holds context for tool execution
@@ -71,6 +73,11 @@ func NewExecutorWithConfig(engine *agent.Engine, cfg *security.Config) (*Executo
 // GetValidator returns the security validator
 func (e *Executor) GetValidator() *security.Validator {
 	return e.validator
+}
+
+// SetEnvVarsProvider sets the env vars provider for command execution
+func (e *Executor) SetEnvVarsProvider(p envvars.Provider) {
+	e.envProvider = p
 }
 
 // RegisterGitTools registers all git workflow tools

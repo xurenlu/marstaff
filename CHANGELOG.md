@@ -7,8 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.15.0-rc4] - 2025-03-04
+
+### Fixed
+
+- **afk_create_oneoff_task 参数解析失败**：Gemini 流式返回时可能将 tool call arguments 拆成多块拼接（如 `{"name":"x"}{"command":"y"}`），导致 `invalid character '{' after top-level value`。现增加 `parseToolArguments` 容错解析，支持合并多个 JSON 对象；解析失败时记录 raw_args 便于排查
+
+## [1.15.0-rc3] - 2025-03-04
+
+### Fixed
+
+- **挂机任务 firecrawl 结果文件为空**：firecrawl 使用 `-o` 将结果写入指定文件，stdout 几乎为空，导致上传的 .log 为 0 字节。现当 log 为空时，解析命令中的 `-o` 输出路径并优先上传该文件（如 `.firecrawl/potential_clients.json`），飞书通知中的链接将指向实际结果
+
 ### Added
 
+- **浏览器自动化模式选择**：设置页新增「浏览器自动化」选项，支持「新开 Chrome」（默认）与「连接已有 Chrome」（带登录信息）。选择连接模式时需配置 CDP 端口，并提供 macOS/Linux/Windows 启动命令说明；后端提供端口检测接口，可验证端口是否被 Chrome 远程调试占用
+- **环境变量管理**：设置页新增「环境变量」标签，支持单项添加/编辑/删除，以及 .env 格式批量导入。配置的变量会注入到 Agent 执行的所有命令中（run_command、挂机任务等）。批量导入时，文本中不存在的键会被删除
+- **挂机任务结果上传 OSS**：一次性任务（firecrawl、npm install 等）完成后，若已配置 OSS，日志文件会自动上传到 OSS，飞书/邮件通知中发送可点击的 URL，不再仅显示本地路径
 - **万相 2.6 完整特性支持**：实现阿里万相 2.6 模型的所有参数支持，包括音频 (audio, audio_url)、多镜头叙事 (shot_type)、提示词扩展 (prompt_extend)、水印 (watermark)、模板 (template) 等；支持 AI 从自然语言解析参数（如 "10秒的1080p竖屏视频"）
 - **通用文件下载工具**：新增 `download_file` 工具，支持从任意 HTTP/HTTPS URL 下载文件到 session work_dir，下载后可用于 FFmpeg 等其他工具处理
 - **AFK 页面聊天入口**：在 /afk 页面的任务详情中添加"进入聊天"按钮，点击可跳转到触发该任务的聊天会话
@@ -16,6 +31,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **挂机任务 command_execution 结果误渲染为图片**：firecrawl 等一次性任务的 result_url 是本地日志文件路径，聊天 UI 此前将其当作图片 URL 渲染导致大量「图片加载失败」。现对 command_execution 类型及 .log/.json 等文件路径显示为文本块，提示用户前往 /afk 查看
+- **afk_create_oneoff_task 装配**：修复 gateway 未调用 `SetupOneOffTasks` 导致 `afk_create_oneoff_task` 报 "one-off tasks not configured" 的问题，现已在启动时正确装配 sessionRepo、asyncNotifier、validator
+- **oneoff exit 127**：OneOffRunner 改用 bash 登录 shell 执行命令，以加载用户 PATH（~/.nvm、/usr/local/bin 等）；工具描述建议使用 `npx firecrawl-cli` 替代 `firecrawl`
+- **Gemini 400 INVALID_ARGUMENT**：修复工具调用后第二轮请求报 400 的问题，Gemini 不接受 assistant 消息中 content 为空且含 tool_calls 的情况，现对空 content 省略该字段
+- **rules GetActive record not found**：改用 Find+Limit 替代 First，避免无活跃规则时 GORM 打印 "record not found" 日志
 - **Gemini API 认证方式**：修复 Gemini 引擎报 "Missing Authorization header" 的问题，改为使用 `Authorization: Bearer` 头而非 URL 查询参数（Google OpenAI 兼容接口要求）
 - **run_command 中 ~ 路径展开**：修复 `bash ~/script.sh` 中 `~` 被错误展开成用户主目录的问题，现在正确展开为 session work_dir
 - **search_files 中 ~ 路径展开**：修复 `search_files path=~/Sites` 中 `~` 未展开导致搜索失败的问题
@@ -23,11 +43,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **视频结果持久化**：修复 OSS 上传失败时视频 URL 未保存到数据库的问题，现在无论上传成功与否都会保存结果 URL
 - **分辨率参数映射**：修复万相 2.6 分辨率参数硬编码问题，正确映射 720p → 1280*720、1080p → 1920*1080
 - **时长限制修正**：万相 2.6 支持最高 15 秒视频，之前错误限制为 10 秒
+- **记忆提取 JSON 截断**：记忆提取请求 MaxTokens 从 1000 提升至 4000；prompt 限制最多 8 条并排除任务ID等临时数据；解析失败时尝试从截断 JSON 中恢复已完整的记忆对象
 
 ### Changed
 
+- **设置页布局优化**：设置项改为左侧边栏垂直排列，内容区宽度扩展至 1400px 铺满屏幕，解决标签切换处文字错乱问题
 - **系统提示明确本地能力**：更新系统提示，明确说明这是本地 AI Agent 平台，工具/技能运行在本地而非云 AI 服务
 - **工具描述增强**：技能管理工具 (list_skills, enable_skill, disable_skill, search_skills, install_skill) 添加中英文使用示例
+- **afk_create_oneoff_task**：新增一次性挂机任务工具，支持 firecrawl、npm/yarn/pip 安装、ffmpeg、大型构建等耗时命令。Agent 优先使用此工具而非 run_command，任务在后台执行，完成后通过飞书/邮件/WebSocket 通知。主程序需调用 `AFKExecutor.SetupOneOffTasks(sessionRepo, asyncNotifier, validator)` 完成装配
 
 ## [1.13.0-rc1] - 2025-03-04
 

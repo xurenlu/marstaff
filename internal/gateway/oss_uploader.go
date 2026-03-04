@@ -145,7 +145,7 @@ func detectContentType(ext string) string {
 		return "image/svg+xml"
 	case ".pdf":
 		return "application/pdf"
-	case ".txt":
+	case ".txt", ".log":
 		return "text/plain"
 	case ".html", ".htm":
 		return "text/html"

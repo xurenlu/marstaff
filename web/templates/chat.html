@@ -2106,8 +2106,8 @@
                             messageContent += `\n\n⏳ 视频正在上传到更快的存储服务器...`;
                         }
 
-                        // Add the media element (video player or image)
-                        const mediaHtml = formatMediaResult(resultUrl, taskType);
+                        // Add the media element (video player, image, or file path for command_execution)
+                        const mediaHtml = formatMediaResult(resultUrl, taskType, task);
 
                         addMessageWithHtml('assistant', messageContent, mediaHtml);
 
@@ -2152,12 +2152,12 @@
 
                                 // Update message content and add video player
                                 const messageContent = `✅ 任务完成: ${task.name || 'Async Task'}`;
-                                const mediaHtml = formatMediaResult(newUrl, taskType);
+                                const mediaHtml = formatMediaResult(newUrl, taskType, task);
 
                                 // Update content: keep existing content but replace uploading text with final video
                                 contentEl.innerHTML = formatMessage(messageContent) + mediaHtml;
 
-                                // Add download link
+                                // Add download link (only for video URLs)
                                 const downloadLink = document.createElement('a');
                                 downloadLink.href = newUrl;
                                 downloadLink.target = '_blank';  // Open in new tab
@@ -2501,22 +2501,45 @@
             }
         }
 
-        // formatMediaResult formats a media result (video/image) based on task type
-        function formatMediaResult(url, taskType) {
+        // formatMediaResult formats a media result (video/image/file) based on task type.
+        // For command_execution (firecrawl, web scraping, etc.), result is a file - do NOT render as video/image.
+        function formatMediaResult(url, taskType, task) {
             // Check if URL is valid
             if (!url || url.trim() === '') {
-                return '<div style="color: #888; font-style: italic; margin-top: 8px;">视频加载中...</div>';
+                return '<div style="color: #888; font-style: italic; margin-top: 8px;">加载中...</div>';
+            }
+
+            const asyncTaskType = task?.trigger_config?.async_task_config?.task_type;
+            // URL path without query string (OSS URLs often have ?Expires=...&Signature=...)
+            const urlPath = url.split('?')[0];
+
+            // command_execution / oneoff tasks: result is a file (log, json, csv, md, txt) - never render as video
+            const hasFileExt = /\.(log|json|csv|md|txt)$/i.test(urlPath);
+            const isLocalPath = !url.startsWith('http://') && !url.startsWith('https://') && (url.includes('/') || url.includes('\\\\'));
+            const hasVideoExt = /\.(mp4|mov|webm|gif)$/i.test(urlPath);
+            const isFileResult = asyncTaskType === 'command_execution' ||
+                hasFileExt ||
+                isLocalPath ||
+                // Oneoff tasks use task_type "async"; when trigger_config may be missing, treat as file if not clearly video
+                (taskType === 'async' && asyncTaskType !== 'video_generation' && !hasVideoExt);
+
+            if (isFileResult) {
+                const isHttpUrl = url.startsWith('http://') || url.startsWith('https://');
+                return `<div style="margin-top: 8px; padding: 12px; background: var(--bg-secondary, #2a2a2a); border-radius: 8px; font-size: 13px; color: var(--text-secondary, #aaa);">
+                    <div style="margin-bottom: 6px;">📄 结果已保存${isHttpUrl ? '并上传' : ''}</div>
+                    ${isHttpUrl ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener" style="color: var(--accent, #4CAF50); word-break: break-all;">${escapeHtml(url)}</a>` : `<code style="word-break: break-all; font-size: 12px;">${escapeHtml(url)}</code>`}
+                    <div style="margin-top: 8px; font-size: 12px;">${isHttpUrl ? '点击链接下载查看，或' : '可在终端查看，或'}前往 <a href="/afk" target="_blank" style="color: var(--accent, #4CAF50);">/afk</a> 页面查看任务详情。</div>
+                </div>`;
             }
 
             // Determine if it's a video (by task type or URL extension)
             const isVideo = taskType === 'video_generation' ||
-                           url.includes('.mp4') ||
-                           url.includes('.mov') ||
-                           url.includes('.webm') ||
-                           url.includes('.gif');
+                           asyncTaskType === 'video_generation' ||
+                           hasVideoExt;
 
             if (isVideo) {
-                return `<video src="${escapeHtml(url)}" controls style="max-width: 600px; max-height: 300px; width: auto; border-radius: 8px; margin-top: 8px;" onerror="this.parentElement.innerHTML='<div style=\\'color: #e74c3c; margin-top: 8px;\\'>视频加载失败，URL 可能无效</div>'"></video>`;
+                return `<video src="${escapeHtml(url)}" controls style="max-width: 600px; max-height: 300px; width: auto; border-radius: 8px; margin-top: 8px;" onerror="this.parentElement.innerHTML='<div style=\\'color: #e74c3c; margin-top: 8px;\\'>视频加载失败，URL 可能无效</div>'"></video>
+                    <a href="${escapeHtml(url)}" target="_blank" style="display: inline-block; margin-top: 8px; padding: 8px 16px; background: #4CAF50; color: white; text-decoration: none; border-radius: 6px; font-size: 14px; font-weight: 500;">📥 下载视频</a>`;
             } else {
                 return `<img src="${escapeHtml(url)}" style="max-width: 600px; max-height: 300px; width: auto; height: auto; border-radius: 8px; margin-top: 8px; cursor: pointer;" data-lightbox="true" alt="Generated result" onerror="this.style.display='none'; this.parentElement.innerHTML+='<div style=\\'color: #e74c3c; margin-top: 8px;\\'>图片加载失败</div>'">`;
             }

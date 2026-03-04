@@ -133,6 +133,10 @@ func (s *Scheduler) checkAsyncTasks(ctx context.Context) {
 	}
 
 	for _, task := range tasks {
+		// command_execution: goroutine handles completion, skip scheduler polling
+		if task.TriggerConfig.AsyncTaskConfig != nil && task.TriggerConfig.AsyncTaskConfig.TaskType == "command_execution" {
+			continue
+		}
 		// Check if we should poll this task
 		if s.shouldPollAsyncTask(task) {
 			go s.checkAsyncTaskStatus(ctx, task)

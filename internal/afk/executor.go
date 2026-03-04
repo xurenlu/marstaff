@@ -486,11 +486,16 @@ func ptrToString(s *string) string {
 	return *s
 }
 
-// CheckAsyncTask checks the status of an async task (video/image generation)
+// CheckAsyncTask checks the status of an async task (video/image generation, command execution)
 func (e *TaskExecutor) CheckAsyncTask(ctx context.Context, task *model.AFKTask) (status, resultURL string, err error) {
 	config := task.TriggerConfig.AsyncTaskConfig
 	if config == nil {
 		return "", "", fmt.Errorf("async task config is nil")
+	}
+
+	// command_execution: goroutine handles completion, scheduler should not poll
+	if config.TaskType == "command_execution" {
+		return "processing", "", nil
 	}
 
 	switch config.Provider {

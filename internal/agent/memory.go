@@ -97,6 +97,10 @@ func (s *MemoryService) ExtractMemories(ctx context.Context, sessionID string, p
 5. **待办事项**: 任务、提醒
 6. **知识点**: 重要概念、链接、命令
 
+**不要提取**：任务ID、会话ID、当前搜索关键词、中间格式、临时状态等会话级临时数据。
+
+**限制**：最多提取 8 条最重要的记忆，按 importance 排序，优先用户偏好、项目目标、重要决策。
+
 对话内容：
 %s
 
@@ -116,7 +120,7 @@ func (s *MemoryService) ExtractMemories(ctx context.Context, sessionID string, p
 			{Role: provider.RoleUser, Content: prompt},
 		},
 		Temperature: 0.3,
-		MaxTokens:   1000,
+		MaxTokens:   4000, // 1000 易导致长对话提取时 JSON 被截断，解析失败；4000 留足余量
 	}
 
 	p := s.provider
@@ -144,7 +148,26 @@ func (s *MemoryService) ExtractMemories(ctx context.Context, sessionID string, p
 	}
 
 	content := strings.TrimSpace(completion.Choices[0].Message.Content)
-	// Extract JSON from response (handle markdown code blocks)
+
+	// Strip markdown code block (```json ... ``` or ``` ... ```) before parsing
+	if strings.HasPrefix(content, "```") {
+		content = strings.TrimPrefix(content, "```")
+		// Remove optional language tag (json, JSON, etc.)
+		if idx := strings.Index(content, "\n"); idx != -1 {
+			firstLine := strings.TrimSpace(content[:idx])
+			if firstLine == "json" || firstLine == "JSON" {
+				content = content[idx+1:]
+			}
+		} else {
+			content = strings.TrimSpace(content)
+			content = strings.TrimPrefix(content, "json")
+			content = strings.TrimPrefix(strings.TrimSpace(content), "JSON")
+		}
+		content = strings.TrimSuffix(strings.TrimSpace(content), "```")
+		content = strings.TrimSpace(content)
+	}
+
+	// Extract JSON from response (handle remaining wrapper text)
 	jsonRegex := regexp.MustCompile(`\{[\s\S]*\}`)
 	jsonMatch := jsonRegex.FindString(content)
 	if jsonMatch == "" {
@@ -152,8 +175,21 @@ func (s *MemoryService) ExtractMemories(ctx context.Context, sessionID string, p
 	}
 
 	if err := json.Unmarshal([]byte(jsonMatch), &response); err != nil {
-		log.Warn().Err(err).Str("content", content).Msg("failed to parse extracted memories")
-		return nil, nil // Don't fail, just log
+		// 尝试从截断的 JSON 中恢复已完整的记忆对象（LLM 输出被 MaxTokens 截断时常见）
+		lastComplete := regexp.MustCompile(`\}\s*,\s*\{`).FindAllStringIndex(jsonMatch, -1)
+		if len(lastComplete) > 0 {
+			last := lastComplete[len(lastComplete)-1]
+			repaired := jsonMatch[:last[0]+1] + "\n  ]\n}"
+			if err2 := json.Unmarshal([]byte(repaired), &response); err2 == nil {
+				log.Info().Int("recovered", len(response.Memories)).Msg("recovered partial memories from truncated JSON")
+			} else {
+				log.Warn().Err(err).Str("content", content).Msg("failed to parse extracted memories")
+				return nil, nil
+			}
+		} else {
+			log.Warn().Err(err).Str("content", content).Msg("failed to parse extracted memories")
+			return nil, nil
+		}
 	}
 
 	// Convert to ExtractedMemory

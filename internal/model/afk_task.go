@@ -32,14 +32,19 @@ const (
 	AFKTaskStatusFailed    AFKTaskStatus = "failed"    // For async tasks
 )
 
-// AsyncTaskConfig defines configuration for async tasks (video/image generation)
+// AsyncTaskConfig defines configuration for async tasks (video/image generation, command execution)
 type AsyncTaskConfig struct {
-	TaskType       string `json:"task_type"`        // "video_generation", "image_generation", etc.
+	TaskType       string `json:"task_type"`        // "video_generation", "image_generation", "command_execution"
 	Provider       string `json:"provider"`         // "wanxiang_2.6", "qwen_wanxiang", etc.
 	TaskID         string `json:"task_id"`          // API returned task ID
 	StatusURL      string `json:"status_url"`       // Status check URL
 	OriginalPrompt string `json:"original_prompt"`  // Original prompt for the task
 	PollInterval   int    `json:"poll_interval"`    // Poll interval in seconds, default 30
+
+	// For command_execution type (one-off long-running commands)
+	Command string `json:"command,omitempty"`  // Shell command to execute
+	WorkDir string `json:"work_dir,omitempty"` // Working directory
+	Timeout int    `json:"timeout,omitempty"`  // Timeout in seconds, default 1800
 }
 
 // TriggerConfig defines how a task is triggered

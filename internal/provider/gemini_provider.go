@@ -85,7 +85,7 @@ func (p *GeminiProvider) CreateChatCompletion(ctx context.Context, req ChatCompl
 	}
 
 	for _, msg := range req.Messages {
-		content := buildOpenAIContent(msg)
+		content := buildGeminiContent(msg)
 		geminiMsg := GeminiMessage{
 			Role:       string(msg.Role),
 			Content:    content,
@@ -167,7 +167,7 @@ func (p *GeminiProvider) CreateChatCompletionStream(ctx context.Context, req Cha
 	}
 
 	for _, msg := range req.Messages {
-		content := buildOpenAIContent(msg)
+		content := buildGeminiContent(msg)
 		geminiMsg := GeminiMessage{
 			Role:       string(msg.Role),
 			Content:    content,
@@ -238,6 +238,26 @@ func (p *GeminiProvider) SupportedModels() []string {
 		"gemini-1.5-flash",
 		"gemini-1.5-flash-8b",
 	}
+}
+
+// buildGeminiContent converts Message to content for Gemini. Omits content when assistant has
+// tool_calls and empty content (Gemini rejects empty string in that case, causing 400 INVALID_ARGUMENT).
+func buildGeminiContent(msg Message) interface{} {
+	content := buildOpenAIContent(msg)
+	// Gemini rejects assistant messages with empty content + tool_calls; omit content (nil) to fix 400
+	if msg.Role == RoleAssistant && len(msg.ToolCalls) > 0 {
+		switch v := content.(type) {
+		case string:
+			if v == "" {
+				return nil
+			}
+		case []map[string]interface{}:
+			if len(v) == 0 {
+				return nil
+			}
+		}
+	}
+	return content
 }
 
 func init() {

@@ -44,7 +44,20 @@ async function handleRequest(method, params) {
         return { ok: true, message: 'already running' };
       }
       const headless = params?.headless !== false;
-      // Prefer system Chrome (no download). Fallback to bundled chromium if Chrome not found.
+      const cdpUrl = params?.cdp_url || params?.cdpUrl; // e.g. http://localhost:9222
+      if (cdpUrl) {
+        // Connect to existing Chrome with login state
+        try {
+          browser = await chromium.connectOverCDP(cdpUrl);
+          context = browser.contexts[0] || await browser.newContext();
+          page = context.pages[0] || await context.newPage();
+          return { ok: true, message: 'connected to existing Chrome' };
+        } catch (e) {
+          log('connectOverCDP failed:', e.message);
+          throw { code: -32603, message: `无法连接 Chrome CDP (${cdpUrl}): ${e.message}` };
+        }
+      }
+      // Launch new Chrome
       let launchOpts = {
         headless,
         args: [

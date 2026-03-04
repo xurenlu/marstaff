@@ -13,6 +13,7 @@ import (
 	"github.com/rocky/marstaff/internal/agent"
 	"github.com/rocky/marstaff/internal/api"
 	"github.com/rocky/marstaff/internal/contextkeys"
+	"github.com/rocky/marstaff/internal/envvars"
 	"github.com/rocky/marstaff/internal/model"
 	"github.com/rocky/marstaff/internal/repository"
 )
@@ -38,10 +39,55 @@ func isPlaceholderWebhook(url string) bool {
 
 // AFKExecutor registers AFK task management tools
 type AFKExecutor struct {
-	engine    *agent.Engine
-	taskAPI   *api.AFKTaskAPI
-	taskRepo  *repository.AFKTaskRepository
-	notifier  *afk.NotificationService
+	engine             *agent.Engine
+	taskAPI            *api.AFKTaskAPI
+	taskRepo           *repository.AFKTaskRepository
+	notifier           *afk.NotificationService
+	sessionRepo        *repository.SessionRepository
+	oneoffRunner       *afk.OneOffRunner
+	oneoffFileUploader afk.OneOffFileUploader // optional: upload log to OSS for Feishu clickable URL
+	cmdValidator       CommandValidator        // optional, for validating oneoff commands
+}
+
+// CommandValidator validates commands (e.g. tools/security.Validator)
+type CommandValidator interface {
+	ValidateCommand(command string) error
+}
+
+// SetSessionRepo sets the session repository for one-off tasks
+func (e *AFKExecutor) SetSessionRepo(repo *repository.SessionRepository) {
+	e.sessionRepo = repo
+}
+
+// SetOneOffRunner sets the one-off task runner
+func (e *AFKExecutor) SetOneOffRunner(runner *afk.OneOffRunner) {
+	e.oneoffRunner = runner
+}
+
+// SetCommandValidator sets the command validator for one-off tasks
+func (e *AFKExecutor) SetCommandValidator(v CommandValidator) {
+	e.cmdValidator = v
+}
+
+// SetupOneOffTasks wires session repo, one-off runner, and optional validator for afk_create_oneoff_task.
+// Call this after NewAFKExecutor when the main app has sessionRepo and asyncNotifier (e.g. from Scheduler).
+// If SetFileUploader was called, log files will be uploaded to OSS and Feishu notification will include a clickable URL.
+// envProvider: optional, injects env vars from settings into one-off commands.
+func (e *AFKExecutor) SetupOneOffTasks(sessionRepo *repository.SessionRepository, asyncNotifier afk.AsyncTaskNotifier, validator CommandValidator, envProvider envvars.Provider) {
+	e.sessionRepo = sessionRepo
+	runner := afk.NewOneOffRunner(e.taskRepo, sessionRepo, e.notifier, asyncNotifier, e.oneoffFileUploader, nil)
+	if envProvider != nil {
+		runner.SetEnvProvider(envProvider)
+	}
+	e.oneoffRunner = runner
+	e.cmdValidator = validator
+}
+
+// SetFileUploader sets the OSS uploader for one-off task results. When configured, log files are
+// uploaded to OSS and the public URL is sent in Feishu/email notifications (clickable in Feishu).
+// Call before SetupOneOffTasks.
+func (e *AFKExecutor) SetFileUploader(uploader afk.OneOffFileUploader) {
+	e.oneoffFileUploader = uploader
 }
 
 // NewAFKExecutor creates a new AFK tool executor
@@ -120,6 +166,36 @@ func (e *AFKExecutor) RegisterBuiltInTools() {
 			},
 			"required": []string{"name", "task_type"},
 		}, e.toolCreateTask)
+
+	// Create one-off long-running task (firecrawl, npm install, etc.)
+	e.engine.RegisterTool("afk_create_oneoff_task",
+		"Create a one-off AFK task for long-running commands. Use for: firecrawl search/scrape, npm/yarn/pip install, ffmpeg, large builds. Task runs in background; user gets notified when done. Prefer this over run_command for commands that may take minutes. For firecrawl: use 'npx firecrawl-cli' if 'firecrawl' is not in PATH. IMPORTANT: firecrawl requires FIRECRAWL_API_KEY in Settings → Environment Variables, otherwise it will fail with exit 1.",
+		map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"name": map[string]interface{}{
+					"type":        "string",
+					"description": "Task name (e.g., 'Firecrawl 抓取', 'npm install')",
+				},
+				"command": map[string]interface{}{
+					"type":        "string",
+					"description": "Shell command to execute. For firecrawl: use 'npx firecrawl-cli search \"query\" --limit N -o path.json --json'. Use --limit (NOT --page-limit). Example: 'npx firecrawl-cli search \"keyword\" --limit 20 -o .firecrawl/result.json --json'",
+				},
+				"work_dir": map[string]interface{}{
+					"type":        "string",
+					"description": "Working directory (optional, defaults to session work_dir)",
+				},
+				"description": map[string]interface{}{
+					"type":        "string",
+					"description": "Optional description",
+				},
+				"timeout": map[string]interface{}{
+					"type":        "integer",
+					"description": "Timeout in seconds (optional, default 1800)",
+				},
+			},
+			"required": []string{"name", "command"},
+		}, e.toolCreateOneoffTask)
 
 	// List AFK tasks
 	e.engine.RegisterTool("afk_list_tasks",
@@ -366,6 +442,99 @@ func (e *AFKExecutor) toolCreateTask(ctx context.Context, params map[string]inte
 
 	return fmt.Sprintf("✅ Created AFK task '%s' (ID: %s)\n\nType: %s\nStatus: Active\nNext execution: %s\n\nChannels: %v\n\nThe task is now running in the background. Use /afk to manage all your tasks.",
 		task.Name, task.ID, task.TaskType, formatTimePointer(task.NextExecutionTime), notifyChannels), nil
+}
+
+func (e *AFKExecutor) toolCreateOneoffTask(ctx context.Context, params map[string]interface{}) (string, error) {
+	if e.oneoffRunner == nil || e.sessionRepo == nil {
+		return "", fmt.Errorf("one-off tasks not configured (session repo or runner missing)")
+	}
+
+	name, _ := params["name"].(string)
+	command, _ := params["command"].(string)
+	workDir, _ := params["work_dir"].(string)
+	description, _ := params["description"].(string)
+	timeoutVal := 1800
+	if t, ok := params["timeout"].(float64); ok && t > 0 {
+		timeoutVal = int(t)
+	}
+
+	if name == "" || command == "" {
+		return "", fmt.Errorf("name and command are required")
+	}
+
+	// Validate command if validator is set
+	if e.cmdValidator != nil {
+		if err := e.cmdValidator.ValidateCommand(command); err != nil {
+			return "", fmt.Errorf("command validation failed: %w", err)
+		}
+	}
+
+	// Resolve user_id and session_id from context
+	userID := "default"
+	if uid, ok := ctx.Value(contextkeys.UserID).(string); ok && uid != "" {
+		userID = uid
+	}
+	sessionID, _ := ctx.Value(contextkeys.SessionID).(string)
+
+	// Resolve work_dir from session if not provided
+	if workDir == "" && sessionID != "" {
+		if session, err := e.sessionRepo.GetByID(ctx, sessionID); err == nil && session != nil && session.WorkDir != "" {
+			workDir = session.WorkDir
+		}
+	}
+	if workDir == "" {
+		workDir = "."
+	}
+
+	// Create AFK task
+	task := &model.AFKTask{
+		UserID:      userID,
+		SessionID:   ptrString(sessionID),
+		Name:        name,
+		Description: description,
+		TaskType:    model.AFKTaskTypeAsync,
+		Status:      model.AFKTaskStatusPending,
+		Metadata:    "{}",
+		TriggerConfig: model.TriggerConfig{
+			Type: model.AFKTaskTypeAsync,
+			AsyncTaskConfig: &model.AsyncTaskConfig{
+				TaskType: "command_execution",
+				Command:  command,
+				WorkDir:  workDir,
+				Timeout:  timeoutVal,
+			},
+		},
+	}
+
+	if err := e.taskRepo.Create(ctx, task); err != nil {
+		return "", fmt.Errorf("failed to create AFK task: %w", err)
+	}
+
+	// Update session to enter AFK mode
+	if sessionID != "" {
+		if session, err := e.sessionRepo.GetByID(ctx, sessionID); err == nil && session != nil {
+			_ = session.EnterAFKMode()
+			_ = e.sessionRepo.Update(ctx, session)
+		}
+	}
+
+	// Start background execution
+	go e.oneoffRunner.RunOneOffTask(context.Background(), task)
+
+	log.Info().
+		Str("task_id", task.ID).
+		Str("name", name).
+		Str("session_id", sessionID).
+		Msg("created oneoff AFK task")
+
+	return fmt.Sprintf("✅ 已创建挂机任务「%s」\n\n任务ID: %s\n状态: 执行中\n\n任务将在后台运行，完成后将通过飞书/邮件等通知您。可在 /afk 页面查看进度。", name, task.ID), nil
+}
+
+func ptrString(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }
 
 func (e *AFKExecutor) toolListTasks(ctx context.Context, params map[string]interface{}) (string, error) {
