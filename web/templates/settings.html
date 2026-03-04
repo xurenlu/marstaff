@@ -15,6 +15,8 @@
             --border-color: #3a3a3a;
             --success-color: #4caf50;
             --error-color: #f44336;
+            --accent-color: #2196f3;
+            --accent-hover: #1976d2;
         }
         [data-theme="light"] {
             --bg-primary: #f5f5f5;
@@ -23,6 +25,8 @@
             --text-primary: #1a1a1a;
             --text-secondary: #666;
             --border-color: #e0e0e0;
+            --accent-color: #2196f3;
+            --accent-hover: #1976d2;
         }
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -147,8 +151,12 @@
             font-size: 0.95rem;
             cursor: pointer;
             margin-top: 0.5rem;
+            transition: background 0.2s;
         }
         .save-btn:hover { opacity: 0.9; }
+        .save-btn[style*="accent-color"]:hover {
+            background: var(--accent-hover) !important;
+        }
         .saved {
             font-size: 0.85rem;
             color: var(--success-color);
@@ -352,6 +360,15 @@
                 <div class="saved" id="chatSavedHint">已保存</div>
             </div>
             <div class="section">
+                <div class="section-title">API Keys（覆盖配置文件）</div>
+                <div class="section-desc">在此设置的 API Key 会写入数据库并覆盖 config 中的配置。留空表示使用环境变量或配置文件。</div>
+                <div id="providerKeysContainer">
+                    <div style="color: var(--text-secondary); padding: 0.5rem 0;">加载中...</div>
+                </div>
+                <button class="save-btn" id="saveProviderKeysBtn">保存 API Keys</button>
+                <div class="saved" id="providerKeysSavedHint">已保存</div>
+            </div>
+            <div class="section">
                 <div class="section-title">图片识别模型</div>
                 <div class="section-desc">当消息包含图片时，选择使用哪种模型进行识别：</div>
                 <div class="option-row">
@@ -391,6 +408,15 @@
                 <button class="save-btn" id="saveVideoBtn">保存</button>
                 <div class="saved" id="videoSavedHint">已保存</div>
             </div>
+            <div class="section">
+                <div class="section-title">关于</div>
+                <div class="section-desc">当前运行版本，便于确认代码是否为最新</div>
+                <div class="option-row" style="flex-direction: column; align-items: flex-start;">
+                    <div id="versionInfo" style="font-family: monospace; font-size: 0.9rem; color: var(--text-secondary);">
+                        加载中...
+                    </div>
+                </div>
+            </div>
         </div>
 
         <!-- Skills Tab -->
@@ -406,7 +432,7 @@
                 </div>
 
                 <div style="display: flex; gap: 0.5rem;">
-                    <button class="save-btn" id="installSkillBtn" style="background: var(--bg-tertiary);">+ 安装技能</button>
+                    <button class="save-btn" id="installSkillBtn" style="background: var(--accent-color);">+ 安装技能</button>
                 </div>
             </div>
         </div>
@@ -423,7 +449,7 @@
                     </div>
                 </div>
 
-                <button class="save-btn" id="createRuleBtn" style="background: var(--bg-tertiary);">+ 新建规则</button>
+                <button class="save-btn" id="createRuleBtn" style="background: var(--accent-color);">+ 新建规则</button>
             </div>
         </div>
 
@@ -439,7 +465,7 @@
                     </div>
                 </div>
 
-                <button class="save-btn" id="addMcpServerBtn" style="background: var(--bg-tertiary);">+ 添加服务器</button>
+                <button class="save-btn" id="addMcpServerBtn" style="background: var(--accent-color);">+ 添加服务器</button>
             </div>
         </div>
 
@@ -516,7 +542,7 @@
                     <small>格式: BOT_ID:TOKEN。服务器端也需配置此 Token</small>
                 </div>
                 <button class="save-btn" onclick="saveNotificationSettings()">保存</button>
-                <button class="save-btn" style="background: var(--bg-tertiary); margin-left: 0.5rem;" onclick="testTelegram()">测试发送</button>
+                <button class="save-btn" style="background: var(--accent-color); margin-left: 0.5rem;" onclick="testTelegram()">测试发送</button>
             </div>
 
             <!-- Email Section -->
@@ -576,7 +602,7 @@
                     </div>
                 </div>
 
-                <button class="save-btn" id="createProjectBtn" style="background: var(--bg-tertiary);">+ 新建项目</button>
+                <button class="save-btn" id="createProjectBtn" style="background: var(--accent-color);">+ 新建项目</button>
             </div>
         </div>
     </div>
@@ -756,9 +782,48 @@ This skill does something useful..." style="width: 100%; padding: 0.75rem; backg
         </div>
     </div>
 
+    <!-- Confirmation Modal -->
+    <div id="confirmModal" class="modal">
+        <div class="modal-content" style="max-width: 400px;">
+            <div class="modal-header">
+                <h2 id="confirmModalTitle">确认操作</h2>
+                <button class="modal-close" onclick="closeConfirmModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p id="confirmModalMessage" style="font-size: 0.95rem; color: var(--text-primary);">确定要执行此操作吗？</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeConfirmModal()">取消</button>
+                <button class="btn btn-danger" id="confirmModalOkBtn">确认</button>
+            </div>
+        </div>
+    </div>
+
     <script src="/static/js/storage.js"></script>
     <script src="/static/js/api.js"></script>
     <script>
+        // ===== CONFIRMATION MODAL =====
+        let confirmCallback = null;
+
+        function showConfirm(title, message, onConfirm) {
+            document.getElementById('confirmModalTitle').textContent = title || '确认操作';
+            document.getElementById('confirmModalMessage').textContent = message || '确定要执行此操作吗？';
+            confirmCallback = onConfirm;
+            document.getElementById('confirmModal').classList.add('active');
+        }
+
+        function closeConfirmModal() {
+            document.getElementById('confirmModal').classList.remove('active');
+            confirmCallback = null;
+        }
+
+        document.getElementById('confirmModalOkBtn').addEventListener('click', function() {
+            if (confirmCallback) {
+                confirmCallback();
+            }
+            closeConfirmModal();
+        });
+
         // Load theme
         const savedTheme = localStorage.getItem('marstaff_theme') || 'dark';
         document.documentElement.setAttribute('data-theme', savedTheme);
@@ -815,6 +880,22 @@ This skill does something useful..." style="width: 100%; padding: 0.75rem; backg
             })
             .catch(() => {});
 
+        // 加载版本信息（便于确认代码是否为最新）
+        fetch(`${API_BASE}/api/health?t=${Date.now()}`)
+            .then(r => r.ok ? r.json() : null)
+            .then(data => {
+                const el = document.getElementById('versionInfo');
+                if (el && data) {
+                    el.innerHTML = `版本 <code>${(data.version || '?').replace(/</g, '&lt;')}</code> · Git <code>${(data.git_commit || '?').replace(/</g, '&lt;')}</code>`;
+                } else if (el) {
+                    el.textContent = '无法获取版本信息';
+                }
+            })
+            .catch(() => {
+                const el = document.getElementById('versionInfo');
+                if (el) el.textContent = '无法获取版本信息';
+            });
+
         document.getElementById('saveChatBtn').addEventListener('click', () => {
             const val = document.querySelector('input[name="chat_provider"]:checked')?.value || 'zai';
             localStorage.setItem('marstaff_chat_provider', val);
@@ -822,6 +903,97 @@ This skill does something useful..." style="width: 100%; padding: 0.75rem; backg
             hint.style.display = 'block';
             setTimeout(() => { hint.style.display = 'none'; }, 2000);
         });
+
+        // ===== PROVIDER API KEYS =====
+        const providerKeyLabels = {
+            zai: 'Z.ai / 智谱',
+            qwen: 'Qwen / 通义千问',
+            gemini: 'Gemini',
+            deepseek: 'DeepSeek',
+            minimax: 'MiniMax 中国版',
+            minimax_intl: 'MiniMax 国际版',
+            ollama: 'Ollama',
+            vllm: 'vLLM',
+            poe: 'Poe (Claude)'
+        };
+        const providerKeyFields = {
+            zai: ['api_key'],
+            qwen: ['api_key'],
+            gemini: ['api_key'],
+            deepseek: ['api_key'],
+            minimax: ['api_key', 'group_id'],
+            minimax_intl: ['api_key'],
+            ollama: [],
+            vllm: [],
+            poe: ['api_key']
+        };
+        const fieldLabels = { api_key: 'API Key', group_id: 'Group ID' };
+
+        async function loadProviderKeys() {
+            const container = document.getElementById('providerKeysContainer');
+            try {
+                const [settingsRes, keysRes] = await Promise.all([
+                    fetch(`${API_BASE}/api/settings?t=${Date.now()}`),
+                    fetch(`${API_BASE}/api/settings/provider-keys?t=${Date.now()}`)
+                ]);
+                const settings = settingsRes.ok ? await settingsRes.json() : {};
+                const keysData = keysRes.ok ? await keysRes.json() : {};
+                const providers = settings.chat_providers || [];
+                const keys = keysData.provider_keys || {};
+                let html = '';
+                providers.forEach(prov => {
+                    const fields = providerKeyFields[prov] || ['api_key'];
+                    if (fields.length === 0) return;
+                    const label = providerKeyLabels[prov] || prov;
+                    html += `<div class="form-group" style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border-color);">`;
+                    html += `<label style="font-weight: 600;">${label}</label>`;
+                    fields.forEach(f => {
+                        const hasValue = keys[prov] && keys[prov][f] === '***';
+                        html += `<input type="password" class="provider-key-input" data-provider="${prov}" data-key="${f}" placeholder="${fieldLabels[f] || f}${hasValue ? ' (已设置)' : ''}" autocomplete="off" style="margin-top: 0.4rem;">`;
+                    });
+                    html += `</div>`;
+                });
+                container.innerHTML = html || '<div style="color: var(--text-secondary);">无可配置的 Provider</div>';
+            } catch (e) {
+                container.innerHTML = '<div style="color: var(--error-color);">加载失败</div>';
+            }
+        }
+
+        document.getElementById('saveProviderKeysBtn').addEventListener('click', async () => {
+            const inputs = document.querySelectorAll('.provider-key-input');
+            const byProvider = {};
+            inputs.forEach(inp => {
+                const p = inp.dataset.provider, k = inp.dataset.key;
+                const v = (inp.value || '').trim();
+                if (v) {
+                    if (!byProvider[p]) byProvider[p] = {};
+                    byProvider[p][k] = v;
+                }
+            });
+            const hint = document.getElementById('providerKeysSavedHint');
+            for (const [provider, keys] of Object.entries(byProvider)) {
+                try {
+                    const res = await fetch(`${API_BASE}/api/settings/provider-keys`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ provider, keys })
+                    });
+                    if (!res.ok) throw new Error((await res.json()).error || '保存失败');
+                } catch (e) {
+                    alert('保存失败: ' + e.message);
+                    return;
+                }
+            }
+            if (Object.keys(byProvider).length === 0) {
+                alert('请至少填写一个要保存的 API Key');
+                return;
+            }
+            hint.style.display = 'block';
+            setTimeout(() => { hint.style.display = 'none'; }, 2000);
+            loadProviderKeys();
+        });
+
+        loadProviderKeys();
 
         // ===== VISION SETTINGS =====
         const saved = localStorage.getItem('marstaff_vision_provider') || 'qwen';
@@ -1086,17 +1258,15 @@ This skill does something useful..." style="width: 100%; padding: 0.75rem; backg
         }
 
         async function deleteProject(projectId) {
-            if (!confirm('确定要删除这个项目吗？关联的会话将不会被删除。')) {
-                return;
-            }
-
-            try {
-                await api.deleteProject(projectId);
-                await loadProjects();
-                alert('项目已删除');
-            } catch (error) {
-                alert('删除失败: ' + error.message);
-            }
+            showConfirm('删除项目', '确定要删除这个项目吗？关联的会话将不会被删除。', async function() {
+                try {
+                    await api.deleteProject(projectId);
+                    await loadProjects();
+                    alert('项目已删除');
+                } catch (error) {
+                    alert('删除失败: ' + error.message);
+                }
+            });
         }
 
         async function editProject(projectId) {
@@ -1183,21 +1353,20 @@ This skill does something useful..." style="width: 100%; padding: 0.75rem; backg
         }
 
         async function deleteSkill(skillId) {
-            if (!confirm('确定要删除这个技能吗？')) {
-                return;
-            }
-            try {
-                const response = await fetch(`${API_BASE}/api/skills/uninstall/${skillId}`, {
-                    method: 'POST'
-                });
-                if (response.ok) {
-                    await loadSkills();
-                } else {
-                    alert('删除失败');
+            showConfirm('删除技能', '确定要删除这个技能吗？', async function() {
+                try {
+                    const response = await fetch(`${API_BASE}/api/skills/uninstall/${skillId}`, {
+                        method: 'POST'
+                    });
+                    if (response.ok) {
+                        await loadSkills();
+                    } else {
+                        alert('删除失败');
+                    }
+                } catch (error) {
+                    alert('错误: ' + error.message);
                 }
-            } catch (error) {
-                alert('错误: ' + error.message);
-            }
+            });
         }
 
         document.getElementById('installSkillBtn').addEventListener('click', () => openModal('installSkillModal'));
@@ -1364,21 +1533,20 @@ This skill does something useful..." style="width: 100%; padding: 0.75rem; backg
         }
 
         async function deleteRule(ruleId) {
-            if (!confirm('确定要删除这个规则吗？')) {
-                return;
-            }
-            try {
-                const response = await fetch(`${API_BASE}/api/rules/${ruleId}`, {
-                    method: 'DELETE'
-                });
-                if (response.ok) {
-                    await loadRules();
-                } else {
-                    alert('删除失败');
+            showConfirm('删除规则', '确定要删除这个规则吗？', async function() {
+                try {
+                    const response = await fetch(`${API_BASE}/api/rules/${ruleId}`, {
+                        method: 'DELETE'
+                    });
+                    if (response.ok) {
+                        await loadRules();
+                    } else {
+                        alert('删除失败');
+                    }
+                } catch (error) {
+                    alert('错误: ' + error.message);
                 }
-            } catch (error) {
-                alert('错误: ' + error.message);
-            }
+            });
         }
 
         document.getElementById('createRuleBtn').addEventListener('click', () => {
@@ -1545,21 +1713,20 @@ This skill does something useful..." style="width: 100%; padding: 0.75rem; backg
         }
 
         async function deleteMcpServer(serverId) {
-            if (!confirm('确定要删除这个 MCP 服务器吗？')) {
-                return;
-            }
-            try {
-                const response = await fetch(`${API_BASE}/api/mcp/servers/${serverId}`, {
-                    method: 'DELETE'
-                });
-                if (response.ok) {
-                    await loadMcpServers();
-                } else {
-                    alert('删除失败');
+            showConfirm('删除 MCP 服务器', '确定要删除这个 MCP 服务器吗？', async function() {
+                try {
+                    const response = await fetch(`${API_BASE}/api/mcp/servers/${serverId}`, {
+                        method: 'DELETE'
+                    });
+                    if (response.ok) {
+                        await loadMcpServers();
+                    } else {
+                        alert('删除失败');
+                    }
+                } catch (error) {
+                    alert('错误: ' + error.message);
                 }
-            } catch (error) {
-                alert('错误: ' + error.message);
-            }
+            });
         }
 
         document.getElementById('addMcpServerBtn').addEventListener('click', () => {
