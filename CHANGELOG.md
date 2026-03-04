@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Gemini API 认证方式**：修复 Gemini 引擎报 "Missing Authorization header" 的问题，改为使用 `Authorization: Bearer` 头而非 URL 查询参数（Google OpenAI 兼容接口要求）
 - **run_command 中 ~ 路径展开**：修复 `bash ~/script.sh` 中 `~` 被错误展开成用户主目录的问题，现在正确展开为 session work_dir
 - **search_files 中 ~ 路径展开**：修复 `search_files path=~/Sites` 中 `~` 未展开导致搜索失败的问题
 - **list_skills 显示已启用技能**：默认只显示已启用的技能，避免 AI 声称有未启用技能的能力；添加 `show_all=true` 参数查看所有技能

@@ -41,7 +41,7 @@ import (
 var (
 	configFile     string
 	enableTelegram bool
-	Version        = "1.13.0-rc1"
+	Version        = "1.13.0-rc2"
 	GitCommit      = "dev" // 编译时通过 ldflags 注入，如未注入则显示 dev
 )
 
@@ -374,7 +374,7 @@ func run(cmd *cobra.Command, args []string) {
 		log.Info().Msg("AFK task scheduler started")
 
 		// Register AFK tools
-		afkExecutor := tools.NewAFKExecutor(engine, afkTaskAPI, afkTaskRepo)
+		afkExecutor := tools.NewAFKExecutor(engine, afkTaskAPI, afkTaskRepo, notificationService)
 		afkExecutor.RegisterBuiltInTools()
 		log.Info().Msg("AFK task tools registered")
 	}
@@ -1166,13 +1166,18 @@ func run(cmd *cobra.Command, args []string) {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
 			}
-			// Mask sensitive values: show only "***" if set
+			// Mask sensitive keys (api_key); return actual values for base_url, model, group_id
+			sensitiveKeys := map[string]bool{"api_key": true}
 			masked := make(map[string]map[string]string)
 			for prov, keys := range all {
 				masked[prov] = make(map[string]string)
 				for k, v := range keys {
 					if v != "" {
-						masked[prov][k] = "***"
+						if sensitiveKeys[k] {
+							masked[prov][k] = "***"
+						} else {
+							masked[prov][k] = v
+						}
 					}
 				}
 			}
@@ -1195,9 +1200,15 @@ func run(cmd *cobra.Command, args []string) {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "provider and keys required"})
 				return
 			}
-			if err := providerSettingRepo.SetBatch(c.Request.Context(), req.Provider, req.Keys); err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-				return
+			for k, v := range req.Keys {
+				if v == "" {
+					_ = providerSettingRepo.Delete(c.Request.Context(), req.Provider, k)
+				} else {
+					if err := providerSettingRepo.Set(c.Request.Context(), req.Provider, k, v); err != nil {
+						c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+						return
+					}
+				}
 			}
 			providerFactory.Invalidate(req.Provider)
 			c.JSON(http.StatusOK, gin.H{"ok": true})

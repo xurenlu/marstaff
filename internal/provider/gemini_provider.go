@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/rs/zerolog/log"
 )
@@ -99,14 +100,15 @@ func (p *GeminiProvider) CreateChatCompletion(ctx context.Context, req ChatCompl
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	// For Google's OpenAI-compatible endpoint, api_key is passed as query parameter
-	url := fmt.Sprintf("%s/chat/completions?key=%s", p.baseURL, p.apiKey)
+	// Google's OpenAI-compatible endpoint expects Authorization: Bearer <api_key>
+	url := fmt.Sprintf("%s/chat/completions", strings.TrimSuffix(p.baseURL, "/"))
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
 
 	log.Debug().Str("provider", "gemini").Str("url", url).Msg("sending chat completion request")
 
@@ -180,13 +182,14 @@ func (p *GeminiProvider) CreateChatCompletionStream(ctx context.Context, req Cha
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	url := fmt.Sprintf("%s/chat/completions?key=%s", p.baseURL, p.apiKey)
+	url := fmt.Sprintf("%s/chat/completions", strings.TrimSuffix(p.baseURL, "/"))
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
 
 	resp, err := p.httpClient.Do(httpReq)
 	if err != nil {
@@ -206,11 +209,12 @@ func (p *GeminiProvider) CreateChatCompletionStream(ctx context.Context, req Cha
 }
 
 func (p *GeminiProvider) HealthCheck(ctx context.Context) error {
-	url := fmt.Sprintf("%s/models?key=%s", p.baseURL, p.apiKey)
+	url := fmt.Sprintf("%s/models", strings.TrimSuffix(p.baseURL, "/"))
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return err
 	}
+	req.Header.Set("Authorization", "Bearer "+p.apiKey)
 
 	resp, err := p.httpClient.Do(req)
 	if err != nil {
