@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -15,6 +16,12 @@ type AsyncTaskNotifier struct {
 	hub         *Hub
 	ossUploader *OSSUploader
 	sessionAPI  *api.SessionAPI // For persisting messages to database
+}
+
+type workflowTaskMetadata struct {
+	PipelineID      uint   `json:"pipeline_id"`
+	PipelineStepKey string `json:"pipeline_step_key"`
+	PipelineSubtask string `json:"pipeline_subtask_key"`
 }
 
 // NewAsyncTaskNotifier creates a new async task notifier
@@ -106,15 +113,19 @@ func (n *AsyncTaskNotifier) sendTaskCompletedNotification(sessionID string, task
 	if task.TriggerConfig.AsyncTaskConfig != nil {
 		taskType = task.TriggerConfig.AsyncTaskConfig.TaskType
 	}
+	workflowMeta := parseWorkflowTaskMetadata(task.Metadata)
 
 	data := map[string]interface{}{
 		"session_id": sessionID,
 		"task": map[string]interface{}{
-			"id":         task.ID,
-			"name":       task.Name,
-			"status":     "completed",
-			"result_url": resultURL,
-			"task_type":  taskType, // "video_generation", "image_generation", etc.
+			"id":                    task.ID,
+			"name":                  task.Name,
+			"status":                "completed",
+			"result_url":            resultURL,
+			"task_type":             taskType, // "video_generation", "image_generation", etc.
+			"workflow_pipeline_id":  workflowMeta.PipelineID,
+			"workflow_step_key":     workflowMeta.PipelineStepKey,
+			"workflow_subtask_key":  workflowMeta.PipelineSubtask,
 		},
 		"is_final": isFinal, // Indicates if URL is final or will be updated
 	}
@@ -129,7 +140,11 @@ func (n *AsyncTaskNotifier) sendTaskCompletedNotification(sessionID string, task
 		if taskType == "image_generation" {
 			mediaTag = "图片"
 		}
-		messageContent := fmt.Sprintf("✅ 任务完成: %s\n\n[%s: %s]", task.Name, mediaTag, resultURL)
+		prefix := "✅ 任务完成"
+		if workflowMeta.PipelineID > 0 {
+			prefix = "🎬 分镜完成"
+		}
+		messageContent := fmt.Sprintf("%s: %s\n\n[%s: %s]", prefix, task.Name, mediaTag, resultURL)
 		_ = n.sessionAPI.AddMessageToSession(ctx, sessionID, &api.AddMessageRequest{
 			Role:    "assistant",
 			Content: messageContent,
@@ -152,14 +167,18 @@ func (n *AsyncTaskNotifier) sendURLUpdateNotification(sessionID string, task *mo
 	if task.TriggerConfig.AsyncTaskConfig != nil {
 		taskType = task.TriggerConfig.AsyncTaskConfig.TaskType
 	}
+	workflowMeta := parseWorkflowTaskMetadata(task.Metadata)
 
 	data := map[string]interface{}{
 		"session_id": sessionID,
 		"task": map[string]interface{}{
-			"id":         task.ID,
-			"name":       task.Name,
-			"result_url": newURL,
-			"task_type":  taskType,
+			"id":                   task.ID,
+			"name":                 task.Name,
+			"result_url":           newURL,
+			"task_type":            taskType,
+			"workflow_pipeline_id": workflowMeta.PipelineID,
+			"workflow_step_key":    workflowMeta.PipelineStepKey,
+			"workflow_subtask_key": workflowMeta.PipelineSubtask,
 		},
 		"success": success,
 	}
@@ -181,9 +200,13 @@ func (n *AsyncTaskNotifier) sendURLUpdateNotification(sessionID string, task *mo
 			mediaTag = "图片"
 		}
 		// If OSS upload failed, note it in the message but still provide the URL
-		messageContent := fmt.Sprintf("✅ 任务完成: %s\n\n[%s: %s]", task.Name, mediaTag, newURL)
+		prefix := "✅ 任务完成"
+		if workflowMeta.PipelineID > 0 {
+			prefix = "🎬 分镜完成"
+		}
+		messageContent := fmt.Sprintf("%s: %s\n\n[%s: %s]", prefix, task.Name, mediaTag, newURL)
 		if !success {
-			messageContent = fmt.Sprintf("✅ 任务完成: %s (OSS上传失败，使用原始URL)\n\n[%s: %s]", task.Name, mediaTag, newURL)
+			messageContent = fmt.Sprintf("%s: %s (OSS上传失败，使用原始URL)\n\n[%s: %s]", prefix, task.Name, mediaTag, newURL)
 		}
 		if err := n.sessionAPI.AddMessageToSession(ctx, sessionID, &api.AddMessageRequest{
 			Role:    "assistant",
@@ -211,6 +234,18 @@ func (n *AsyncTaskNotifier) sendURLUpdateNotification(sessionID string, task *mo
 		Str("task_type", taskType).
 		Bool("success", success).
 		Msg("sent async task URL update notification")
+}
+
+func parseWorkflowTaskMetadata(raw string) workflowTaskMetadata {
+	if raw == "" {
+		return workflowTaskMetadata{}
+	}
+
+	var meta workflowTaskMetadata
+	if err := json.Unmarshal([]byte(raw), &meta); err != nil {
+		return workflowTaskMetadata{}
+	}
+	return meta
 }
 
 // NotifyTaskFailed notifies clients when an async task fails

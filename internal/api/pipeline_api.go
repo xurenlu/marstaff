@@ -75,9 +75,20 @@ func (api *PipelineAPI) CreatePipeline(c *gin.Context) {
 
 // ListPipelines lists pipelines for a user
 func (api *PipelineAPI) ListPipelines(c *gin.Context) {
+	sessionID := c.Query("session_id")
+	if sessionID != "" {
+		pipelines, err := api.pipelineRepo.GetBySessionID(c.Request.Context(), sessionID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"pipelines": pipelines})
+		return
+	}
+
 	userID := c.Query("user_id")
 	if userID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "user_id is required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "user_id or session_id is required"})
 		return
 	}
 

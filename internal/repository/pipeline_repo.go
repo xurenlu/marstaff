@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"encoding/json"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -42,6 +43,7 @@ func (r *PipelineRepository) GetByUserID(ctx context.Context, userID string, lim
 	var pipelines []*model.Pipeline
 	query := r.db.WithContext(ctx).
 		Where("user_id = ?", userID).
+		Preload("Steps").
 		Order("created_at DESC")
 	if limit > 0 {
 		query = query.Limit(limit)
@@ -55,6 +57,7 @@ func (r *PipelineRepository) GetBySessionID(ctx context.Context, sessionID strin
 	var pipelines []*model.Pipeline
 	err := r.db.WithContext(ctx).
 		Where("session_id = ?", sessionID).
+		Preload("Steps").
 		Order("created_at DESC").
 		Find(&pipelines).Error
 	return pipelines, err
@@ -75,14 +78,15 @@ func (r *PipelineRepository) UpdateStatus(ctx context.Context, id uint, status m
 	updates := map[string]interface{}{
 		"status": status,
 	}
+	now := time.Now()
 	if errorMsg != "" {
 		updates["error"] = errorMsg
 	}
 	if status == model.PipelineStatusRunning {
-		updates["started_at"] = gorm.Expr("NOW()")
+		updates["started_at"] = now
 	}
 	if status == model.PipelineStatusCompleted || status == model.PipelineStatusFailed || status == model.PipelineStatusCancelled {
-		updates["completed_at"] = gorm.Expr("NOW()")
+		updates["completed_at"] = now
 	}
 	return r.db.WithContext(ctx).Model(&model.Pipeline{}).Where("id = ?", id).Updates(updates).Error
 }
@@ -142,6 +146,7 @@ func (r *PipelineRepository) UpdateStepStatus(ctx context.Context, stepID uint, 
 	updates := map[string]interface{}{
 		"status": status,
 	}
+	now := time.Now()
 	if result != nil {
 		resultJSON, _ := json.Marshal(result)
 		updates["result"] = resultJSON
@@ -150,10 +155,10 @@ func (r *PipelineRepository) UpdateStepStatus(ctx context.Context, stepID uint, 
 		updates["error"] = errorMsg
 	}
 	if status == model.PipelineStatusRunning {
-		updates["started_at"] = gorm.Expr("NOW()")
+		updates["started_at"] = now
 	}
 	if status == model.PipelineStatusCompleted || status == model.PipelineStatusFailed || status == model.PipelineStatusCancelled {
-		updates["completed_at"] = gorm.Expr("NOW()")
+		updates["completed_at"] = now
 	}
 	return r.db.WithContext(ctx).Model(&model.PipelineStep{}).
 		Where("id = ?", stepID).

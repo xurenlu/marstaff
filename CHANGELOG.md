@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.16.0-rc1] - 2026-03-07
+
+### Added
+
+- **通用多分镜视频工作流**：新增 `video_story_workflow_create` 工具，支持将长故事视频拆成任意 N 段分镜，统一创建主工作流、并行生成多个视频子任务，并在全部完成后自动拼接为最终视频
+- **聊天页工作流面板**：`/chat` 新增视频工作流状态卡片，可展示主工作流状态、当前阶段、子任务步骤与最终合成视频结果，并在整体完成或失败时弹出通知
+
+### Changed
+
+- **Pipeline 异步编排能力**：增强 parallel step，对 `tool.generate_video` 等异步任务走统一等待与结果聚合流程，自动回填 `video_urls` 并为后续 concat 步骤提供变量
+- **多分镜视频指令策略**：系统提示新增规则，遇到需要拆分分镜并最终合成的长视频请求时，优先使用视频工作流工具，而不是直接单次 `generate_video`
+- **AFK 任务详情展示**：`/afk` 任务详情增加 result URL、错误信息与 workflow metadata 展示，便于查看子任务归属的 pipeline/step/subtask
+
+### Fixed
+
+- **提前宣告“视频已完成”**：修复长视频请求只完成第一个异步视频任务就被当作整体完成的问题；现在只有最终拼接成功后，工作流才会进入 completed
+- **分镜任务语义误导**：工作流中的子任务完成通知改为“分镜完成”，避免与最终整片完成混淆
+- **Pipeline 仓储时间更新兼容性**：`pipeline_repo` 不再依赖 `NOW()` SQL 表达式，避免在 sqlite 等环境下测试失败
+
 ## [1.15.0-rc4] - 2025-03-04
 
 ### Fixed

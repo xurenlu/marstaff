@@ -9,6 +9,7 @@ import (
 
 	"github.com/rs/zerolog/log"
 
+	"github.com/rocky/marstaff/internal/contextkeys"
 	"github.com/rocky/marstaff/internal/model"
 	"github.com/rocky/marstaff/internal/repository"
 )
@@ -305,6 +306,10 @@ func (e *Engine) executeStep(ctx context.Context, execCtx *ExecutionContext, ste
 	// Store result in execution context
 	execCtx.mu.Lock()
 	execCtx.Results[step.StepKey] = result
+	execCtx.Variables[step.StepKey] = result
+	if videoURLs, ok := result["video_urls"]; ok {
+		execCtx.Variables[step.StepKey+"_video_urls"] = videoURLs
+	}
 	execCtx.mu.Unlock()
 
 	// Update step status to completed
@@ -343,7 +348,9 @@ func (e *Engine) executeTaskStep(ctx context.Context, execCtx *ExecutionContext,
 	}
 
 	// Try to execute with async task support
-	result, asyncTasks, err := e.executeTaskWithAsyncSupport(ctx, config.TaskType, params)
+	taskCtx := context.WithValue(ctx, contextkeys.PipelineID, execCtx.Pipeline.ID)
+	taskCtx = context.WithValue(taskCtx, contextkeys.PipelineStepKey, step.StepKey)
+	result, asyncTasks, err := e.executeTaskWithAsyncSupport(taskCtx, config.TaskType, params)
 	if err != nil {
 		return nil, err
 	}
@@ -399,7 +406,7 @@ func (e *Engine) waitForAsyncTasks(ctx context.Context, execCtx *ExecutionContex
 	}
 
 	maxWait := 10 * time.Minute // Maximum wait time for video generation
-	checkInterval := 10 * time.Second
+	checkInterval := 1 * time.Second
 	deadline := time.Now().Add(maxWait)
 
 	for time.Now().Before(deadline) {
@@ -500,6 +507,7 @@ func (e *Engine) executeParallelStep(ctx context.Context, execCtx *ExecutionCont
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	errors := make([]error, 0)
+	asyncTasks := make([]AsyncTaskInfo, 0)
 
 	for _, task := range config.Tasks {
 		task := task // capture loop variable
@@ -508,7 +516,13 @@ func (e *Engine) executeParallelStep(ctx context.Context, execCtx *ExecutionCont
 			defer wg.Done()
 
 			params := e.substituteVariables(execCtx, task.Params)
-			result, err := e.taskExecutor.ExecuteTask(ctx, task.TaskType, params)
+			if execCtx.SessionID != "" {
+				params["session_id"] = execCtx.SessionID
+			}
+			taskCtx := context.WithValue(ctx, contextkeys.PipelineID, execCtx.Pipeline.ID)
+			taskCtx = context.WithValue(taskCtx, contextkeys.PipelineStepKey, step.StepKey)
+			taskCtx = context.WithValue(taskCtx, contextkeys.PipelineSubtaskKey, task.Key)
+			result, taskAsyncTasks, err := e.executeTaskWithAsyncSupport(taskCtx, task.TaskType, params)
 
 			mu.Lock()
 			defer mu.Unlock()
@@ -516,6 +530,10 @@ func (e *Engine) executeParallelStep(ctx context.Context, execCtx *ExecutionCont
 				errors = append(errors, fmt.Errorf("task %s failed: %w", task.Key, err))
 			} else {
 				results[task.Key] = result
+				for _, asyncTask := range taskAsyncTasks {
+					asyncTask.StepKey = task.Key
+					asyncTasks = append(asyncTasks, asyncTask)
+				}
 			}
 		}()
 	}
@@ -525,6 +543,46 @@ func (e *Engine) executeParallelStep(ctx context.Context, execCtx *ExecutionCont
 	if len(errors) > 0 {
 		return results, fmt.Errorf("parallel execution had %d errors", len(errors))
 	}
+
+	if len(asyncTasks) == 0 {
+		return results, nil
+	}
+
+	log.Info().
+		Uint("pipeline_id", execCtx.Pipeline.ID).
+		Str("step_key", step.StepKey).
+		Int("async_tasks", len(asyncTasks)).
+		Msg("parallel step created async tasks, waiting for completion")
+
+	if err := e.waitForAsyncTasks(ctx, execCtx, asyncTasks); err != nil {
+		return results, fmt.Errorf("parallel async task execution failed: %w", err)
+	}
+
+	videoURLs := make([]string, 0, len(asyncTasks))
+	subtasks := make([]map[string]interface{}, 0, len(asyncTasks))
+
+	execCtx.mu.RLock()
+	for _, asyncTask := range asyncTasks {
+		subtaskResult := map[string]interface{}{
+			"key":     asyncTask.StepKey,
+			"task_id": asyncTask.TaskID,
+			"status":  "completed",
+		}
+
+		if taskResult, ok := execCtx.TaskResults[asyncTask.TaskID]; ok {
+			if resultURL, ok := taskResult.Result["result_url"].(string); ok && resultURL != "" {
+				videoURLs = append(videoURLs, resultURL)
+				subtaskResult["result_url"] = resultURL
+			}
+		}
+
+		subtasks = append(subtasks, subtaskResult)
+	}
+	execCtx.mu.RUnlock()
+
+	results["async_completed"] = true
+	results["video_urls"] = videoURLs
+	results["subtasks"] = subtasks
 
 	return results, nil
 }

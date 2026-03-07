@@ -132,6 +132,8 @@
         .status-disabled { background: rgba(128, 128, 128, 0.2); color: #888; }
         .status-error { background: rgba(244, 67, 54, 0.2); color: var(--error-color); }
         .status-completed { background: rgba(33, 150, 243, 0.2); color: var(--info-color); }
+        .status-pending { background: rgba(255, 152, 0, 0.2); color: var(--warning-color); }
+        .status-failed { background: rgba(244, 67, 54, 0.2); color: var(--error-color); }
 
         .task-info {
             font-size: 0.9rem;
@@ -449,7 +451,8 @@
                 const typeLabel = {
                     'scheduled': 'Scheduled',
                     'ai_driven': 'AI Analysis',
-                    'event_based': 'Event Watch'
+                    'event_based': 'Event Watch',
+                    'async': 'Async Task'
                 }[task.task_type] || task.task_type;
 
                 const nextExec = task.next_execution_time ? new Date(task.next_execution_time).toLocaleString() : 'N/A';
@@ -620,6 +623,14 @@
                     'event_based': 'Event Watch',
                     'async': 'Async Task'
                 }[task.task_type] || task.task_type;
+                let metadata = {};
+                if (task.metadata) {
+                    try {
+                        metadata = typeof task.metadata === 'string' ? JSON.parse(task.metadata) : task.metadata;
+                    } catch (_) {
+                        metadata = {};
+                    }
+                }
 
                 let content = `
                     <div class="form-group">
@@ -652,6 +663,30 @@
                     </div>
                 `;
 
+                if (task.result_url) {
+                    const isVideo = /\.(mp4|mov|webm|gif)(\?|$)/i.test(task.result_url);
+                    content += `
+                        <div class="form-group">
+                            <label>Result URL</label>
+                            <div style="padding: 0.75rem; background: var(--bg-tertiary); border-radius: 8px; word-break: break-all;">
+                                <a href="${escapeHtml(task.result_url)}" target="_blank" rel="noopener">${escapeHtml(task.result_url)}</a>
+                            </div>
+                            ${isVideo ? `<video src="${escapeHtml(task.result_url)}" controls style="max-width: 100%; max-height: 240px; border-radius: 8px; margin-top: 0.75rem;"></video>` : ''}
+                        </div>
+                    `;
+                }
+
+                if (task.error_message) {
+                    content += `
+                        <div class="form-group">
+                            <label>Error</label>
+                            <div style="padding: 0.75rem; background: rgba(244, 67, 54, 0.12); border-radius: 8px; color: var(--error-color);">
+                                ${escapeHtml(task.error_message)}
+                            </div>
+                        </div>
+                    `;
+                }
+
                 // Add chat entry link if task has session_id
                 if (task.session_id) {
                     content += `
@@ -660,6 +695,22 @@
                             <a href="/?session_id=${escapeHtml(task.session_id)}" class="btn btn-primary" style="display: inline-block; text-decoration: none;">
                                 💬 进入聊天 (Enter Chat)
                             </a>
+                        </div>
+                    `;
+                }
+
+                if (metadata.pipeline_id) {
+                    content += `
+                        <div class="form-group">
+                            <label>Workflow Link</label>
+                            <div style="display:flex; gap:0.75rem; flex-wrap:wrap;">
+                                <a href="/api/pipelines/${encodeURIComponent(metadata.pipeline_id)}" target="_blank" class="btn btn-secondary" style="display: inline-block; text-decoration: none;">查看工作流 JSON</a>
+                                <div style="padding: 0.6rem 0.8rem; background: var(--bg-tertiary); border-radius: 8px; font-size: 0.85rem;">
+                                    pipeline_id=${escapeHtml(String(metadata.pipeline_id))}
+                                    ${metadata.pipeline_step_key ? `<br>step=${escapeHtml(String(metadata.pipeline_step_key))}` : ''}
+                                    ${metadata.pipeline_subtask_key ? `<br>subtask=${escapeHtml(String(metadata.pipeline_subtask_key))}` : ''}
+                                </div>
+                            </div>
                         </div>
                     `;
                 }
@@ -680,6 +731,15 @@
                         <div class="form-group">
                             <label>Action Configuration</label>
                             <pre style="padding: 0.75rem; background: var(--bg-tertiary); border-radius: 8px; overflow-x: auto; max-height: 200px;">${JSON.stringify(task.action_config, null, 2)}</pre>
+                        </div>
+                    `;
+                }
+
+                if (task.metadata) {
+                    content += `
+                        <div class="form-group">
+                            <label>Metadata</label>
+                            <pre style="padding: 0.75rem; background: var(--bg-tertiary); border-radius: 8px; overflow-x: auto; max-height: 200px;">${escapeHtml(JSON.stringify(metadata, null, 2))}</pre>
                         </div>
                     `;
                 }

@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -273,6 +274,23 @@ func (e *Executor) createAsyncAFKTask(ctx context.Context, task media.AsyncTaskI
 	}
 
 	// Create AFK task
+	metadata := map[string]interface{}{}
+	if pipelineID, ok := ctx.Value(contextkeys.PipelineID).(uint); ok && pipelineID > 0 {
+		metadata["pipeline_id"] = pipelineID
+	}
+	if stepKey, ok := ctx.Value(contextkeys.PipelineStepKey).(string); ok && stepKey != "" {
+		metadata["pipeline_step_key"] = stepKey
+	}
+	if subtaskKey, ok := ctx.Value(contextkeys.PipelineSubtaskKey).(string); ok && subtaskKey != "" {
+		metadata["pipeline_subtask_key"] = subtaskKey
+	}
+	metadataJSON := "{}"
+	if len(metadata) > 0 {
+		if data, err := json.Marshal(metadata); err == nil {
+			metadataJSON = string(data)
+		}
+	}
+
 	afkTask := &model.AFKTask{
 		UserID:      userID,
 		SessionID:   &sessionID,
@@ -280,7 +298,7 @@ func (e *Executor) createAsyncAFKTask(ctx context.Context, task media.AsyncTaskI
 		Description: "异步视频生成任务，完成后将自动通知",
 		TaskType:    model.AFKTaskTypeAsync,
 		Status:      model.AFKTaskStatusPending,
-		Metadata:    "{}", // Empty JSON object for MySQL JSON column
+		Metadata:    metadataJSON,
 		TriggerConfig: model.TriggerConfig{
 			Type: model.AFKTaskTypeAsync,
 			AsyncTaskConfig: &model.AsyncTaskConfig{

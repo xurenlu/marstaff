@@ -425,6 +425,135 @@
             gap: 1rem;
         }
 
+        .workflow-panel {
+            margin: 1rem 2rem 0;
+            padding: 1rem 1.25rem;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 14px;
+        }
+
+        .workflow-panel.hidden {
+            display: none;
+        }
+
+        .workflow-panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 1rem;
+            margin-bottom: 0.9rem;
+        }
+
+        .workflow-panel-title {
+            font-size: 0.95rem;
+            font-weight: 600;
+        }
+
+        .workflow-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
+        .workflow-card {
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 0.9rem 1rem;
+        }
+
+        .workflow-card-header {
+            display: flex;
+            justify-content: space-between;
+            gap: 1rem;
+            align-items: flex-start;
+            margin-bottom: 0.65rem;
+        }
+
+        .workflow-card-title {
+            font-size: 0.92rem;
+            font-weight: 600;
+        }
+
+        .workflow-status {
+            padding: 0.2rem 0.65rem;
+            border-radius: 999px;
+            font-size: 0.72rem;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+
+        .workflow-status.running {
+            color: var(--warning-color);
+            background: rgba(255, 152, 0, 0.16);
+        }
+
+        .workflow-status.completed {
+            color: var(--success-color);
+            background: rgba(76, 175, 80, 0.16);
+        }
+
+        .workflow-status.pending {
+            color: var(--text-secondary);
+            background: rgba(128, 128, 128, 0.16);
+        }
+
+        .workflow-status.failed, .workflow-status.cancelled {
+            color: var(--error-color);
+            background: rgba(244, 67, 54, 0.16);
+        }
+
+        .workflow-meta {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.65rem;
+        }
+
+        .workflow-steps {
+            display: flex;
+            flex-direction: column;
+            gap: 0.45rem;
+        }
+
+        .workflow-step {
+            display: flex;
+            justify-content: space-between;
+            gap: 1rem;
+            font-size: 0.82rem;
+            padding: 0.45rem 0.6rem;
+            background: var(--bg-secondary);
+            border-radius: 8px;
+        }
+
+        .workflow-step-name {
+            color: var(--text-primary);
+        }
+
+        .workflow-step-status {
+            color: var(--text-secondary);
+            white-space: nowrap;
+        }
+
+        .workflow-result {
+            margin-top: 0.75rem;
+            padding-top: 0.75rem;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .workflow-result video {
+            max-width: 360px;
+            max-height: 200px;
+            border-radius: 8px;
+            margin-top: 0.5rem;
+        }
+
+        .workflow-result a {
+            color: var(--success-color);
+            text-decoration: none;
+            font-size: 0.82rem;
+        }
+
         .message {
             display: flex;
             gap: 1rem;
@@ -1138,6 +1267,13 @@
                 <span class="workspace-path" id="currentWorkspacePath" title=""></span>
                 <button type="button" id="clearWorkspaceBtn">Clear</button>
             </div>
+            <div class="workflow-panel hidden" id="workflowPanel">
+                <div class="workflow-panel-header">
+                    <div class="workflow-panel-title">视频工作流</div>
+                    <button class="copy-message-btn" id="workflowRefreshBtn" title="刷新工作流">🔄</button>
+                </div>
+                <div class="workflow-list" id="workflowList"></div>
+            </div>
             <div class="messages" id="messages">
                 <div class="message assistant">
                     <div class="message-avatar">🤖</div>
@@ -1258,6 +1394,8 @@
         let workspacePath = '';  // Current workspace path for programming mode
         let planMode = false;   // true = plan only, false = agent executes
         let lastMessageWasPlanMode = false;  // Track if last sent message was plan mode (for execute button)
+        let workflowPollTimer = null;
+        let workflowStatusCache = new Map();
 
         // i18n (expand for full locale support)
         const isZh = (document.documentElement.lang || navigator.language || 'zh').toLowerCase().startsWith('zh');
@@ -1368,6 +1506,9 @@
         const statusDot = document.getElementById('statusDot');
         const statusText = document.getElementById('statusText');
         const messagesContainer = document.getElementById('messages');
+        const workflowPanel = document.getElementById('workflowPanel');
+        const workflowList = document.getElementById('workflowList');
+        const workflowRefreshBtn = document.getElementById('workflowRefreshBtn');
         const inputBox = document.getElementById('inputBox');
         const sendBtn = document.getElementById('sendBtn');
         const typingIndicator = document.getElementById('typing');
@@ -1377,6 +1518,7 @@
         document.getElementById('modeChat').addEventListener('click', () => switchToMode('chat'));
         document.getElementById('modeProgramming').addEventListener('click', () => switchToMode('programming'));
         document.getElementById('modeAfk').addEventListener('click', () => switchToMode('afk'));
+        workflowRefreshBtn.addEventListener('click', () => loadWorkflowPanel(true));
 
         function setAppMode(mode) {
             // Internal mode setting without navigation
@@ -1708,6 +1850,7 @@
         async function loadSession(id) {
             sessionId = id;
             renderSessions();
+            startWorkflowPolling();
 
             try {
                 const response = await fetch(`${API_BASE}/api/sessions/${id}`);
@@ -1770,9 +1913,147 @@
                         </div>
                     `;
                 }
+
+                await loadWorkflowPanel();
             } catch (error) {
                 console.error('Failed to load session:', error);
             }
+        }
+
+        function startWorkflowPolling() {
+            stopWorkflowPolling();
+            if (!sessionId) {
+                renderWorkflowPanel([]);
+                return;
+            }
+            workflowPollTimer = setInterval(() => {
+                loadWorkflowPanel();
+            }, 3000);
+        }
+
+        function stopWorkflowPolling() {
+            if (workflowPollTimer) {
+                clearInterval(workflowPollTimer);
+                workflowPollTimer = null;
+            }
+        }
+
+        async function loadWorkflowPanel(force = false) {
+            if (!sessionId) {
+                renderWorkflowPanel([]);
+                return;
+            }
+
+            try {
+                if (force && workflowRefreshBtn) {
+                    workflowRefreshBtn.disabled = true;
+                }
+
+                const response = await fetch(`${API_BASE}/api/pipelines?session_id=${encodeURIComponent(sessionId)}`);
+                if (!response.ok) {
+                    throw new Error(`workflow api ${response.status}`);
+                }
+
+                const data = await response.json();
+                renderWorkflowPanel(data.pipelines || []);
+            } catch (error) {
+                console.warn('Failed to load workflow panel:', error);
+                if (force) {
+                    workflowList.innerHTML = '<div class="workflow-card">工作流加载失败，请稍后重试。</div>';
+                    workflowPanel.classList.remove('hidden');
+                }
+            } finally {
+                if (workflowRefreshBtn) {
+                    workflowRefreshBtn.disabled = false;
+                }
+            }
+        }
+
+        function renderWorkflowPanel(pipelines) {
+            if (!pipelines || pipelines.length === 0) {
+                workflowPanel.classList.add('hidden');
+                workflowList.innerHTML = '';
+                workflowStatusCache = new Map();
+                return;
+            }
+
+            workflowPanel.classList.remove('hidden');
+            pipelines.forEach(pipeline => {
+                const previousStatus = workflowStatusCache.get(pipeline.id);
+                if (previousStatus && previousStatus !== pipeline.status) {
+                    if (pipeline.status === 'completed') {
+                        showNotification('🎬 视频工作流已完成', pipeline.name || '您的视频工作流已完成');
+                    } else if (pipeline.status === 'failed') {
+                        showNotification('❌ 视频工作流失败', pipeline.name || '视频工作流执行失败');
+                    }
+                }
+                workflowStatusCache.set(pipeline.id, pipeline.status);
+            });
+            workflowList.innerHTML = pipelines.slice(0, 3).map(renderWorkflowCard).join('');
+        }
+
+        function renderWorkflowCard(pipeline) {
+            const status = escapeHtml(pipeline.status || 'pending');
+            const steps = Array.isArray(pipeline.steps) ? pipeline.steps : [];
+            const currentStep = steps.find(step => step.status === 'running');
+            const completedCount = steps.filter(step => step.status === 'completed').length;
+            const totalCount = steps.length;
+            const currentStage = currentStep ? escapeHtml(currentStep.name || currentStep.step_key || currentStep.stepKey || '') : (status === 'completed' ? '已完成' : '等待中');
+            const result = normalizeWorkflowResult(pipeline.result);
+            const finalVideoUrl = result.public_url || result.result_url || extractFinalVideoUrl(result.steps);
+
+            const stepsHtml = steps.map(step => {
+                const stepResult = normalizeWorkflowResult(step.result);
+                const subtasks = Array.isArray(stepResult.subtasks) ? stepResult.subtasks : [];
+                const subtaskSummary = subtasks.length > 0 ? ` (${subtasks.length} 个子任务)` : '';
+                return `
+                    <div class="workflow-step">
+                        <div class="workflow-step-name">${escapeHtml(step.name || step.step_key || step.stepKey || '未命名步骤')}${subtaskSummary}</div>
+                        <div class="workflow-step-status">${escapeHtml(step.status || 'pending')}</div>
+                    </div>
+                `;
+            }).join('');
+
+            const resultHtml = finalVideoUrl ? `
+                <div class="workflow-result">
+                    <div style="font-size:0.82rem;color:var(--text-secondary);">最终合成结果</div>
+                    <video src="${escapeHtml(finalVideoUrl)}" controls></video>
+                    <div><a href="${escapeHtml(finalVideoUrl)}" target="_blank" rel="noopener">查看或下载最终视频</a></div>
+                </div>
+            ` : '';
+
+            return `
+                <div class="workflow-card">
+                    <div class="workflow-card-header">
+                        <div class="workflow-card-title">${escapeHtml(pipeline.name || '视频工作流')}</div>
+                        <div class="workflow-status ${status}">${status}</div>
+                    </div>
+                    <div class="workflow-meta">阶段：${currentStage} · 进度：${completedCount}/${totalCount}</div>
+                    <div class="workflow-steps">${stepsHtml}</div>
+                    ${resultHtml}
+                </div>
+            `;
+        }
+
+        function normalizeWorkflowResult(value) {
+            if (!value) return {};
+            if (typeof value === 'string') {
+                try {
+                    return JSON.parse(value);
+                } catch (_) {
+                    return {};
+                }
+            }
+            return value;
+        }
+
+        function extractFinalVideoUrl(stepsResult) {
+            if (!stepsResult || typeof stepsResult !== 'object') return '';
+            const concatStep = stepsResult.concat_scenes;
+            if (concatStep && typeof concatStep === 'object') {
+                return concatStep.public_url || concatStep.result_url || '';
+            }
+            return '';
         }
 
         async function deleteSession(event, id) {
@@ -1786,6 +2067,8 @@
 
                 if (sessionId === id) {
                     sessionId = null;
+                    stopWorkflowPolling();
+                    renderWorkflowPanel([]);
                     messagesContainer.innerHTML = `
                         <div class="message assistant">
                             <div class="message-avatar">🤖</div>
@@ -2041,6 +2324,7 @@
                     }
                     if (data.session_id && data.session_id !== sessionId) {
                         sessionId = data.session_id;
+                        startWorkflowPolling();
                         loadSessions();
                     }
                     if (streamingPlaceholder) {
@@ -2098,10 +2382,12 @@
                         const resultUrl = task.result_url;  // URL is inside task object
                         const taskType = task.task_type || 'unknown';  // task_type is inside task object
                         const isFinal = data.data.is_final !== false;
+                        const workflowSubtaskKey = task.workflow_subtask_key;
 
                         console.log('Received task completed:', { task, resultUrl, taskType, isFinal });
 
-                        let messageContent = `✅ 任务完成: ${task.name || 'Async Task'}`;
+                        const taskPrefix = workflowSubtaskKey ? '🎬 分镜完成' : '✅ 任务完成';
+                        let messageContent = `${taskPrefix}: ${task.name || 'Async Task'}`;
                         if (!isFinal) {
                             messageContent += `\n\n⏳ 视频正在上传到更快的存储服务器...`;
                         }
@@ -2117,7 +2403,7 @@
                                            resultUrl.includes('.mp4') ||
                                            resultUrl.includes('.mov') ||
                                            resultUrl.includes('.webm');
-                            const notificationTitle = isVideo ? '🎬 视频生成完成' : '✅ 任务完成';
+                            const notificationTitle = workflowSubtaskKey ? '🎬 分镜已完成' : (isVideo ? '🎬 视频生成完成' : '✅ 任务完成');
                             const notificationBody = task.name || '您的异步任务已完成';
                             showNotification(notificationTitle, notificationBody, null, () => {
                                 // Focus on the chat window when notification is clicked
@@ -2127,6 +2413,7 @@
                             });
                         }
                     }
+                    loadWorkflowPanel();
                     hideTypingIndicator();
                     break;
                 case 'async_task_url_updated':
@@ -2135,6 +2422,7 @@
                         const task = data.data.task;
                         const newUrl = task.result_url;  // URL is inside task object
                         const taskType = task.task_type || 'unknown';  // task_type is inside task object
+                        const workflowSubtaskKey = task.workflow_subtask_key;
 
                         console.log('Received URL update:', { task, newUrl, taskType });
 
@@ -2151,7 +2439,8 @@
                                 if (uploadingText) uploadingText.remove();
 
                                 // Update message content and add video player
-                                const messageContent = `✅ 任务完成: ${task.name || 'Async Task'}`;
+                                const taskPrefix = workflowSubtaskKey ? '🎬 分镜完成' : '✅ 任务完成';
+                                const messageContent = `${taskPrefix}: ${task.name || 'Async Task'}`;
                                 const mediaHtml = formatMediaResult(newUrl, taskType, task);
 
                                 // Update content: keep existing content but replace uploading text with final video
@@ -2189,7 +2478,8 @@
                                                newUrl.includes('.mov') ||
                                                newUrl.includes('.webm');
                                 if (isVideo) {
-                                    showNotification('🎬 视频已准备好', '点击查看视频：' + (task.name || ''), null, () => {
+                                    const notificationTitle = workflowSubtaskKey ? '🎬 分镜视频已准备好' : '🎬 视频已准备好';
+                                    showNotification(notificationTitle, '点击查看视频：' + (task.name || ''), null, () => {
                                         window.focus();
                                         messagesContainer.scrollTop = messagesContainer.scrollHeight;
                                     });
@@ -2211,6 +2501,7 @@
                         const errorMsg = task.error_message || 'Unknown error';  // error_message is inside task object
                         addMessage('error', `❌ 任务失败: ${task.name || 'Async Task'}\n\n原因: ${errorMsg}`);
                     }
+                    loadWorkflowPanel();
                     hideTypingIndicator();
                     break;
                 case 'afk_status_changed':
@@ -2796,6 +3087,8 @@
         // New chat button
         document.getElementById('newChatBtn').addEventListener('click', () => {
             sessionId = null;
+            stopWorkflowPolling();
+            renderWorkflowPanel([]);
             lastUserMessage = null;
             lastContentParts = null;
             renderSessions();

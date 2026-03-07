@@ -551,6 +551,10 @@ func (e *Engine) buildSystemPrompt(ctx context.Context, req *ChatRequest) string
 		prompt.WriteString("**Long-running tasks (firecrawl, web scraping, bulk extraction)**: When user requests tasks that involve network requests, crawling, or bulk extraction: 1) BEFORE starting, tell the user to keep the session open. 2) Execute step by step. 3) When done, output the result and optionally call afk_send_notification.\n\n")
 	}
 
+	if _, hasVideoWorkflow := e.tools["video_story_workflow_create"]; hasVideoWorkflow {
+		prompt.WriteString("**Multi-scene video workflows (CRITICAL)**: When user asks for a story video that must be split into multiple scenes/shots and then stitched together, ALWAYS use video_story_workflow_create instead of calling generate_video once. Plan the scenes first, then create the workflow with the scene prompts. The workflow will create multiple async video tasks, wait for all of them, and only report overall completion after final concatenation succeeds. Never claim the whole video is done just because one scene finished.\n\n")
+	}
+
 	// When users ask about capabilities, emphasize these are LOCAL tools/skills
 	if len(skills) > 0 || tools > 0 {
 		prompt.WriteString("**Important**: When users ask what you can do or what capabilities you have, clearly explain that these are **local tools and skills** available in this agent platform - NOT capabilities of the cloud AI service. You are an AI assistant helping to orchestrate these local capabilities.\n\n")

@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/rocky/marstaff/internal/agent"
+	"github.com/rocky/marstaff/internal/contextkeys"
 	"github.com/rocky/marstaff/internal/model"
 	"github.com/rocky/marstaff/internal/pipeline"
 	"github.com/rocky/marstaff/internal/repository"
@@ -108,6 +109,67 @@ func (e *PipelineExecutor) RegisterBuiltInTools(engine *agent.Engine) {
 		},
 		"required": []string{"pipeline_id"},
 	}, e.cancelPipeline)
+
+	engine.RegisterTool("video_story_workflow_create", "创建并启动一个多分镜视频工作流。适用于总时长超过单次模型上限、需要拆成多个分镜分别生成，最后自动拼接成完整视频的场景。调用后会创建主工作流、并行生成多个视频子任务、全部完成后自动合成，只有最终拼接完成才算整体完成。", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"user_id": map[string]interface{}{
+				"type":        "string",
+				"description": "用户ID（可选，默认使用当前会话用户）",
+			},
+			"session_id": map[string]interface{}{
+				"type":        "string",
+				"description": "会话ID（可选，默认使用当前会话）",
+			},
+			"name": map[string]interface{}{
+				"type":        "string",
+				"description": "工作流名称",
+			},
+			"description": map[string]interface{}{
+				"type":        "string",
+				"description": "工作流描述（可选）",
+			},
+			"story": map[string]interface{}{
+				"type":        "string",
+				"description": "整体故事概述（可选）",
+			},
+			"output_name": map[string]interface{}{
+				"type":        "string",
+				"description": "最终拼接输出文件名（可选）",
+			},
+			"scenes": map[string]interface{}{
+				"type":        "array",
+				"description": "分镜列表。每项至少包含 prompt，可选 duration、key、name。",
+				"items": map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"key": map[string]interface{}{"type": "string"},
+						"name": map[string]interface{}{"type": "string"},
+						"prompt": map[string]interface{}{"type": "string"},
+						"duration": map[string]interface{}{"type": "integer"},
+					},
+					"required": []string{"prompt"},
+				},
+			},
+			"aspect_ratio": map[string]interface{}{
+				"type":        "string",
+				"description": "所有分镜默认画幅，例如 16:9、9:16、1:1",
+			},
+			"resolution": map[string]interface{}{
+				"type":        "string",
+				"description": "所有分镜默认分辨率，例如 720p、1080p",
+			},
+			"fps": map[string]interface{}{
+				"type":        "string",
+				"description": "所有分镜默认帧率，例如 24、30",
+			},
+			"style": map[string]interface{}{
+				"type":        "string",
+				"description": "所有分镜默认风格/模型参数",
+			},
+		},
+		"required": []string{"name", "scenes"},
+	}, e.createVideoStoryWorkflow)
 }
 
 // createPipeline creates a new pipeline
@@ -204,6 +266,106 @@ func (e *PipelineExecutor) createPipeline(ctx context.Context, params map[string
 		"status":        pipeline.Status,
 		"steps_count":   len(pipeline.Steps),
 		"message":       "Pipeline created successfully. Use pipeline_execute to start execution.",
+	}
+	resultJSON, _ := json.Marshal(result)
+	return string(resultJSON), nil
+}
+
+func (e *PipelineExecutor) createVideoStoryWorkflow(ctx context.Context, params map[string]interface{}) (string, error) {
+	userID, _ := params["user_id"].(string)
+	if userID == "" {
+		if ctxUserID, ok := ctx.Value(contextkeys.UserID).(string); ok && ctxUserID != "" {
+			userID = ctxUserID
+		} else {
+			userID = "default"
+		}
+	}
+
+	var sessionID *string
+	if sid, ok := params["session_id"].(string); ok && sid != "" {
+		sessionID = &sid
+	} else if ctxSessionID, ok := ctx.Value(contextkeys.SessionID).(string); ok && ctxSessionID != "" {
+		sessionID = &ctxSessionID
+	}
+
+	name, _ := params["name"].(string)
+	description, _ := params["description"].(string)
+	story, _ := params["story"].(string)
+	outputName, _ := params["output_name"].(string)
+
+	scenesRaw, _ := params["scenes"].([]interface{})
+	if len(scenesRaw) == 0 {
+		return "", fmt.Errorf("scenes cannot be empty")
+	}
+
+	defaultParams := make(map[string]interface{})
+	for _, key := range []string{"aspect_ratio", "resolution", "fps", "style"} {
+		if value, ok := params[key]; ok && value != nil && value != "" {
+			defaultParams[key] = value
+		}
+	}
+
+	scenes := make([]pipeline.VideoScene, 0, len(scenesRaw))
+	for i, sceneRaw := range scenesRaw {
+		sceneMap, ok := sceneRaw.(map[string]interface{})
+		if !ok {
+			return "", fmt.Errorf("invalid scene at index %d", i)
+		}
+
+		prompt, _ := sceneMap["prompt"].(string)
+		if prompt == "" {
+			return "", fmt.Errorf("scene %d prompt is required", i+1)
+		}
+
+		scene := pipeline.VideoScene{
+			Prompt: prompt,
+		}
+		if key, ok := sceneMap["key"].(string); ok {
+			scene.Key = key
+		}
+		if sceneName, ok := sceneMap["name"].(string); ok {
+			scene.Name = sceneName
+		}
+		if duration, ok := sceneMap["duration"].(float64); ok && duration > 0 {
+			scene.Duration = int(duration)
+		}
+		scenes = append(scenes, scene)
+	}
+
+	def, err := pipeline.BuildVideoStoryWorkflow(pipeline.VideoStoryWorkflowRequest{
+		Name:          name,
+		Description:   description,
+		Story:         story,
+		OutputName:    outputName,
+		Scenes:        scenes,
+		DefaultParams: defaultParams,
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to build video workflow: %w", err)
+	}
+
+	created, err := e.engine.CreatePipeline(ctx, &pipeline.CreatePipelineRequest{
+		UserID:      userID,
+		SessionID:   sessionID,
+		Name:        name,
+		Description: firstNonEmpty(description, story),
+		Definition:  def,
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to create video workflow: %w", err)
+	}
+
+	if err := e.engine.Execute(ctx, created.ID); err != nil {
+		return "", fmt.Errorf("failed to execute video workflow: %w", err)
+	}
+
+	result := map[string]interface{}{
+		"pipeline_id":   created.ID,
+		"name":          created.Name,
+		"status":        "running",
+		"scenes_count":  len(scenes),
+		"message":       "视频工作流已创建并开始执行：会并行生成多个分镜，全部完成后自动合成。",
+		"session_id":    sessionID,
 	}
 	resultJSON, _ := json.Marshal(result)
 	return string(resultJSON), nil
@@ -317,4 +479,13 @@ func (e *PipelineExecutor) cancelPipeline(ctx context.Context, params map[string
 	}
 	resultJSON, _ := json.Marshal(result)
 	return string(resultJSON), nil
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
