@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Pipeline 异步编排能力**：增强 parallel step，对 `tool.generate_video` 等异步任务走统一等待与结果聚合流程，自动回填 `video_urls` 并为后续 concat 步骤提供变量
 - **多分镜视频指令策略**：系统提示新增规则，遇到需要拆分分镜并最终合成的长视频请求时，优先使用视频工作流工具，而不是直接单次 `generate_video`
+- **工作流回归测试覆盖**：补充 `video_story_workflow_create`、`/api/pipelines?session_id=...` 和系统提示路由测试，降低长视频流程再次退化为“单段完成即整体完成”的风险
 - **AFK 任务详情展示**：`/afk` 任务详情增加 result URL、错误信息与 workflow metadata 展示，便于查看子任务归属的 pipeline/step/subtask
 
 ### Fixed
