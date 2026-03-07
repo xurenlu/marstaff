@@ -42,7 +42,7 @@ import (
 var (
 	configFile     string
 	enableTelegram bool
-	Version        = "1.16.0-rc2"
+	Version        = "1.16.0-rc3"
 	GitCommit      = "dev" // 编译时通过 ldflags 注入，如未注入则显示 dev
 )
 

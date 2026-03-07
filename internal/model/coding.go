@@ -213,7 +213,7 @@ type CodingStats struct {
 	TotalBranches     int            `gorm:"type:int;default:0" json:"total_branches"`
 	MergedBranches    int            `gorm:"type:int;default:0" json:"merged_branches"`
 	InputTokens       int            `gorm:"type:int;default:0" json:"input_tokens"`
-	OutputTokens      int            `gorm:"type:int;default;0" json:"output_tokens"`
+	OutputTokens      int            `gorm:"type:int;default:0" json:"output_tokens"`
 	FilesModified     int            `gorm:"type:int;default:0" json:"files_modified"`
 	LinesAdded        int            `gorm:"type:int;default:0" json:"lines_added"`
 	LinesDeleted      int            `gorm:"type:int;default:0" json:"lines_deleted"`

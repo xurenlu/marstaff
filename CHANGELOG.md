@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.16.0-rc3] - 2026-03-07
+
+### Fixed
+
+- **CodingStats 迁移告警**：修复 `OutputTokens` 字段上错误的 `gorm default` tag，消除 Gateway 启动时 `failed to parse DEFAULT as default value for int` 告警，并恢复 `coding_stats` 表的正常迁移
+
 ## [1.16.0-rc2] - 2026-03-07
 
 ### Fixed
