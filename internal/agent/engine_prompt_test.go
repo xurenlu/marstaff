@@ -43,5 +43,8 @@ func TestBuildSystemPromptIncludesExplicitMultiSceneVideoWorkflowRouting(t *test
 	require.Contains(t, prompt, "分镜")
 	require.Contains(t, prompt, "拼接")
 	require.Contains(t, prompt, "超过单次生成时长上限")
+	require.Contains(t, prompt, "<=15 秒")
+	require.Contains(t, prompt, "3-4 个 scenes")
+	require.Contains(t, prompt, "不要使用 pipeline_create")
 	require.Contains(t, prompt, "不要在同一轮里直接连续调用多个 generate_video 来手搓流程")
 }

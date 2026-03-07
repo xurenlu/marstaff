@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/rocky/marstaff/internal/agent"
 	"github.com/rocky/marstaff/internal/contextkeys"
@@ -191,6 +192,9 @@ func (e *PipelineExecutor) createPipeline(ctx context.Context, params map[string
 	if len(stepsDef) == 0 {
 		return "", fmt.Errorf("steps cannot be empty")
 	}
+	if looksLikeVideoStoryboardPipeline(name, description, stepsDef) {
+		return "", fmt.Errorf("detected a multi-scene video workflow request: do not use pipeline_create here; use video_story_workflow_create instead")
+	}
 
 	// Convert to PipelineStepDef
 	steps := make([]model.PipelineStepDef, 0, len(stepsDef))
@@ -269,6 +273,39 @@ func (e *PipelineExecutor) createPipeline(ctx context.Context, params map[string
 	}
 	resultJSON, _ := json.Marshal(result)
 	return string(resultJSON), nil
+}
+
+func looksLikeVideoStoryboardPipeline(name, description string, stepsDef []map[string]interface{}) bool {
+	sceneHints := 0
+	videoHints := 0
+
+	countHints := func(text string) {
+		lower := strings.ToLower(text)
+		for _, keyword := range []string{"视频", "video", "generate_video", "video.concat_scenes"} {
+			if strings.Contains(lower, keyword) {
+				videoHints++
+				break
+			}
+		}
+		for _, keyword := range []string{"分镜", "场景", "镜头", "scene", "shot", "concat", "ffmpeg"} {
+			if strings.Contains(lower, keyword) {
+				sceneHints++
+				break
+			}
+		}
+	}
+
+	countHints(name)
+	countHints(description)
+	for _, stepDef := range stepsDef {
+		data, err := json.Marshal(stepDef)
+		if err != nil {
+			continue
+		}
+		countHints(string(data))
+	}
+
+	return videoHints > 0 && sceneHints >= 2
 }
 
 func (e *PipelineExecutor) createVideoStoryWorkflow(ctx context.Context, params map[string]interface{}) (string, error) {

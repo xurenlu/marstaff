@@ -42,9 +42,37 @@ import (
 var (
 	configFile     string
 	enableTelegram bool
-	Version        = "1.16.0-rc1"
+	Version        = "1.16.0-rc2"
 	GitCommit      = "dev" // 编译时通过 ldflags 注入，如未注入则显示 dev
 )
+
+func migrationModels() []interface{} {
+	return []interface{}{
+		&model.User{},
+		&model.Session{},
+		&model.Message{},
+		&model.Skill{},
+		&model.Memory{},
+		&model.TodoItem{},
+		&model.Project{},
+		&model.Rule{},
+		&model.MCPServer{},
+		&model.MCPTool{},
+		&model.AFKTask{},
+		&model.AFKTaskExecution{},
+		&model.Pipeline{},
+		&model.PipelineStep{},
+		&model.TokenUsage{},
+		&model.ProviderSetting{},
+		&model.EnvVarSetting{},
+		&model.BrowserSetting{},
+		&model.FeatureBranch{},
+		&model.Commit{},
+		&model.Iteration{},
+		&model.Task{},
+		&model.CodingStats{},
+	}
+}
 
 // truncateRunes truncates s to at most max runes (avoids cutting mid-UTF8-char)
 func truncateRunes(s string, max int) string {
@@ -97,12 +125,7 @@ func run(cmd *cobra.Command, args []string) {
 		db = nil
 	} else {
 		log.Info().Msg("connected to database")
-		if err := db.AutoMigrate(&model.User{}, &model.Session{}, &model.Message{}, &model.Skill{}, &model.Memory{}, &model.TodoItem{}, &model.Project{}, &model.Rule{}, &model.MCPServer{}, &model.MCPTool{}, &model.AFKTask{}, &model.AFKTaskExecution{}, &model.Pipeline{}, &model.TokenUsage{},
-			&model.ProviderSetting{},
-			&model.EnvVarSetting{},
-			&model.BrowserSetting{},
-			// Coding-related models
-			&model.FeatureBranch{}, &model.Commit{}, &model.Iteration{}, &model.Task{}, &model.CodingStats{}); err != nil {
+		if err := db.AutoMigrate(migrationModels()...); err != nil {
 			log.Warn().Err(err).Msg("failed to auto migrate tables")
 		}
 	}

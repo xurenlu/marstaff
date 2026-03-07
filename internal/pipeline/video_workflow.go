@@ -6,6 +6,8 @@ import (
 	"github.com/rocky/marstaff/internal/model"
 )
 
+const maxVideoSceneDurationSeconds = 15
+
 // VideoScene defines a single generated scene within a story workflow.
 type VideoScene struct {
 	Key      string
@@ -38,6 +40,9 @@ func BuildVideoStoryWorkflow(req VideoStoryWorkflowRequest) (model.PipelineDef, 
 	for i, scene := range req.Scenes {
 		if scene.Prompt == "" {
 			return model.PipelineDef{}, fmt.Errorf("scene %d prompt is required", i+1)
+		}
+		if scene.Duration > maxVideoSceneDurationSeconds {
+			return model.PipelineDef{}, fmt.Errorf("scene %d duration %ds exceeds the %ds model limit; split the story into multiple scenes", i+1, scene.Duration, maxVideoSceneDurationSeconds)
 		}
 
 		sceneKey := scene.Key

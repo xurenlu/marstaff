@@ -75,6 +75,42 @@ func TestCreateVideoStoryWorkflowUsesContextDefaultsAndCreatesPipeline(t *testin
 	require.Contains(t, []model.PipelineStatus{model.PipelineStatusRunning, model.PipelineStatusCompleted}, createdPipeline.Status)
 }
 
+func TestCreatePipelineRejectsVideoStoryboardWorkflows(t *testing.T) {
+	db := newPipelineExecutorTestDB(t)
+	pipelineRepo := repository.NewPipelineRepository(db)
+	engine := pipeline.NewEngine(pipelineRepo, pipelineExecutorTestTaskExecutor{}, nil)
+	executor := NewPipelineExecutor(engine, pipelineRepo)
+
+	ctx := context.WithValue(context.Background(), contextkeys.UserID, "ctx-user")
+	ctx = context.WithValue(ctx, contextkeys.SessionID, "ctx-session")
+
+	_, err := executor.createPipeline(ctx, map[string]interface{}{
+		"user_id": "ctx-user",
+		"name":    "视频生成工作流",
+		"steps": []interface{}{
+			map[string]interface{}{
+				"key":   "concat",
+				"type":  "task",
+				"order": 1.0,
+				"config": map[string]interface{}{
+					"command": "ffmpeg -f concat -i concat.txt -c copy output.mp4",
+				},
+			},
+			map[string]interface{}{
+				"key":   "scene-1",
+				"type":  "task",
+				"order": 2.0,
+				"config": map[string]interface{}{
+					"command": "echo \"场景1：赏金猎人撕下公告\" > scene1.txt",
+				},
+			},
+		},
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "video_story_workflow_create")
+	require.Contains(t, err.Error(), "pipeline_create")
+}
+
 func newPipelineExecutorTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 

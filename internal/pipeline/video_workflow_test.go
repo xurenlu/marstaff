@@ -97,6 +97,19 @@ func TestBuildVideoStoryWorkflowCreatesParallelScenesAndConcatStep(t *testing.T)
 	require.Equal(t, "amazon-hunter.mp4", params["output_name"])
 }
 
+func TestBuildVideoStoryWorkflowRejectsSceneLongerThanModelLimit(t *testing.T) {
+	_, err := BuildVideoStoryWorkflow(VideoStoryWorkflowRequest{
+		Name: "too-long-scene",
+		Scenes: []VideoScene{
+			{Prompt: "一个 30 秒的完整故事镜头", Duration: 30},
+		},
+	})
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "15")
+	require.Contains(t, err.Error(), "split")
+}
+
 func TestExecutePipelineParallelVideoWorkflowWaitsForAsyncTasksAndConcats(t *testing.T) {
 	db := newTestDB(t)
 	pipelineRepo := repository.NewPipelineRepository(db)

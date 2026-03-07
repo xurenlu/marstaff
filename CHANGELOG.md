@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.16.0-rc2] - 2026-03-07
+
+### Fixed
+
+- **长视频工具误路由**：为多分镜视频场景补充更强的系统提示，并明确禁止使用 `pipeline_create` 手写 `ffmpeg/concat/scene` 流程，降低 30 秒故事视频再次误走通用工作流工具的概率
+- **视频工作流工具护栏**：`pipeline_create` 现在会识别多分镜视频/拼接型请求并直接拒绝，提示改用 `video_story_workflow_create`，避免模型“嘴上说工作流，手上拼文本文件”
+- **超时长单分镜兜底**：`video_story_workflow_create` 现在会拒绝超过单次模型上限（如 15 秒）的单分镜，并要求重新拆分 scenes，避免 30 秒故事被塞成一个 scene
+- **PipelineStep 缺表**：Gateway 启动迁移现补上 `PipelineStep` 模型，修复 `/api/pipelines` 因 `pipeline_steps` 表不存在而报错的问题
+
 ## [1.16.0-rc1] - 2026-03-07
 
 ### Added
