@@ -549,6 +549,16 @@
             white-space: nowrap;
         }
 
+        .workflow-error {
+            margin-top: 0.5rem;
+            padding: 0.5rem 0.75rem;
+            font-size: 0.8rem;
+            color: var(--error-color);
+            background: rgba(244, 67, 54, 0.1);
+            border-radius: 6px;
+            word-break: break-word;
+        }
+
         .workflow-result {
             margin-top: 0.75rem;
             padding-top: 0.75rem;
@@ -1446,6 +1456,7 @@
             copySuccess: isZh ? '已复制' : 'Copied',
             copyFailed: isZh ? '复制失败' : 'Failed',
             copyMessage: isZh ? '复制消息' : 'Copy message',
+            workflowErrorDetail: isZh ? '错误详情' : 'Error detail',
         };
 
         // Configure marked for better markdown rendering
@@ -2031,13 +2042,17 @@
                 const stepResult = normalizeWorkflowResult(step.result);
                 const subtasks = Array.isArray(stepResult.subtasks) ? stepResult.subtasks : [];
                 const subtaskSummary = subtasks.length > 0 ? ` (${subtasks.length} 个子任务)` : '';
+                const stepErrorMsg = (step.status === 'failed' && step.error) ? step.error : '';
                 return `
                     <div class="workflow-step">
                         <div class="workflow-step-name">${escapeHtml(step.name || step.step_key || step.stepKey || '未命名步骤')}${subtaskSummary}</div>
                         <div class="workflow-step-status">${escapeHtml(step.status || 'pending')}</div>
                     </div>
+                    ${stepErrorMsg ? `<div class="workflow-error">${escapeHtml(stepErrorMsg)}</div>` : ''}
                 `;
             }).join('');
+
+            const pipelineErrorHtml = (status === 'failed' && pipeline.error) ? `<div class="workflow-error">${escapeHtml(pipeline.error)}</div>` : '';
 
             const resultHtml = finalVideoUrl ? `
                 <div class="workflow-result">
@@ -2055,6 +2070,7 @@
                     </div>
                     <div class="workflow-meta">阶段：${currentStage} · 进度：${completedCount}/${totalCount}</div>
                     <div class="workflow-steps">${stepsHtml}</div>
+                    ${pipelineErrorHtml}
                     ${resultHtml}
                 </div>
             `;

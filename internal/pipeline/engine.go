@@ -137,6 +137,13 @@ func (e *Engine) Execute(ctx context.Context, pipelineID uint) error {
 // executePipeline runs the pipeline execution logic
 func (e *Engine) executePipeline(ctx context.Context, pipeline *model.Pipeline) {
 	ctx = context.Background()
+	// Inject UserID and SessionID so video tool can create AFK tasks
+	if pipeline.UserID != "" {
+		ctx = context.WithValue(ctx, contextkeys.UserID, pipeline.UserID)
+	}
+	if pipeline.SessionID != nil && *pipeline.SessionID != "" {
+		ctx = context.WithValue(ctx, contextkeys.SessionID, *pipeline.SessionID)
+	}
 	log.Info().
 		Uint("pipeline_id", pipeline.ID).
 		Str("name", pipeline.Name).

@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.17.0-rc2] - 2026-03-08
+
+### Fixed
+
+- **视频工作流 context 注入**：pipeline 执行时注入 `UserID` 与 `SessionID` 到 context，修复视频生成工具无法创建 AFK 异步任务的问题（`user_id and session_id not provided`）
+- **工作流失败详情展示**：Chat 工作流面板在步骤或整体失败时展示 `step.error` / `pipeline.error`，便于排查「Generate scene videos」等失败原因
+
+### Added
+
+- **排查脚本**：`make debug-pipeline SESSION_ID=xxx` 可快速拉取当前会话的 pipeline 错误详情（需 jq）
+
 ## [1.17.0-rc1] - 2026-03-07
 
 ### Added

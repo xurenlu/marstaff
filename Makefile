@@ -89,6 +89,13 @@ onboard: build-onboard
 	./$(BINARY_DIR)/onboard
 
 # Update skills from openclaw-master-skills (https://github.com/LeoYeAI/openclaw-master-skills)
+# Debug failed video workflow: make debug-pipeline SESSION_ID=your-session-id
+debug-pipeline:
+	@if [ -z "$(SESSION_ID)" ]; then echo "Usage: make debug-pipeline SESSION_ID=<session_id from chat>"; exit 1; fi; \
+	port=$${API_PORT:-15678}; \
+	echo "Fetching pipelines for session $(SESSION_ID) from localhost:$$port..."; \
+	curl -s "http://localhost:$$port/api/pipelines?session_id=$(SESSION_ID)" | jq '.pipelines[] | {id, name, status, error, steps: [.steps[]? | {step_key, name, status, error}]}' 2>/dev/null || curl -s "http://localhost:$$port/api/pipelines?session_id=$(SESSION_ID)"
+
 skills-update:
 	@echo "Updating skills from openclaw-master-skills..."
 	@if [ ! -d /tmp/openclaw-master-skills ]; then \
@@ -119,3 +126,4 @@ help:
 	@echo "  migrate-single-user - Migrate sessions to default user"
 	@echo "  migrate-down      - Run database migrations down"
 	@echo "  skills-update     - Update skills from openclaw-master-skills repo"
+	@echo "  debug-pipeline    - Fetch failed pipeline errors (SESSION_ID=xxx API_PORT=15678)"
