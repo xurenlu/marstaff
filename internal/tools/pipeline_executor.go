@@ -85,19 +85,23 @@ func (e *PipelineExecutor) RegisterBuiltInTools(engine *agent.Engine) {
 		"required": []string{"pipeline_id"},
 	}, e.getPipelineStatus)
 
-	engine.RegisterTool("pipeline_list", "列出用户的所有工作流。", map[string]interface{}{
+	engine.RegisterTool("pipeline_list", "列出工作流。可传 session_id 查当前会话的工作流，或 user_id 查用户全部工作流。", map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
 			"user_id": map[string]interface{}{
 				"type":        "string",
-				"description": "用户ID",
+				"description": "用户ID（与 session_id 二选一）",
+			},
+			"session_id": map[string]interface{}{
+				"type":        "string",
+				"description": "会话ID（与 user_id 二选一，查当前会话的工作流）",
 			},
 			"limit": map[string]interface{}{
 				"type":        "integer",
 				"description": "返回数量限制（默认10）",
 			},
 		},
-		"required": []string{"user_id"},
+		"required": []string{},
 	}, e.listPipelines)
 
 	engine.RegisterTool("pipeline_cancel", "取消一个正在运行或等待中的工作流。", map[string]interface{}{
@@ -482,14 +486,31 @@ func (e *PipelineExecutor) getPipelineStatus(ctx context.Context, params map[str
 	return string(resultJSON), nil
 }
 
-// listPipelines lists pipelines for a user
+// listPipelines lists pipelines for a user or session
 func (e *PipelineExecutor) listPipelines(ctx context.Context, params map[string]interface{}) (string, error) {
+	sessionID, _ := params["session_id"].(string)
 	userID, _ := params["user_id"].(string)
 	limit, _ := getInt(params, "limit", false, 10)
 
-	pipelines, err := e.pipelineRepo.GetByUserID(ctx, userID, limit)
+	var pipelines []*model.Pipeline
+	var err error
+	if sessionID != "" {
+		pipelines, err = e.pipelineRepo.GetBySessionID(ctx, sessionID)
+	} else {
+		if userID == "" {
+			if ctxUserID, ok := ctx.Value(contextkeys.UserID).(string); ok && ctxUserID != "" {
+				userID = ctxUserID
+			} else {
+				userID = "default"
+			}
+		}
+		pipelines, err = e.pipelineRepo.GetByUserID(ctx, userID, limit)
+	}
 	if err != nil {
 		return "", fmt.Errorf("failed to list pipelines: %w", err)
+	}
+	if limit > 0 && len(pipelines) > limit {
+		pipelines = pipelines[:limit]
 	}
 
 	result := map[string]interface{}{

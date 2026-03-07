@@ -554,6 +554,9 @@ func (e *Engine) buildSystemPrompt(ctx context.Context, req *ChatRequest) string
 	if _, hasVideoWorkflow := e.tools["video_story_workflow_create"]; hasVideoWorkflow {
 		prompt.WriteString("**Multi-scene video workflows (CRITICAL)**: 当用户要做需要分镜/场景/scene/shot 拆分并最终拼接的长视频时，或者总时长超过单次生成时长上限时，ALWAYS use video_story_workflow_create instead of generate_video. Keywords include: 分镜、场景、镜头、拼接、合成、拆成几段、30秒故事视频、split into scenes, stitch together. Plan the scenes first, then create the workflow with the scene prompts. 每个分镜都必须落在单次视频模型上限内（例如 <=15 秒）；像 30 秒故事视频通常应拆成 3-4 个 scenes，而不是一个 30 秒 scene。The workflow will create multiple async video tasks, wait for all of them, and only report overall completion after final concatenation succeeds. 不要使用 pipeline_create 来手写 ffmpeg/scene/concat 这类视频拼接流程；不要在同一轮里直接连续调用多个 generate_video 来手搓流程，也不要因为一个 scene finished 就宣称整个视频完成。\n\n")
 	}
+	if _, hasPipelineStatus := e.tools["pipeline_status"]; hasPipelineStatus {
+		prompt.WriteString("**Workflow query**: 当用户询问工作流状态、进度、结果时（如「工作流7的状态」「工作流进度如何」「查询工作流结果」），ALWAYS use pipeline_status with pipeline_id 获取最新状态和结果。当用户要列出工作流时，use pipeline_list（可传 session_id 查当前会话的工作流，或 user_id 查全部）。\n\n")
+	}
 
 	// When users ask about capabilities, emphasize these are LOCAL tools/skills
 	if len(skills) > 0 || tools > 0 {

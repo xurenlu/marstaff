@@ -141,6 +141,20 @@
             color: var(--text-primary);
         }
 
+        .mode-toggle-link {
+            padding: 0.35rem 0.85rem;
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.8rem;
+            font-weight: 500;
+            border-radius: 5px;
+            display: inline-flex;
+            align-items: center;
+        }
+        .mode-toggle-link:hover {
+            color: var(--text-primary);
+        }
+
         /* Icon button - Apple style */
         .icon-btn {
             width: 34px;
@@ -1132,6 +1146,16 @@
         .mode-toggle button:hover:not(.active) {
             color: var(--text-primary);
         }
+        .mode-toggle-link {
+            padding: 0.4rem 0.8rem;
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.85rem;
+            border-radius: 6px;
+        }
+        .mode-toggle-link:hover {
+            color: var(--text-primary);
+        }
         .workspace-bar {
             display: none;
             align-items: center;
@@ -1220,6 +1244,7 @@
                 <button type="button" id="modeChat" class="active" data-mode="chat">Chat</button>
                 <button type="button" id="modeProgramming" data-mode="programming">Programming</button>
                 <button type="button" id="modeAfk" data-mode="afk">AFK</button>
+                <a href="/workflows" class="mode-toggle-link" title="查看工作流">工作流</a>
             </div>
 
             <div class="header-divider"></div>

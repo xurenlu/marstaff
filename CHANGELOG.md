@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.17.0-rc1] - 2026-03-07
+
+### Added
+
+- **工作流专属页面**：新增 `/workflows` 页面，可查看所有视频工作流列表、状态、步骤进度与最终视频结果，支持按用户筛选与刷新
+- **工作流查询能力**：系统提示增强，当用户询问「工作流 X 的状态」「工作流进度」时，Agent 会调用 `pipeline_status` 查询；`pipeline_list` 支持 `session_id` 参数，可列出当前会话的工作流
+
+### Changed
+
+- **导航入口**：Chat 与 AFK 页面增加「工作流」入口，便于从任意页面跳转至工作流列表
+
 ## [1.16.0-rc3] - 2026-03-07
 
 ### Fixed

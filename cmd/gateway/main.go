@@ -42,7 +42,7 @@ import (
 var (
 	configFile     string
 	enableTelegram bool
-	Version        = "1.16.0-rc3"
+	Version        = "1.17.0-rc1"
 	GitCommit      = "dev" // 编译时通过 ldflags 注入，如未注入则显示 dev
 )
 
@@ -1177,6 +1177,9 @@ func run(cmd *cobra.Command, args []string) {
 	})
 	router.GET("/afk", func(c *gin.Context) {
 		c.File("./web/templates/afk.html")
+	})
+	router.GET("/workflows", func(c *gin.Context) {
+		c.File("./web/templates/workflows.html")
 	})
 	router.GET("/afk-settings", func(c *gin.Context) {
 		c.File("./web/templates/afk-settings.html")

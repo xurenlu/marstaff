@@ -75,6 +75,37 @@ func TestCreateVideoStoryWorkflowUsesContextDefaultsAndCreatesPipeline(t *testin
 	require.Contains(t, []model.PipelineStatus{model.PipelineStatusRunning, model.PipelineStatusCompleted}, createdPipeline.Status)
 }
 
+func TestListPipelinesBySessionID(t *testing.T) {
+	db := newPipelineExecutorTestDB(t)
+	pipelineRepo := repository.NewPipelineRepository(db)
+	engine := pipeline.NewEngine(pipelineRepo, pipelineExecutorTestTaskExecutor{}, nil)
+	executor := NewPipelineExecutor(engine, pipelineRepo)
+
+	sessionA := "session-a"
+	sessionB := "session-b"
+	require.NoError(t, pipelineRepo.Create(context.Background(), &model.Pipeline{
+		UserID: "default", SessionID: &sessionA, Name: "wf-a", Definition: model.PipelineDef{Steps: []model.PipelineStepDef{{Key: "s1", Type: "task", Order: 1}}},
+	}))
+	require.NoError(t, pipelineRepo.Create(context.Background(), &model.Pipeline{
+		UserID: "default", SessionID: &sessionB, Name: "wf-b", Definition: model.PipelineDef{Steps: []model.PipelineStepDef{{Key: "s2", Type: "task", Order: 1}}},
+	}))
+
+	ctx := context.WithValue(context.Background(), contextkeys.SessionID, "session-a")
+	result, err := executor.listPipelines(ctx, map[string]interface{}{"session_id": "session-a"})
+	require.NoError(t, err)
+	var payload map[string]interface{}
+	require.NoError(t, json.Unmarshal([]byte(result), &payload))
+	pipelines, _ := payload["pipelines"].([]interface{})
+	require.Len(t, pipelines, 1)
+	require.Equal(t, "wf-a", (pipelines[0].(map[string]interface{}))["name"])
+
+	result2, err := executor.listPipelines(ctx, map[string]interface{}{"user_id": "default", "limit": 10})
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal([]byte(result2), &payload))
+	pipelines2, _ := payload["pipelines"].([]interface{})
+	require.Len(t, pipelines2, 2)
+}
+
 func TestCreatePipelineRejectsVideoStoryboardWorkflows(t *testing.T) {
 	db := newPipelineExecutorTestDB(t)
 	pipelineRepo := repository.NewPipelineRepository(db)

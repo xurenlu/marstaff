@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>视频工作流 - Marstaff</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --bg-primary: #1a1a1a;
+            --bg-secondary: #2a2a2a;
+            --bg-tertiary: #3a3a3a;
+            --text-primary: #e0e0e0;
+            --text-secondary: #888;
+            --border-color: #3a3a3a;
+            --success-color: #4caf50;
+            --warning-color: #ff9800;
+            --error-color: #f44336;
+            --info-color: #2196f3;
+            --accent-color: #2196f3;
+            --accent-hover: #1976d2;
+        }
+        [data-theme="light"] {
+            --bg-primary: #f5f5f5;
+            --bg-secondary: #ffffff;
+            --bg-tertiary: #e8e8e8;
+            --text-primary: #1a1a1a;
+            --text-secondary: #666;
+            --border-color: #e0e0e0;
+            --accent-color: #2196f3;
+            --accent-hover: #1976d2;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            padding: 2rem;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+        }
+        .header h1 {
+            font-size: 1.8rem;
+        }
+        .nav-links {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+        }
+        .nav-links a {
+            color: var(--text-secondary);
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            transition: background 0.2s;
+        }
+        .nav-links a:hover {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+        }
+        .btn {
+            padding: 0.6rem 1.2rem;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: opacity 0.2s, transform 0.1s;
+        }
+        .btn:active { transform: scale(0.98); }
+        .btn-primary {
+            background: var(--success-color);
+            color: white;
+        }
+        .btn-secondary {
+            background: var(--accent-color);
+            color: white;
+        }
+        .btn-secondary:hover {
+            background: var(--accent-hover);
+        }
+        .btn:hover { opacity: 0.9; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-sm { padding: 0.4rem 0.8rem; font-size: 0.85rem; }
+
+        .workflow-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 1.5rem;
+        }
+        .workflow-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 1.5rem;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .workflow-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        }
+        .workflow-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 1rem;
+        }
+        .workflow-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+        .workflow-status {
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            font-weight: 600;
+        }
+        .status-running { background: rgba(76, 175, 80, 0.2); color: var(--success-color); }
+        .status-completed { background: rgba(33, 150, 243, 0.2); color: var(--info-color); }
+        .status-pending { background: rgba(255, 152, 0, 0.2); color: var(--warning-color); }
+        .status-failed, .status-cancelled { background: rgba(244, 67, 54, 0.2); color: var(--error-color); }
+
+        .workflow-meta {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.5rem;
+        }
+        .workflow-steps {
+            font-size: 0.85rem;
+            margin: 0.75rem 0;
+        }
+        .workflow-step {
+            display: flex;
+            justify-content: space-between;
+            padding: 0.3rem 0;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .workflow-step:last-child { border-bottom: none; }
+        .workflow-result video {
+            max-width: 100%;
+            max-height: 200px;
+            border-radius: 8px;
+            margin-top: 0.5rem;
+        }
+        .workflow-result a {
+            color: var(--accent-color);
+            font-size: 0.9rem;
+        }
+        .workflow-actions {
+            display: flex;
+            gap: 0.5rem;
+            margin-top: 1rem;
+            flex-wrap: wrap;
+        }
+        .empty-state {
+            text-align: center;
+            padding: 4rem 2rem;
+            color: var(--text-secondary);
+        }
+        .empty-state h3 {
+            font-size: 1.2rem;
+            margin-bottom: 0.5rem;
+            color: var(--text-primary);
+        }
+        .empty-state p {
+            margin-bottom: 1.5rem;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.7);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal.active { display: flex; }
+        .modal-content {
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            padding: 2rem;
+            max-width: 600px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+        }
+        .modal-header h2 { font-size: 1.5rem; }
+        .close-btn {
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            color: var(--text-secondary);
+            cursor: pointer;
+        }
+        .form-group {
+            margin-bottom: 1.2rem;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-size: 0.9rem;
+            font-weight: 500;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎬 视频工作流</h1>
+            <div class="nav-links">
+                <a href="/chat">Chat</a>
+                <a href="/afk">AFK Tasks</a>
+                <a href="/settings">Settings</a>
+                <button class="btn btn-secondary" onclick="loadWorkflows(true)">🔄 刷新</button>
+            </div>
+        </div>
+
+        <div id="workflowList" class="workflow-grid">
+            <div class="empty-state">
+                <p>加载工作流中...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- View Workflow Modal -->
+    <div id="viewModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>工作流详情</h2>
+                <button class="close-btn" onclick="closeViewModal()">&times;</button>
+            </div>
+            <div id="viewModalContent"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = window.location.origin;
+        const DEFAULT_USER_ID = 'default';
+
+        // Load theme
+        const savedTheme = localStorage.getItem('marstaff_theme') || 'dark';
+        document.documentElement.setAttribute('data-theme', savedTheme);
+
+        document.addEventListener('DOMContentLoaded', () => loadWorkflows());
+
+        async function loadWorkflows(force = false) {
+            try {
+                const res = await fetch(`${API_BASE}/api/pipelines?user_id=${encodeURIComponent(DEFAULT_USER_ID)}`);
+                const data = await res.json();
+
+                if (data.pipelines && data.pipelines.length > 0) {
+                    renderWorkflows(data.pipelines);
+                } else {
+                    document.getElementById('workflowList').innerHTML = `
+                        <div class="empty-state">
+                            <h3>暂无工作流</h3>
+                            <p>在 Chat 中让 AI 创建视频工作流（如「生成30秒故事视频」），工作流会在此展示。</p>
+                            <a href="/chat" class="btn btn-primary">去 Chat 创建</a>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                console.error('Failed to load workflows:', error);
+                document.getElementById('workflowList').innerHTML = `
+                    <div class="empty-state">
+                        <p>加载失败，请刷新重试。</p>
+                        <button class="btn btn-secondary" onclick="loadWorkflows(true)">重试</button>
+                    </div>
+                `;
+            }
+        }
+
+        function renderWorkflows(pipelines) {
+            const html = pipelines.map(p => renderWorkflowCard(p)).join('');
+            document.getElementById('workflowList').innerHTML = html;
+        }
+
+        function renderWorkflowCard(pipeline) {
+            const status = pipeline.status || 'pending';
+            const statusClass = `status-${status}`;
+            const steps = Array.isArray(pipeline.steps) ? pipeline.steps : [];
+            const completedCount = steps.filter(s => s.status === 'completed').length;
+            const totalCount = steps.length;
+            const currentStep = steps.find(s => s.status === 'running');
+            const currentStage = currentStep ? (currentStep.name || currentStep.step_key || currentStep.stepKey || '') : (status === 'completed' ? '已完成' : '等待中');
+
+            const result = normalizeResult(pipeline.result);
+            const finalVideoUrl = result.public_url || result.result_url || extractFinalVideoUrl(result);
+
+            const stepsHtml = steps.slice(0, 5).map(step => `
+                <div class="workflow-step">
+                    <span>${escapeHtml(step.name || step.step_key || step.stepKey || '未命名')}</span>
+                    <span>${escapeHtml(step.status || 'pending')}</span>
+                </div>
+            `).join('');
+
+            const resultHtml = finalVideoUrl ? `
+                <div class="workflow-result">
+                    <video src="${escapeHtml(finalVideoUrl)}" controls></video>
+                    <div><a href="${escapeHtml(finalVideoUrl)}" target="_blank" rel="noopener">查看或下载视频</a></div>
+                </div>
+            ` : '';
+
+            return `
+                <div class="workflow-card">
+                    <div class="workflow-header">
+                        <div class="workflow-title">${escapeHtml(pipeline.name || '视频工作流')} #${pipeline.id}</div>
+                        <span class="workflow-status ${statusClass}">${status}</span>
+                    </div>
+                    <div class="workflow-meta">阶段：${escapeHtml(currentStage)} · 进度：${completedCount}/${totalCount}</div>
+                    <div class="workflow-steps">${stepsHtml}</div>
+                    ${resultHtml}
+                    <div class="workflow-actions">
+                        <button class="btn btn-secondary btn-sm" onclick="viewWorkflow(${pipeline.id})">查看详情</button>
+                        ${pipeline.session_id ? `<a href="/chat?session_id=${encodeURIComponent(pipeline.session_id)}" class="btn btn-primary btn-sm" style="text-decoration:none">进入聊天</a>` : ''}
+                    </div>
+                </div>
+            `;
+        }
+
+        function normalizeResult(value) {
+            if (!value) return {};
+            if (typeof value === 'string') {
+                try { return JSON.parse(value); } catch (_) { return {}; }
+            }
+            return value;
+        }
+
+        function extractFinalVideoUrl(result) {
+            if (!result || typeof result !== 'object') return '';
+            const concatStep = result.concat_scenes;
+            if (concatStep && typeof concatStep === 'object') {
+                return concatStep.public_url || concatStep.result_url || '';
+            }
+            return '';
+        }
+
+        async function viewWorkflow(id) {
+            try {
+                const res = await fetch(`${API_BASE}/api/pipelines/${id}`);
+                const pipeline = await res.json();
+
+                const steps = Array.isArray(pipeline.steps) ? pipeline.steps : [];
+                const stepsHtml = steps.map(s => `
+                    <div class="form-group">
+                        <label>${escapeHtml(s.name || s.step_key || s.stepKey || '步骤')}</label>
+                        <div style="padding:0.5rem;background:var(--bg-tertiary);border-radius:8px;">
+                            状态: ${escapeHtml(s.status || 'pending')}
+                            ${s.error ? `<br><span style="color:var(--error-color)">${escapeHtml(s.error)}</span>` : ''}
+                        </div>
+                    </div>
+                `).join('');
+
+                const result = normalizeResult(pipeline.result);
+                const finalUrl = result.public_url || result.result_url || extractFinalVideoUrl(result);
+
+                let content = `
+                    <div class="form-group">
+                        <label>工作流 ID</label>
+                        <div>${pipeline.id}</div>
+                    </div>
+                    <div class="form-group">
+                        <label>名称</label>
+                        <div>${escapeHtml(pipeline.name || '-')}</div>
+                    </div>
+                    <div class="form-group">
+                        <label>状态</label>
+                        <span class="workflow-status status-${pipeline.status || 'pending'}">${pipeline.status || 'pending'}</span>
+                    </div>
+                    ${pipeline.error ? `<div class="form-group"><label>错误</label><div style="color:var(--error-color)">${escapeHtml(pipeline.error)}</div></div>` : ''}
+                    <div class="form-group">
+                        <label>步骤</label>
+                        ${stepsHtml}
+                    </div>
+                `;
+
+                if (finalUrl) {
+                    content += `
+                        <div class="form-group">
+                            <label>最终视频</label>
+                            <video src="${escapeHtml(finalUrl)}" controls style="max-width:100%;max-height:240px;border-radius:8px;"></video>
+                            <div><a href="${escapeHtml(finalUrl)}" target="_blank" rel="noopener">打开链接</a></div>
+                        </div>
+                    `;
+                }
+
+                content += `
+                    <div style="display:flex;gap:1rem;margin-top:1.5rem;">
+                        <button type="button" class="btn btn-secondary" onclick="closeViewModal()">关闭</button>
+                        ${pipeline.session_id ? `<a href="/chat?session_id=${encodeURIComponent(pipeline.session_id)}" class="btn btn-primary" style="text-decoration:none">进入聊天</a>` : ''}
+                    </div>
+                `;
+
+                document.getElementById('viewModalContent').innerHTML = content;
+                document.getElementById('viewModal').classList.add('active');
+            } catch (error) {
+                alert('加载失败: ' + error.message);
+            }
+        }
+
+        function closeViewModal() {
+            document.getElementById('viewModal').classList.remove('active');
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') closeViewModal();
+        });
+        document.getElementById('viewModal').addEventListener('click', (e) => {
+            if (e.target === document.getElementById('viewModal')) closeViewModal();
+        });
+    </script>
+</body>
+</html>
