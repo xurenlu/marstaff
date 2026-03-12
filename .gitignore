@@ -52,3 +52,6 @@ public/documents/
 
 # Claude Code settings
 .claude/settings.local.json
+
+# Local git worktrees
+.worktrees/

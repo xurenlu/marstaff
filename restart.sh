@@ -45,12 +45,9 @@ echo ""
 
 # Set environment variables
 echo -e "${YELLOW}[2/2] Setting environment variables...${NC}"
-# Source .env if exists (for FIRECRAWL_API_KEY etc., add FIRECRAWL_API_KEY=fc-xxx to .env for firecrawl tasks)
+# Source .env if exists (required for API keys)
+# .env should contain: ALIYUN_ACCESS_KEY_ID, ALIYUN_ACCESS_KEY_SECRET, ZHIPU_API_KEY, QWEN_API_KEY, FIRECRAWL_API_KEY
 [ -f .env ] && set -a && source .env && set +a
-export ALIYUN_ACCESS_KEY_ID="YOUR_ALIYUN_ACCESS_KEY_ID"
-export ALIYUN_ACCESS_KEY_SECRET="YOUR_ALIYUN_ACCESS_KEY_SECRET"
-export ZHIPU_API_KEY="YOUR_ZHIPU_API_KEY"
-export QWEN_API_KEY="YOUR_QWEN_API_KEY"
 echo -e "  ${GREEN}Environment variables set${NC}"
 echo ""
 
