@@ -1,9 +1,10 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Welcome - Marstaff</title>
+    <title data-i18n="welcome.title">Marstaff</title>
+    <script src="/static/js/marstaff-i18n.js"></script>
     <style>
         * {
             margin: 0;
@@ -256,54 +257,54 @@
 <body>
     <div class="container">
         <div class="logo">
-            <h1>Marstaff</h1>
-            <p class="headline" id="headline">你的 AI 助手，真正听你指挥</p>
+            <h1 data-i18n="welcome.title">Marstaff</h1>
+            <p class="headline" id="headline" data-i18n="welcome.headline">你的 AI 助手，真正听你指挥</p>
         </div>
-        <p class="tagline">选择模式开始使用 / Choose your mode</p>
+        <p class="tagline" data-i18n="welcome.tagline">选择模式开始使用</p>
 
         <div class="mode-cards">
             <!-- AFK Mode Card -->
             <div class="mode-card afk" onclick="selectMode('afk')">
                 <div class="mode-icon">⏰</div>
-                <h2>挂机 App</h2>
-                <p>Manage and monitor AFK/idle agents running background tasks.</p>
+                <h2 data-i18n="welcome.cardAfkTitle">挂机 App</h2>
+                <p data-i18n="welcome.cardAfkDesc">Manage and monitor AFK/idle agents running background tasks.</p>
                 <ul class="feature-list">
-                    <li>查看挂机任务</li>
-                    <li>监控运行状态</li>
-                    <li>任务管理</li>
-                    <li>定时任务</li>
+                    <li data-i18n="welcome.feature.afk.1">查看挂机任务</li>
+                    <li data-i18n="welcome.feature.afk.2">监控运行状态</li>
+                    <li data-i18n="welcome.feature.afk.3">任务管理</li>
+                    <li data-i18n="welcome.feature.afk.4">定时任务</li>
                 </ul>
             </div>
 
             <!-- Chat Mode Card -->
             <div class="mode-card chat" onclick="selectMode('chat')">
                 <div class="mode-icon">💬</div>
-                <h2>聊天模式</h2>
-                <p>Casual conversations and quick questions. Perfect for general queries.</p>
+                <h2 data-i18n="welcome.cardChatTitle">聊天模式</h2>
+                <p data-i18n="welcome.cardChatDesc">Casual conversations and quick questions.</p>
                 <ul class="feature-list">
-                    <li>自由对话</li>
-                    <li>快速问答</li>
-                    <li>不需要项目</li>
-                    <li>上下文感知</li>
+                    <li data-i18n="welcome.feature.chat.1">自由对话</li>
+                    <li data-i18n="welcome.feature.chat.2">快速问答</li>
+                    <li data-i18n="welcome.feature.chat.3">不需要项目</li>
+                    <li data-i18n="welcome.feature.chat.4">上下文感知</li>
                 </ul>
             </div>
 
             <!-- Programming Mode Card -->
             <div class="mode-card programming" onclick="selectMode('programming')">
                 <div class="mode-icon">⚡</div>
-                <h2>编程模式</h2>
-                <p>Project-focused development with file operations and code editing.</p>
+                <h2 data-i18n="welcome.cardProgTitle">编程模式</h2>
+                <p data-i18n="welcome.cardProgDesc">Project-focused development with file operations and code editing.</p>
                 <ul class="feature-list">
-                    <li>项目管理</li>
-                    <li>文件读写</li>
-                    <li>代码调试</li>
-                    <li>技术任务</li>
+                    <li data-i18n="welcome.feature.prog.1">项目管理</li>
+                    <li data-i18n="welcome.feature.prog.2">文件读写</li>
+                    <li data-i18n="welcome.feature.prog.3">代码调试</li>
+                    <li data-i18n="welcome.feature.prog.4">技术任务</li>
                 </ul>
             </div>
         </div>
 
         <footer class="footer">
-            <a href="/settings">设置 / Settings</a>
+            <a href="/settings" data-i18n="welcome.footerSettings">设置</a>
         </footer>
     </div>
 

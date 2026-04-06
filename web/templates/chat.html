@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Marstaff - AI Assistant</title>
+    <title data-i18n="app.pageTitle">Marstaff - AI Assistant</title>
     <!-- Markdown parsing (local vendor) -->
     <script src="/static/vendor/marked.min.js"></script>
     <!-- KaTeX for math formulas (local vendor) -->
@@ -1236,38 +1236,39 @@
             opacity: 0.9;
         }
     </style>
+    <script src="/static/js/marstaff-i18n.js"></script>
 </head>
 <body>
     <div class="header">
-        <h1 id="pageTitle">Marstaff AI Assistant</h1>
+        <h1 id="pageTitle" data-i18n="chat.headerDefault">Marstaff AI Assistant</h1>
         <div class="header-right">
             <!-- Project Selector (only visible in programming mode) -->
             <div class="project-selector" id="projectSelector" style="display: none;">
                 <select id="projectSelect">
-                    <option value="">Select Project...</option>
+                    <option value="" data-i18n="chat.selectProject">Select Project...</option>
                 </select>
-                <button id="createProjectBtn">+ New</button>
+                <button id="createProjectBtn" data-i18n="chat.newProjectBtn">+ New</button>
             </div>
 
             <!-- Mode Toggle: Chat / Programming / AFK -->
             <div class="mode-toggle" id="modeToggle">
-                <button type="button" id="modeChat" class="active" data-mode="chat">Chat</button>
-                <button type="button" id="modeProgramming" data-mode="programming">Programming</button>
-                <button type="button" id="modeAfk" data-mode="afk">AFK</button>
-                <a href="/workflows" class="mode-toggle-link" title="查看工作流">工作流</a>
+                <button type="button" id="modeChat" class="active" data-mode="chat" data-i18n="chat.modeChat">Chat</button>
+                <button type="button" id="modeProgramming" data-mode="programming" data-i18n="chat.modeProgramming">Programming</button>
+                <button type="button" id="modeAfk" data-mode="afk" data-i18n="chat.modeAfk">AFK</button>
+                <a href="/workflows" class="mode-toggle-link" data-i18n-title="chat.workflowsLink" data-i18n="chat.workflowsLink">工作流</a>
             </div>
 
             <div class="header-divider"></div>
 
             <!-- Action Buttons -->
-            <button class="icon-btn labeled" id="tokenStatsBtn" title="Token使用统计">
+            <button class="icon-btn labeled" id="tokenStatsBtn" data-i18n-title="chat.tokenStatsTitle">
                 <span>📊</span>
-                <span class="btn-label">Token</span>
+                <span class="btn-label" data-i18n="chat.tokenStats">Token</span>
             </button>
-            <a href="/settings" class="icon-btn" title="设置" style="text-decoration: none;">
+            <a href="/settings" class="icon-btn" data-i18n-title="chat.settings" style="text-decoration: none;">
                 ⚙️
             </a>
-            <button class="icon-btn" id="themeToggle" title="切换主题">
+            <button class="icon-btn" id="themeToggle" data-i18n-title="chat.toggleTheme">
                 <span id="themeIcon">🌙</span>
             </button>
 
@@ -1276,7 +1277,7 @@
             <!-- Status -->
             <div class="status">
                 <div class="status-dot connecting" id="statusDot"></div>
-                <span id="statusText">Connecting...</span>
+                <span id="statusText" data-i18n="chat.statusConnecting">Connecting...</span>
             </div>
         </div>
     </div>
@@ -1284,28 +1285,28 @@
     <div class="main">
         <div class="sidebar" id="sidebar">
             <div class="sidebar-header">
-                <button class="new-chat-btn" id="newChatBtn">+ New Chat</button>
-                <button class="sidebar-collapse-btn" id="sidebarCollapseBtn" title="Collapse sidebar">«</button>
+                <button class="new-chat-btn" id="newChatBtn" data-i18n="chat.newChat">+ New Chat</button>
+                <button class="sidebar-collapse-btn" id="sidebarCollapseBtn" data-i18n-title="chat.collapseSidebar">«</button>
             </div>
             <div class="sessions" id="sessions">
-                <div class="loading-sessions">Loading sessions...</div>
+                <div class="loading-sessions" data-i18n="chat.loadingSessions">Loading sessions...</div>
             </div>
         </div>
-        <button class="sidebar-toggle" id="sidebarToggle" title="Expand sidebar">»</button>
+        <button class="sidebar-toggle" id="sidebarToggle" data-i18n-title="chat.expandSidebar">»</button>
 
         <div class="chat">
             <div class="workspace-bar" id="workspaceBar">
-                <input type="text" id="workspacePathInput" placeholder="Enter directory path...">
-                <button type="button" id="openWorkspaceBtn">Open</button>
-                <input type="text" id="newProjectInput" placeholder="New project name">
-                <button type="button" id="newProjectBtn">New Project</button>
+                <input type="text" id="workspacePathInput" data-i18n-placeholder="chat.workspacePlaceholder" placeholder="Enter directory path...">
+                <button type="button" id="openWorkspaceBtn" data-i18n="chat.open">Open</button>
+                <input type="text" id="newProjectInput" data-i18n-placeholder="chat.newProjectPlaceholder" placeholder="New project name">
+                <button type="button" id="newProjectBtn" data-i18n="chat.newProject">New Project</button>
                 <span class="workspace-path" id="currentWorkspacePath" title=""></span>
-                <button type="button" id="clearWorkspaceBtn">Clear</button>
+                <button type="button" id="clearWorkspaceBtn" data-i18n="chat.clear">Clear</button>
             </div>
             <div class="workflow-panel hidden" id="workflowPanel">
                 <div class="workflow-panel-header">
-                    <div class="workflow-panel-title">视频工作流</div>
-                    <button class="copy-message-btn" id="workflowRefreshBtn" title="刷新工作流">🔄</button>
+                    <div class="workflow-panel-title" data-i18n="chat.workflowPanelTitle">视频工作流</div>
+                    <button class="copy-message-btn" id="workflowRefreshBtn" data-i18n-title="chat.refreshWorkflows">🔄</button>
                 </div>
                 <div class="workflow-list" id="workflowList"></div>
             </div>
@@ -1313,7 +1314,7 @@
                 <div class="message assistant">
                     <div class="message-avatar">🤖</div>
                     <div class="message-wrapper">
-                        <div class="message-content">
+                        <div class="message-content" data-i18n="chat.welcomeMessage">
                             Hello! I'm Marstaff, your AI assistant. How can I help you today?
                         </div>
                     </div>
@@ -1322,16 +1323,16 @@
             <div class="typing" id="typing"></div>
             <div class="input-area">
                 <div class="plan-agent-toggle" id="planAgentToggle">
-                    <label>Mode:</label>
+                    <label data-i18n="chat.planModeLabel">Mode:</label>
                     <div class="mode-toggle" style="padding:0;border:none;background:transparent">
-                        <button type="button" id="planAgentAgent" class="active" data-plan="false">Agent</button>
-                        <button type="button" id="planAgentPlan" data-plan="true">Plan</button>
+                        <button type="button" id="planAgentAgent" class="active" data-plan="false" data-i18n="chat.planAgent">Agent</button>
+                        <button type="button" id="planAgentPlan" data-plan="true" data-i18n="chat.planPlan">Plan</button>
                     </div>
                 </div>
                 <div class="image-preview" id="imagePreview"></div>
                 <div class="input-wrapper">
                     <input type="file" id="imageInput" accept="image/*" style="display:none">
-                    <button class="attach-btn" id="attachBtn" title="Attach screenshot">📷</button>
+                    <button class="attach-btn" id="attachBtn" data-i18n-title="chat.attachScreenshot">📷</button>
                     <textarea class="input-box" id="inputBox" placeholder="Type your message... (Ctrl+V to paste screenshot)" rows="1"></textarea>
                     <button class="send-btn" id="sendBtn" disabled>Send</button>
                 </div>
@@ -1573,7 +1574,7 @@
                 projectSelector.style.display = 'flex';
                 bar.classList.add('visible');
                 planToggle.classList.add('visible');
-                pageTitle.textContent = 'Marstaff - Programming Mode';
+                pageTitle.textContent = (window.MarstaffI18n && window.MarstaffI18n.t('chat.titleProgramming')) || 'Marstaff - Programming Mode';
                 document.getElementById('currentWorkspacePath').textContent = workspacePath || '(no workspace)';
                 // Load projects if not already loaded
                 if (projectsList.length === 0) {
@@ -1592,13 +1593,13 @@
                 projectSelector.style.display = 'none';
                 bar.classList.remove('visible');
                 planToggle.classList.remove('visible');
-                pageTitle.textContent = 'Marstaff - AFK Mode';
+                pageTitle.textContent = (window.MarstaffI18n && window.MarstaffI18n.t('chat.titleAfk')) || 'Marstaff - AFK Mode';
             } else {
                 // Chat mode
                 projectSelector.style.display = 'none';
                 bar.classList.remove('visible');
                 planToggle.classList.remove('visible');
-                pageTitle.textContent = 'Marstaff - Chat Mode';
+                pageTitle.textContent = (window.MarstaffI18n && window.MarstaffI18n.t('chat.titleChat')) || 'Marstaff - Chat Mode';
             }
         }
 
@@ -1942,12 +1943,11 @@
                         <div class="message assistant">
                             <div class="message-avatar">🤖</div>
                             <div class="message-wrapper">
-                                <div class="message-content">
-                                    Hello! I'm Marstaff, your AI assistant. How can I help you today?
-                                </div>
+                                <div class="message-content" data-i18n="chat.welcomeMessage"></div>
                             </div>
                         </div>
                     `;
+                    if (window.MarstaffI18n) window.MarstaffI18n.apply();
                 }
 
                 await loadWorkflowPanel();
@@ -2114,12 +2114,11 @@
                         <div class="message assistant">
                             <div class="message-avatar">🤖</div>
                             <div class="message-wrapper">
-                                <div class="message-content">
-                                    Hello! I'm Marstaff, your AI assistant. How can I help you today?
-                                </div>
+                                <div class="message-content" data-i18n="chat.welcomeMessage"></div>
                             </div>
                         </div>
                     `;
+                    if (window.MarstaffI18n) window.MarstaffI18n.apply();
                 }
 
                 renderSessions();
@@ -3137,12 +3136,11 @@
                 <div class="message assistant">
                     <div class="message-avatar">🤖</div>
                     <div class="message-wrapper">
-                        <div class="message-content">
-                            Hello! I'm Marstaff, your AI assistant. How can I help you today?
-                        </div>
+                        <div class="message-content" data-i18n="chat.welcomeMessage"></div>
                     </div>
                 </div>
             `;
+            if (window.MarstaffI18n) window.MarstaffI18n.apply();
         });
 
         // Make deleteSession global

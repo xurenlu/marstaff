@@ -29,15 +29,7 @@ func TestBrowserConnectAndNavigate(t *testing.T) {
 		t.Log("✓ Browser connected successfully")
 	})
 
-	// 测试导航到 about:blank (最简单的测试)
-	t.Run("Navigate to about:blank", func(t *testing.T) {
-		if err := device.Navigate(ctx, "about:blank"); err != nil {
-			t.Fatalf("Failed to navigate to about:blank: %v", err)
-		}
-		t.Log("✓ Navigated to about:blank")
-	})
-
-	// 测试导航到 example.com (测试网站，稳定可靠)
+	// 使用 example.com 作为冒烟导航（部分 Chromium 版本会拒绝 about:blank）
 	t.Run("Navigate to example.com", func(t *testing.T) {
 		if err := device.Navigate(ctx, "https://example.com"); err != nil {
 			t.Fatalf("Failed to navigate to example.com: %v", err)

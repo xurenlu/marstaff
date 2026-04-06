@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.18.0-rc1] - 2026-04-06
+
+### Added
+
+- **AFK 调度器测试**：`shouldExecuteHeartbeatTask`、`shouldPollAsyncTask`、`calculateNextExecution`、`Stop` 幂等等单元测试
+- **Pipeline 引擎测试**：`CreatePipeline` 落库步骤、`Execute` 在 running 时拒绝重复启动、简单 delay 管线跑通
+- **Web i18n**：`web/static/locales/en.json`、`zh.json` 与 `marstaff-i18n.js`（`data-i18n` / `localStorage marstaff_locale`），欢迎页与聊天页主要文案可切换中/英
+- **Windows 桌面工具**：Windows 构建默认注册 `device_windows_*`（robotgo）；本地截图改为解码 PNG 为 RGBA 并上传
+
+### Fixed
+
+- **AFK Scheduler**：`Stop()` 可重复调用，避免二次 `close` 导致 panic
+- **浏览器集成测试**：移除对 `about:blank` 的依赖（新版 Chromium CDP 可能拒绝该 URL），改为以 `https://example.com` 作为冒烟导航
+
 ## [1.17.0-rc2] - 2026-03-08
 
 ### Fixed

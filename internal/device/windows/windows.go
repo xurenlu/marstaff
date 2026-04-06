@@ -7,6 +7,9 @@ import (
 	"context"
 	"fmt"
 	"image"
+	"image/draw"
+	"image/png"
+	"os"
 	"time"
 
 	"github.com/go-vgo/robotgo"
@@ -77,13 +80,24 @@ func (d *Device) Screenshot(ctx context.Context) (*image.RGBA, error) {
 	y := 0
 	w, h := robotgo.GetScreenSize()
 
-	// Capture screen to file
 	tmpFile := fmt.Sprintf("screenshot_%d.png", time.Now().UnixNano())
 	robotgo.SaveCapture(tmpFile, x, y, w, h)
+	defer os.Remove(tmpFile)
 
-	// TODO: Read file and convert to image.RGBA
-	// For now, return a placeholder
-	return nil, fmt.Errorf("screenshot to RGBA not yet implemented, saved to %s", tmpFile)
+	f, err := os.Open(tmpFile)
+	if err != nil {
+		return nil, fmt.Errorf("open capture file: %w", err)
+	}
+	defer f.Close()
+
+	img, err := png.Decode(f)
+	if err != nil {
+		return nil, fmt.Errorf("decode screenshot png: %w", err)
+	}
+	bounds := img.Bounds()
+	rgba := image.NewRGBA(bounds)
+	draw.Draw(rgba, bounds, img, bounds.Min, draw.Src)
+	return rgba, nil
 }
 
 // Tap clicks at the specified coordinates

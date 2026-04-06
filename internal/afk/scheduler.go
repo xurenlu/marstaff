@@ -2,6 +2,7 @@ package afk
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -19,6 +20,7 @@ type Scheduler struct {
 	ticker      *time.Ticker
 	running     bool
 	stopChan    chan struct{}
+	stopOnce    sync.Once
 }
 
 // NewScheduler creates a new AFK task scheduler
@@ -62,13 +64,15 @@ func (s *Scheduler) Start(interval time.Duration) {
 	}()
 }
 
-// Stop stops the scheduler
+// Stop stops the scheduler (idempotent — safe to call more than once)
 func (s *Scheduler) Stop() {
 	s.running = false
 	if s.ticker != nil {
 		s.ticker.Stop()
 	}
-	close(s.stopChan)
+	s.stopOnce.Do(func() {
+		close(s.stopChan)
+	})
 }
 
 // IsRunning returns whether the scheduler is running

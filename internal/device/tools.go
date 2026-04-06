@@ -75,15 +75,7 @@ func (e *ToolExecutor) uploadScreenshot(ctx context.Context, img *image.RGBA, so
 
 // RegisterBuiltInTools registers device control tools with the engine
 func (e *ToolExecutor) RegisterBuiltInTools() {
-	// Windows device tools (registered in tools_windows.go for Windows builds only)
-	// e.registerTool("device_windows_connect", "Connects to a Windows device for remote control", e.toolWindowsConnect)
-	// e.registerTool("device_windows_tap", "Taps on Windows screen at coordinates", e.toolWindowsTap)
-	// e.registerTool("device_windows_swipe", "Swipes on Windows screen", e.toolWindowsSwipe)
-	// e.registerTool("device_windows_input", "Inputs text on Windows", e.toolWindowsInput)
-	// e.registerTool("device_windows_key", "Presses a key on Windows", e.toolWindowsKey)
-	// e.registerTool("device_windows_launch", "Launches an app on Windows", e.toolWindowsLaunch)
-	// e.registerTool("device_windows_close", "Closes an app on Windows", e.toolWindowsClose)
-	// e.registerTool("device_windows_screenshot", "Takes a screenshot of Windows screen", e.toolWindowsScreenshot)
+	e.registerWindowsDeviceTools()
 
 	// Android device tools
 	e.registerTool("device_android_connect", "Connects to an Android device via ADB", e.toolAndroidConnect)

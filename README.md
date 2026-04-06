@@ -1,6 +1,6 @@
 # Marstaff
 
-[![Version](https://img.shields.io/badge/version-1.0.0--rc1-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.18.0--rc1-blue.svg)](CHANGELOG.md)
 
 Go 版 AI Agent 平台 —— 可扩展的智能助手框架，支持多模态对话、工具调用、设备控制与离场任务。
 
@@ -120,6 +120,10 @@ RESEND_API_KEY=xxx
 RESEND_FROM_EMAIL=xxx
 ```
 
+### Web 界面语言
+
+文案位于 `web/static/locales/en.json` 与 `zh.json`，由 `web/static/js/marstaff-i18n.js` 加载。浏览器可设置 `localStorage.setItem('marstaff_locale', 'zh')` 或 `'en'` 后刷新页面。
+
 ### 安全配置
 
 文件与命令工具通过 `configs/security.yaml` 控制路径白名单与命令白名单，详见该文件。
@@ -204,7 +208,7 @@ make lint
 
 ## 版本与变更
 
-- **当前版本**：`1.0.0-rc1`
+- **当前版本**：`1.18.0-rc1`
 - **变更记录**：[CHANGELOG.md](CHANGELOG.md)
 - **API 版本**：响应头 `X-Marstaff-Version`、`/api/health` 返回 `version` 字段
 
