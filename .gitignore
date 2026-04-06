@@ -1,7 +1,5 @@
-# Binaries
+# Binaries（Makefile 输出在 bin/；勿使用裸的 gateway/onboard，否则会误忽略 cmd/gateway 等目录）
 bin/
-gateway
-onboard
 *.exe
 *.exe~
 *.dll

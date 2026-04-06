@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.18.0-rc2] - 2026-04-06
+
+### Fixed
+
+- **`.gitignore`**：移除会误匹配 `cmd/gateway/` 等路径的裸 `gateway` / `onboard` 规则；仅通过 `bin/` 忽略构建产物
+
 ## [1.18.0-rc1] - 2026-04-06
 
 ### Added
