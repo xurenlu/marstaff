@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.20.0-rc1] - 2026-04-07
+
+### Added
+
+- **短剧侧车 SQLite**：[`shorts/_template/sql/schema_v1.sql`](shorts/_template/sql/schema_v1.sql)（v1 表结构、`PRAGMA user_version`）、[`shorts/_template/sql/README.md`](shorts/_template/sql/README.md) 初始化说明、[`shorts/_template/schema_version.txt`](shorts/_template/schema_version.txt)
+- **Skill**：[`skills/anime-short-drama/SKILL.md`](skills/anime-short-drama/SKILL.md) 扩展侧车库、Session.Metadata 约定、双写与 `asset` 写入
+- **文档**：[`shorts/README.md`](shorts/README.md) 补充侧车库与备份说明
+- **`.gitignore`**：忽略 `shorts/**/drama.sqlite` 及 SQLite WAL/journal
+
 ## [1.19.0-rc1] - 2026-04-07
 
 ### Added

@@ -13,6 +13,21 @@
 
 质检使用 [`qc-checklist.md`](qc-checklist.md)。
 
+## 侧车 SQLite 资源库（`drama.sqlite`）
+
+每剧可在同目录维护 **本地 SQLite**，索引人物、分镜行、生成视频 URL、Marstaff `pipeline_id` 等；**不替代** 服务端 MySQL 中的 Pipeline 记录，而是创作侧 **可查、可备份** 的侧车。
+
+| 文件 | 说明 |
+|------|------|
+| `shorts/<slug>/drama.sqlite` | 资源库（默认 **不提交 Git**，见仓库根 `.gitignore`） |
+| `shorts/<slug>/schema_version` | 文本文件，与库内 `PRAGMA user_version` 一致 |
+
+初始化：见 [`_template/sql/README.md`](_template/sql/README.md)，建表脚本为 [`_template/sql/schema_v1.sql`](_template/sql/schema_v1.sql)。
+
+**抗摘要**：请在会话 **Metadata** 中保存 `short_drama.db_relative_path`（相对仓库根），避免仅依赖对话摘要导致找不到库路径。约定见 [`skills/anime-short-drama/SKILL.md`](../skills/anime-short-drama/SKILL.md)。
+
+**备份**：复制 `drama.sqlite` 与 `schema_version` 即可；若需版本管理可另存为 `drama.20260407.sqlite`。
+
 ## 与 `video_story_workflow_create` 的映射
 
 分镜表经确认后，由 Agent 组装为工具参数（见 [`internal/tools/pipeline_executor.go`](../internal/tools/pipeline_executor.go) 中 schema）：
@@ -27,6 +42,8 @@
 **时长拆分**：若单镜叙事超过单次模型上限（常见 ≤15 秒），拆成多行 scene，用 **continuity** 句衔接；勿将 30 秒压成单个 scene。
 
 **工具选择**：多分镜长视频 **只使用** `video_story_workflow_create`；不要使用 `pipeline_create` 手写拼接流程。
+
+生成结果可同步写入 `drama.sqlite` 的 `asset` 表（URL + `pipeline_id` + `scene_key`），便于后续检索与多版本挑选。
 
 ## 相关 Skill
 

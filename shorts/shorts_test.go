@@ -3,6 +3,7 @@ package shorts
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -31,6 +32,9 @@ func TestTemplateFilesExist(t *testing.T) {
 		"shorts/_template/01_characters.md",
 		"shorts/_template/ep01_outline.md",
 		"shorts/_template/ep01_storyboard.md",
+		"shorts/_template/schema_version.txt",
+		"shorts/_template/sql/schema_v1.sql",
+		"shorts/_template/sql/README.md",
 		"shorts/qc-checklist.md",
 		"shorts/README.md",
 		"skills/anime-short-drama/SKILL.md",
@@ -40,4 +44,14 @@ func TestTemplateFilesExist(t *testing.T) {
 		_, err := os.Stat(path)
 		require.NoError(t, err, "expected file %s", path)
 	}
+}
+
+func TestSchemaV1SetsUserVersion(t *testing.T) {
+	root := findRepoRoot(t)
+	b, err := os.ReadFile(filepath.Join(root, "shorts/_template/sql/schema_v1.sql"))
+	require.NoError(t, err)
+	body := string(b)
+	require.Contains(t, body, "PRAGMA user_version = 1")
+	require.True(t, strings.Contains(body, "CREATE TABLE IF NOT EXISTS series"))
+	require.True(t, strings.Contains(body, "CREATE TABLE IF NOT EXISTS asset"))
 }

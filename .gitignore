@@ -53,3 +53,9 @@ public/documents/
 
 # Local git worktrees
 .worktrees/
+
+# 短剧侧车 SQLite（每剧本地库，勿提交）
+shorts/**/drama.sqlite
+shorts/**/*.sqlite-journal
+shorts/**/*.sqlite-wal
+shorts/**/*.sqlite-shm
