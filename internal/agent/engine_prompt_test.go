@@ -7,7 +7,10 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 
+	"github.com/rocky/marstaff/internal/model"
 	"github.com/rocky/marstaff/internal/provider"
 )
 
@@ -47,4 +50,57 @@ func TestBuildSystemPromptIncludesExplicitMultiSceneVideoWorkflowRouting(t *test
 	require.Contains(t, prompt, "3-4 个 scenes")
 	require.Contains(t, prompt, "不要使用 pipeline_create")
 	require.Contains(t, prompt, "不要在同一轮里直接连续调用多个 generate_video 来手搓流程")
+}
+
+func TestBuildSystemPromptInjectsShortDramaMetadata(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:prompt_meta_test?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&model.Session{}, &model.Message{}))
+
+	session := &model.Session{
+		ID:       "test-session-drama",
+		UserID:   "default",
+		Title:    "Drama Test",
+		Model:    "test",
+		Metadata: `{"short_drama":{"series_slug":"my_anime","db_relative_path":"shorts/my_anime/drama.sqlite","schema_user_version":1}}`,
+	}
+	require.NoError(t, db.Create(session).Error)
+
+	engine, err := NewEngine(&Config{Provider: promptTestProvider{}, DB: db})
+	require.NoError(t, err)
+
+	prompt := engine.buildSystemPrompt(context.Background(), &ChatRequest{
+		SessionID: "test-session-drama",
+		UserID:    "default",
+	})
+
+	require.Contains(t, prompt, "Short Drama Context")
+	require.Contains(t, prompt, "my_anime")
+	require.Contains(t, prompt, "shorts/my_anime/drama.sqlite")
+	require.Contains(t, prompt, "Schema version: 1")
+}
+
+func TestBuildSystemPromptNoMetadataNoInjection(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:prompt_nometa_test?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&model.Session{}, &model.Message{}))
+
+	session := &model.Session{
+		ID:       "test-session-plain",
+		UserID:   "default",
+		Title:    "Plain Test",
+		Model:    "test",
+		Metadata: "{}",
+	}
+	require.NoError(t, db.Create(session).Error)
+
+	engine, err := NewEngine(&Config{Provider: promptTestProvider{}, DB: db})
+	require.NoError(t, err)
+
+	prompt := engine.buildSystemPrompt(context.Background(), &ChatRequest{
+		SessionID: "test-session-plain",
+		UserID:    "default",
+	})
+
+	require.NotContains(t, prompt, "Short Drama Context")
 }

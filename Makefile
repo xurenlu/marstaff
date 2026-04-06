@@ -96,6 +96,10 @@ debug-pipeline:
 	echo "Fetching pipelines for session $(SESSION_ID) from localhost:$$port..."; \
 	curl -s "http://localhost:$$port/api/pipelines?session_id=$(SESSION_ID)" | jq '.pipelines[] | {id, name, status, error, steps: [.steps[]? | {step_key, name, status, error}]}' 2>/dev/null || curl -s "http://localhost:$$port/api/pipelines?session_id=$(SESSION_ID)"
 
+short-drama-init:
+	@if [ -z "$(SERIES)" ]; then echo "Usage: make short-drama-init SERIES=my_anime [TITLE='My Anime'] [STYLE='cel shading...']"; exit 1; fi
+	./scripts/init-short-drama-db.sh "$(SERIES)" "$(TITLE)" "$(STYLE)"
+
 skills-update:
 	@echo "Updating skills from openclaw-master-skills..."
 	@if [ ! -d /tmp/openclaw-master-skills ]; then \
@@ -126,4 +130,5 @@ help:
 	@echo "  migrate-single-user - Migrate sessions to default user"
 	@echo "  migrate-down      - Run database migrations down"
 	@echo "  skills-update     - Update skills from openclaw-master-skills repo"
+	@echo "  short-drama-init  - Init short drama project (SERIES=slug TITLE=... STYLE=...)"
 	@echo "  debug-pipeline    - Fetch failed pipeline errors (SESSION_ID=xxx API_PORT=15678)"

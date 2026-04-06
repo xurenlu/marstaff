@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.20.0-rc2] - 2026-04-07
+
+### Added
+
+- **一键建库**：`scripts/init-short-drama-db.sh` + `make short-drama-init SERIES=slug`，自动创建目录、复制模板、初始化 SQLite 并插入 series 行
+- **系统提示注入**：`engine.go` 检查 `Session.Metadata` 中 `short_drama` 字段，自动向系统提示注入 `db_path` 与 `series_slug`，摘要压缩后 Agent 仍可定位资源库
+- **Schema CRUD 测试**：`shorts/shorts_test.go` 新增 `TestSchemaV1ExecuteAndCRUD`——真正执行 schema_v1.sql、插入/查询全链路、外键级联删除、UNIQUE 与 CHECK 约束验证
+- **Metadata 注入测试**：`engine_prompt_test.go` 新增 `TestBuildSystemPromptInjectsShortDramaMetadata` 与 `TestBuildSystemPromptNoMetadataNoInjection`
+
 ## [1.20.0-rc1] - 2026-04-07
 
 ### Added

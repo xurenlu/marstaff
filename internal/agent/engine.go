@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -592,6 +593,28 @@ func (e *Engine) buildSystemPrompt(ctx context.Context, req *ChatRequest) string
 				prompt.WriteString(fmt.Sprintf("\n- [%s] %s (id: %s)", item.Status, item.Description, item.ID))
 			}
 			prompt.WriteString("\nUse todo_add, todo_update, todo_list, todo_complete tools to manage the list.")
+		}
+	}
+
+	// Inject short drama context from Session.Metadata (survives summary compression)
+	if req != nil && req.SessionID != "" && e.memory != nil && e.memory.sessionRepo != nil {
+		if session, err := e.memory.sessionRepo.GetByID(ctx, req.SessionID); err == nil && session != nil && session.Metadata != "" && session.Metadata != "{}" {
+			var meta map[string]interface{}
+			if json.Unmarshal([]byte(session.Metadata), &meta) == nil {
+				if sd, ok := meta["short_drama"].(map[string]interface{}); ok {
+					prompt.WriteString("\n\n**Short Drama Context (from Session.Metadata)**:")
+					if slug, ok := sd["series_slug"].(string); ok && slug != "" {
+						prompt.WriteString(fmt.Sprintf("\n- Series slug: %s", slug))
+					}
+					if dbPath, ok := sd["db_relative_path"].(string); ok && dbPath != "" {
+						prompt.WriteString(fmt.Sprintf("\n- SQLite sidecar DB: %s (use `read_file` or `run_command sqlite3` to query characters, scenes, assets)", dbPath))
+					}
+					if ver, ok := sd["schema_user_version"]; ok {
+						prompt.WriteString(fmt.Sprintf("\n- Schema version: %v", ver))
+					}
+					prompt.WriteString("\nWhen working on this short drama, always use the DB path above to look up/insert characters, scenes, and asset URLs. Do NOT rely solely on conversation summary for asset locations.\n")
+				}
+			}
 		}
 	}
 
