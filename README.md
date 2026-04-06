@@ -1,6 +1,6 @@
 # Marstaff
 
-[![Version](https://img.shields.io/badge/version-1.18.0--rc2-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.19.0--rc1-blue.svg)](CHANGELOG.md)
 
 Go 版 AI Agent 平台 —— 可扩展的智能助手框架，支持多模态对话、工具调用、设备控制与离场任务。
 
@@ -208,7 +208,7 @@ make lint
 
 ## 版本与变更
 
-- **当前版本**：`1.18.0-rc2`
+- **当前版本**：`1.19.0-rc1`
 - **变更记录**：[CHANGELOG.md](CHANGELOG.md)
 - **API 版本**：响应头 `X-Marstaff-Version`、`/api/health` 返回 `version` 字段
 

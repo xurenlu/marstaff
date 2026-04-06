@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.19.0-rc1] - 2026-04-07
+
+### Added
+
+- **动漫短剧创作资产**：`shorts/_template/`（系列圣经、角色锁定表、单集大纲与分镜表）、`shorts/qc-checklist.md`、`shorts/README.md`（与 `video_story_workflow_create` 参数映射说明）
+- **Skill**：`skills/anime-short-drama/SKILL.md`，模板化纯聊天全流程与工具契约
+- **测试**：`shorts/shorts_test.go` 校验模板与 Skill 文件存在
+
 ## [1.18.0-rc2] - 2026-04-06
 
 ### Fixed
