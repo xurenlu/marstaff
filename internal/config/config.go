@@ -9,8 +9,9 @@ import (
 
 // Config is the main configuration structure
 type Config struct {
-	Server    ServerConfig    `mapstructure:"server"`
-	Database  DatabaseConfig  `mapstructure:"database"`
+	Server      ServerConfig      `mapstructure:"server"`
+	GatewayNode GatewayNodeConfig `mapstructure:"gateway_node"`
+	Database    DatabaseConfig    `mapstructure:"database"`
 	Provider  ProviderConfig  `mapstructure:"provider"`
 	Media     MediaConfig     `mapstructure:"media"`
 	OSS       OSSConfig       `mapstructure:"oss"`
@@ -35,6 +36,12 @@ type SandboxConfig struct {
 // WorkspaceConfig holds workspace configuration for programming mode
 type WorkspaceConfig struct {
 	BasePath string `mapstructure:"base_path"` // root dir for new projects
+}
+
+// GatewayNodeConfig controls WebSocket clients with ?role=node (phones / sidecars).
+type GatewayNodeConfig struct {
+	// Token is a shared secret; empty disables node connections (403 on /ws?role=node).
+	Token string `mapstructure:"token"`
 }
 
 // ServerConfig holds server configuration
@@ -159,6 +166,8 @@ func Load(configPath string) (*Config, error) {
 	// Expand environment variables in OSS config
 	config.OSS.AccessKeyID = expandEnv(config.OSS.AccessKeyID)
 	config.OSS.AccessKeySecret = expandEnv(config.OSS.AccessKeySecret)
+
+	config.GatewayNode.Token = expandEnv(config.GatewayNode.Token)
 
 	// Set defaults
 	setDefaults(&config)

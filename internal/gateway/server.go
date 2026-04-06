@@ -23,9 +23,11 @@ var upgrader = websocket.Upgrader{
 
 // Server represents the WebSocket server
 type Server struct {
-	hub        *Hub
-	messageHandler MessageHandler
-	userRepo   UserRepository // For looking up real user ID
+	hub                *Hub
+	messageHandler     MessageHandler
+	nodeMessageHandler MessageHandler
+	nodeToken          string // empty disables role=node or rejects connection
+	userRepo           UserRepository // For looking up real user ID
 }
 
 // UserRepository is a minimal interface for user lookup
@@ -60,6 +62,16 @@ func (s *Server) SetUserRepository(repo UserRepository) {
 	s.userRepo = repo
 }
 
+// SetNodeMessageHandler sets the handler for role=node WebSocket clients.
+func (s *Server) SetNodeMessageHandler(handler MessageHandler) {
+	s.nodeMessageHandler = handler
+}
+
+// SetNodeToken sets the shared secret required for ?role=node (empty = reject node connections).
+func (s *Server) SetNodeToken(token string) {
+	s.nodeToken = token
+}
+
 // ServeWebSocket handles WebSocket connection requests
 func (s *Server) ServeWebSocket(c *gin.Context) {
 	// Get query parameters
@@ -82,6 +94,16 @@ func (s *Server) ServeWebSocket(c *gin.Context) {
 		}
 	}
 
+	role := c.DefaultQuery("role", "chat")
+	if role == "node" {
+		token := c.Query("token")
+		if s.nodeToken == "" || token != s.nodeToken {
+			log.Warn().Msg("node websocket rejected: disabled or bad token")
+			c.JSON(http.StatusForbidden, gin.H{"error": "node connections disabled or invalid token"})
+			return
+		}
+	}
+
 	// Upgrade HTTP connection to WebSocket
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
@@ -98,6 +120,7 @@ func (s *Server) ServeWebSocket(c *gin.Context) {
 		UserID:         realUserID,
 		PlatformUserID: userID, // Keep original for session creation (GetOrCreateByPlatformID expects "default")
 		SessionID:      sessionID,
+		Role:           role,
 		Conn:           conn,
 		Send:           make(chan []byte, 256),
 		Hub:            s.hub,
@@ -111,29 +134,51 @@ func (s *Server) ServeWebSocket(c *gin.Context) {
 		Str("client_id", clientID).
 		Str("user_id", realUserID).
 		Str("session_id", sessionID).
+		Str("role", role).
 		Msg("websocket client connected")
 
-	// Send welcome message
-	welcomeMsg := &Message{
-		Type:      MessageTypeStatus,
-		UserID:    realUserID,
-		SessionID: sessionID,
-		Data: map[string]interface{}{
-			"client_id": clientID,
-			"status":    "connected",
-		},
-		Timestamp: time.Now().Unix(),
+	var welcomeMsg *Message
+	if role == "node" {
+		welcomeMsg = &Message{
+			Type:   MessageTypeNodeStatus,
+			UserID: realUserID,
+			Data: map[string]interface{}{
+				"client_id": clientID,
+				"status":    "connected",
+				"hint":      "send node_register with node_id, display_name, capabilities",
+			},
+			Timestamp: time.Now().Unix(),
+		}
+	} else {
+		welcomeMsg = &Message{
+			Type:      MessageTypeStatus,
+			UserID:    realUserID,
+			SessionID: sessionID,
+			Data: map[string]interface{}{
+				"client_id": clientID,
+				"status":    "connected",
+			},
+			Timestamp: time.Now().Unix(),
+		}
 	}
 	welcomeData, _ := json.Marshal(welcomeMsg)
 	client.Send <- welcomeData
 
 	// Start pumps
 	go client.writePump()
-	go client.readPump(s.handleMessage)
+	if role == "node" {
+		nh := s.nodeMessageHandler
+		if nh == nil {
+			nh = func(_ *Client, _ *Message) error { return nil }
+		}
+		go client.readPump(nh)
+	} else {
+		go client.readPump(s.handleMessage)
+	}
 }
 
-// handleMessage handles incoming messages from a client
-func (s *Server) handleMessage(client *Client, msg *Message) {
+// handleMessage handles incoming messages from a chat WebSocket client
+func (s *Server) handleMessage(client *Client, msg *Message) error {
 	// Update client.SessionID from message if client sent one (e.g. continuing existing chat)
 	if msg.SessionID != "" {
 		client.SessionID = msg.SessionID
@@ -169,6 +214,7 @@ func (s *Server) handleMessage(client *Client, msg *Message) {
 			client.Send <- errorData
 		}
 	}
+	return nil
 }
 
 // BroadcastToAll broadcasts a message to all connected clients

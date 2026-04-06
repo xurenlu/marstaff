@@ -78,7 +78,7 @@ func (e *SessionsExecutor) RegisterBuiltInTools() {
 	)
 
 	e.engine.RegisterTool("sessions_send",
-		"Send a message to another session. The target session's agent will process the message and respond. Use for cross-session coordination.",
+		"Send a message to another session. The target session's agent will process the message. Set wait_for_reply true to block until the assistant reply (same process as OpenClaw-style cross-session ping). The originating session_id is stored in message metadata for the target.",
 		map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
@@ -89,6 +89,14 @@ func (e *SessionsExecutor) RegisterBuiltInTools() {
 				"message": map[string]interface{}{
 					"type":        "string",
 					"description": "The message content to send",
+				},
+				"wait_for_reply": map[string]interface{}{
+					"type":        "boolean",
+					"description": "If true, wait synchronously for the target assistant reply (default false = fire-and-forget)",
+				},
+				"timeout_seconds": map[string]interface{}{
+					"type":        "number",
+					"description": "When wait_for_reply is true, max seconds to wait (default 120, max 600)",
 				},
 			},
 			"required": []string{"session_id", "message"},
@@ -240,6 +248,20 @@ func (e *SessionsExecutor) toolSessionsSend(ctx context.Context, params map[stri
 		return "", fmt.Errorf("message is required")
 	}
 
+	waitReply := false
+	if w, ok := params["wait_for_reply"].(bool); ok {
+		waitReply = w
+	}
+	timeoutSec := 120.0
+	if t, ok := params["timeout_seconds"].(float64); ok && t > 0 {
+		timeoutSec = t
+		if timeoutSec > 600 {
+			timeoutSec = 600
+		}
+	}
+
+	sourceSessionID, _ := ctx.Value(contextkeys.SessionID).(string)
+
 	// Verify session belongs to user
 	session, err := e.sessionRepo.GetByID(ctx, sessionID)
 	if err != nil {
@@ -249,14 +271,60 @@ func (e *SessionsExecutor) toolSessionsSend(ctx context.Context, params map[stri
 		return "", fmt.Errorf("access denied: session %s does not belong to current user", sessionID)
 	}
 
+	meta := map[string]interface{}{}
+	if sourceSessionID != "" && sourceSessionID != sessionID {
+		meta["cross_session_from"] = sourceSessionID
+	}
+	metaJSON := "{}"
+	if len(meta) > 0 {
+		b, err := json.Marshal(meta)
+		if err != nil {
+			return "", err
+		}
+		metaJSON = string(b)
+	}
+
 	// Add user message to target session
 	userMsg := &model.Message{
 		SessionID: sessionID,
 		Role:      model.RoleUser,
 		Content:   message,
+		Metadata:  metaJSON,
 	}
 	if err := e.messageRepo.Create(ctx, userMsg); err != nil {
 		return "", fmt.Errorf("failed to add message: %w", err)
+	}
+
+	runAgent := func(c context.Context) (*agent.ChatResponse, error) {
+		modelName := session.Model
+		if modelName == "default" || modelName == "" {
+			modelName = ""
+		}
+		chatReq := &agent.ChatRequest{
+			SessionID: sessionID,
+			UserID:    userID,
+			Messages:  []provider.Message{{Role: provider.RoleUser, Content: message}},
+			Model:     modelName,
+		}
+		return e.executor.ExecuteWithTools(c, chatReq)
+	}
+
+	if waitReply {
+		runCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutSec*float64(time.Second)))
+		defer cancel()
+		runCtx = context.WithValue(runCtx, contextkeys.UserID, userID)
+		runCtx = context.WithValue(runCtx, contextkeys.SessionID, sessionID)
+		runCtx = context.WithValue(runCtx, "current_time", time.Now().Format("2006-01-02 15:04:05"))
+
+		resp, err := runAgent(runCtx)
+		if err != nil {
+			return "", fmt.Errorf("sessions_send (wait): %w", err)
+		}
+		out := fmt.Sprintf("Reply from session %s:\n%s", sessionID, resp.Content)
+		if resp.Content != "" {
+			e.hub.BroadcastToSession(sessionID, string(gateway.MessageTypeContent), resp.Content)
+		}
+		return out, nil
 	}
 
 	// Run agent for target session (async to avoid blocking)
@@ -285,7 +353,6 @@ func (e *SessionsExecutor) toolSessionsSend(ctx context.Context, params map[stri
 			return
 		}
 
-		// Broadcast response to target session clients
 		if resp.Content != "" {
 			e.hub.BroadcastToSession(sessionID, string(gateway.MessageTypeContent), resp.Content)
 		}

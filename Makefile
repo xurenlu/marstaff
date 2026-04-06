@@ -1,6 +1,6 @@
 # Marstaff Makefile
 
-.PHONY: all build clean test run deps fmt lint docker
+.PHONY: all build clean test run deps fmt lint docker doctor
 
 # Variables
 BINARY_DIR=bin
@@ -110,6 +110,10 @@ skills-update:
 	cp -r /tmp/openclaw-master-skills/skills/* ./skills/
 	@echo "Skills updated. Builtin skills (calculator, weather) are preserved."
 
+doctor: build-gateway
+	@echo "Running gateway doctor (config + DB + paths)..."
+	./$(GATEWAY_BINARY) doctor --config configs/config.yaml
+
 help:
 	@echo "Available targets:"
 	@echo "  all           - Install dependencies and build"
@@ -129,6 +133,7 @@ help:
 	@echo "  migrate-up        - Run database migrations up"
 	@echo "  migrate-single-user - Migrate sessions to default user"
 	@echo "  migrate-down      - Run database migrations down"
+	@echo "  doctor            - Run gateway doctor (health checks)"
 	@echo "  skills-update     - Update skills from openclaw-master-skills repo"
 	@echo "  short-drama-init  - Init short drama project (SERIES=slug TITLE=... STYLE=...)"
 	@echo "  debug-pipeline    - Fetch failed pipeline errors (SESSION_ID=xxx API_PORT=15678)"

@@ -46,6 +46,7 @@ type Message struct {
 	Type      MessageType   `json:"type"`
 	SessionID string        `json:"session_id,omitempty"`
 	UserID    string        `json:"user_id,omitempty"`
+	InvokeID  string        `json:"invoke_id,omitempty"` // node_invoke / node_result correlation
 	Data      interface{}   `json:"data"`
 	Timestamp int64         `json:"timestamp"`
 }
@@ -56,6 +57,8 @@ type Client struct {
 	UserID          string // Resolved real user ID (UUID from users table)
 	PlatformUserID  string // Original platform_user_id from query (e.g. "default"), used for session creation
 	SessionID       string
+	Role            string // "chat" (default) or "node"
+	NodeID          string // set after node_register for role=node
 	Conn            *websocket.Conn
 	Send            chan []byte
 	Hub             *Hub
@@ -70,6 +73,9 @@ type Hub struct {
 	// Client indexes
 	userClients    map[string]map[string]*Client    // userID -> clientID -> Client
 	sessionClients map[string]map[string]*Client    // sessionID -> clientID -> Client
+
+	// NodeRegistry tracks role=node WebSocket clients (optional)
+	NodeReg *NodeRegistry
 
 	// Inbound messages from the clients
 	broadcast chan *Message
@@ -90,6 +96,7 @@ func NewHub() *Hub {
 		clients:        make(map[string]*Client),
 		userClients:    make(map[string]map[string]*Client),
 		sessionClients: make(map[string]map[string]*Client),
+		NodeReg:        NewNodeRegistry(),
 		broadcast:      make(chan *Message, 256),
 		register:       make(chan *Client),
 		unregister:     make(chan *Client),
@@ -146,6 +153,10 @@ func (h *Hub) unregisterClient(client *Client) {
 
 	if _, ok := h.clients[client.ID]; !ok {
 		return
+	}
+
+	if h.NodeReg != nil && client.Role == "node" && client.NodeID != "" {
+		h.NodeReg.Remove(client.UserID, client.NodeID)
 	}
 
 	// Close the send channel
@@ -341,7 +352,7 @@ func (h *Hub) GetClientsBySession(sessionID string) []*Client {
 }
 
 // readPump pumps messages from the websocket connection to the hub
-func (c *Client) readPump(messageHandler func(*Client, *Message)) {
+func (c *Client) readPump(messageHandler func(*Client, *Message) error) {
 	defer func() {
 		c.Hub.unregister <- c
 		c.Conn.Close()
@@ -377,7 +388,9 @@ func (c *Client) readPump(messageHandler func(*Client, *Message)) {
 
 		// Call the message handler if provided
 		if messageHandler != nil {
-			messageHandler(c, &msg)
+			if err := messageHandler(c, &msg); err != nil {
+				log.Error().Err(err).Str("client_id", c.ID).Msg("message handler error")
+			}
 		}
 	}
 }

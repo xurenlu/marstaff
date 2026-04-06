@@ -11,6 +11,7 @@ var Whitelist = map[string]bool{
 	"sessions_history": true,
 	"sessions_send":    true,
 	"sessions_spawn":   true,
+	"node_list":        true,
 	"calculator":       true,
 	"get_current_time": true,
 	"list_skills":      true,

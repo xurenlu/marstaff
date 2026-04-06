@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.21.0-rc1] - 2026-04-07
+
+### Added
+
+- **节点协议**：WebSocket `/ws?role=node&user_id=...&token=...`；首条 `node_register` 登记 `node_id`、能力；Gateway 下发 `node_invoke`，客户端回 `node_result`；配置项 `gateway_node.token`（空则拒绝 node 连接）
+- **Agent 工具**：`node_list`、`node_invoke`（非主会话沙箱中禁止 `node_invoke`，仅允许 `node_list`）
+- **运维**：子命令 `gateway doctor`（`internal/ops`：配置可读性、MySQL ping、skills/workspace 路径、`gateway_node` 长度提示）
+- **健康检查**：`/api/health` 增加 `nodes_online`、`nodes_enabled`
+- **会话协作**：`sessions_send` 支持 `wait_for_reply`、`timeout_seconds`；写入 metadata `cross_session_from`
+- **测试**：`internal/gateway/node_registry_test.go`、`internal/ops/doctor_test.go`
+
 ## [1.20.0-rc2] - 2026-04-07
 
 ### Added

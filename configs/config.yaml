@@ -7,6 +7,11 @@ server:
   read_timeout: 60
   write_timeout: 60
 
+# WebSocket 节点（手机/侧车）：连接 /ws?role=node&user_id=default&token=...
+# token 为空则拒绝所有 node 连接（仅保留聊天 WebSocket）
+gateway_node:
+  token: "${MARSTAFF_NODE_TOKEN}"
+
 database:
   driver: "mysql"
   host: "localhost"

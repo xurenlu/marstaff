@@ -32,6 +32,7 @@ import (
 	"github.com/rocky/marstaff/internal/gateway"
 	"github.com/rocky/marstaff/internal/media"
 	"github.com/rocky/marstaff/internal/model"
+	"github.com/rocky/marstaff/internal/ops"
 	"github.com/rocky/marstaff/internal/pipeline"
 	"github.com/rocky/marstaff/internal/provider"
 	"github.com/rocky/marstaff/internal/repository"
@@ -42,7 +43,7 @@ import (
 var (
 	configFile     string
 	enableTelegram bool
-	Version        = "1.20.0-rc2"
+	Version        = "1.21.0-rc1"
 	GitCommit      = "dev" // 编译时通过 ldflags 注入，如未注入则显示 dev
 )
 
@@ -90,11 +91,31 @@ func main() {
 		Run:   run,
 	}
 
-	rootCmd.Flags().StringVarP(&configFile, "config", "c", "configs/config.yaml", "config file path")
+	rootCmd.PersistentFlags().StringVarP(&configFile, "config", "c", "configs/config.yaml", "config file path")
 	rootCmd.Flags().BoolVarP(&enableTelegram, "enable-telegram", "t", false, "enable Telegram bot (disabled by default in China)")
+
+	doctorCmd := &cobra.Command{
+		Use:   "doctor",
+		Short: "Run health checks (config file, database, skills path, gateway_node)",
+		Run:   runDoctor,
+	}
+	rootCmd.AddCommand(doctorCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+
+func runDoctor(cmd *cobra.Command, args []string) {
+	cfg, err := config.Load(configFile)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to load config: %v\n", err)
+		os.Exit(1)
+	}
+	issues, hasErr := ops.RunDoctor(cfg, configFile)
+	fmt.Print(ops.FormatIssues(issues))
+	if hasErr {
 		os.Exit(1)
 	}
 }
@@ -537,6 +558,8 @@ func run(cmd *cobra.Command, args []string) {
 	hub := gateway.NewHub()
 	go hub.Run()
 	server := gateway.NewServer(hub)
+	server.SetNodeToken(cfg.GatewayNode.Token)
+	server.SetNodeMessageHandler(gateway.NewNodeMessageHandler(hub.NodeReg))
 
 	// Register sessions collaboration tools (sessions_list, sessions_history, sessions_send, sessions_spawn)
 	if db != nil && sessionRepo != nil {
@@ -545,6 +568,10 @@ func run(cmd *cobra.Command, args []string) {
 		sessionsExecutor.RegisterBuiltInTools()
 		log.Info().Msg("sessions tools registered")
 	}
+
+	// Node tools (node_list, node_invoke) — requires gateway_node.token for connections
+	nodeExecutor := tools.NewNodeExecutor(engine, hub.NodeReg)
+	nodeExecutor.RegisterBuiltInTools()
 
 	// Create async task notifier for WebSocket notifications
 	asyncTaskNotifier := gateway.NewAsyncTaskNotifier(hub)
@@ -1190,13 +1217,19 @@ func run(cmd *cobra.Command, args []string) {
 	apiGroup := router.Group("/api")
 	{
 		apiGroup.GET("/health", func(c *gin.Context) {
+			nodeCount := 0
+			if hub.NodeReg != nil {
+				nodeCount = hub.NodeReg.Count()
+			}
 			c.JSON(http.StatusOK, gin.H{
-				"status":     "ok",
-				"version":    Version,
-				"git_commit": GitCommit,
-				"provider":   prov.Name(),
-				"clients":    server.GetClientCount(),
-				"database":   db != nil,
+				"status":        "ok",
+				"version":       Version,
+				"git_commit":    GitCommit,
+				"provider":      prov.Name(),
+				"clients":       server.GetClientCount(),
+				"nodes_online":  nodeCount,
+				"nodes_enabled":   cfg.GatewayNode.Token != "",
+				"database":      db != nil,
 			})
 		})
 
